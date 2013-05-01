@@ -1,0 +1,84 @@
+\documentclass{llncs}
+
+\usepackage{amsmath,stmaryrd,natbib}
+\usepackage[usenames,dvipsnames]{color}
+
+\newcommand{\Scribtexttt}[1]{{\texttt{#1}}}
+\newcommand{\SColorize}[2]{\color{#1}{#2}}
+\newcommand{\inColor}[2]{{\Scribtexttt{\SColorize{#1}{#2}}}}
+\definecolor{PaleBlue}{rgb}{0.90,0.90,1.0}
+\newcommand{\rackett}[1]{\inColor{black}{#1}}
+
+\title{Concrete Pushdown Summarization}
+\author{J. Ian Johnson}
+\institute{Northeastern University \\
+           \email{ianj@ccs.neu.edu}}
+
+\begin{document}
+\maketitle
+
+% Outline:
+% Introduction.
+% High level
+% PDCFA
+% - Concrete
+% - Abstract
+% CFA2
+% - Concrete
+% - Abstract
+% WCM machine
+% - Concrete
+% - Abstract
+% Related Work
+% Future Work
+% Conclusion
+
+\section{What to expect}
+This paper lays out a common framework to talk about pushdown analysis
+for higher-order languages. In particular, we extract the ``essence''
+of the existing techniques into a quality of the machine semantics
+that specify a language's meaning, much in the same way as
+~\citet{dvanhorn:VanHorn2012Systematic}. Once the machine semantics
+is in this form, simple pointwise abstraction leads to the
+summarization algorithms that we see in the literature. In effect, we
+give a \emph{concrete} semantics to pushdown analysis.
+
+Summarization algorithms need not be restricted to languages with
+well-bracketed calls and returns. We can adopt the technique for
+higher precision in the common case but still handle difficult cases
+such as first-class control. This was shown for the
+\rackett{call-with-current-continuation} (a.k.a. \rackett{call/cc})
+operator in ~\citet{ianjohnson:Vardoulakis2011Pushdown}. This
+impressive work illuminated the fact that we can harness the enhanced
+technology of pushdown analyses in non-pushdown models of
+computation. Doing this sacrifices call/return matching in the general
+case, but in practice the precision is much better than the
+alternative regular model. A downside of the work is that it was an
+algorithmic change to the already complicated CFA2 - there was no
+recipe for how to do this for one's favorite control operator. Instead
+of deriving a ``pushdown'' analysis for a language with
+\rackett{call/cc}, we will show a new analysis for a language with the
+all the control operators in \citet{ianjohnson:Flatt:2007:ADC:1291151.1291178} (call it the
+PLT machine) in order to demonstrate the applicability of this
+viewpoint even in the context of complex control operators.
+
+The remaining sections of the paper are
+\begin{itemize}
+\item{section \ref{sec:pdcfa}: we derive a cousin of PDCFA}
+\item{section \ref{sec:cfa2}: we make additions to the previous semantics to get a direct-style CFA2 without first-class control}
+\item{section \ref{sec:plt}: we give a novel analysis of the PLT machine, a core calculus of Racket's control operations.}
+\end{itemize}
+
+\section{Deriving PDCFA}
+\label{sec:pdcfa}
+
+\section{Deriving CFA2}
+\label{sec:cfa2}
+
+\section{Analysis of the PLT machine}
+\label{sec:plt}
+
+\bibliographystyle{chicago}
+\bibliography{bibliography}
+
+\end{document}
