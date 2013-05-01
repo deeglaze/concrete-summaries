@@ -3,15 +3,18 @@
 ;; Expressions
 (struct exp (ℓ) #:transparent)
 (struct lam exp (x body) #:transparent)
-(struct app exp (e0 e1) #:transparent)
+(struct app exp (ℓf e0 e1) #:transparent)
 (struct var exp (x) #:transparent)
+(struct letf exp (x e0 e1) #:transparent)
 
 ;; Values
 (struct clos (x e ρ) #:transparent)
+(struct many (vs) #:transparent)
 
 ;; Frames
-(struct ar (e ρ) #:transparent)
-(struct fn (v) #:transparent)
+(struct ar (ℓf e ρ) #:transparent)
+(struct fn (a) #:transparent)
+(struct lt (x e ρ) #:transparent)
 ;; Continuation tails
 (struct mt () #:transparent)
 (struct rt (owner) #:transparent)
@@ -44,12 +47,15 @@
 (define (note-return-point! p k)
   (hash-set! Ξ p (set-add (hash-ref Ξ p (set)) k)))
 
+(define istart #f)
 (define (alloc x s) x #;(cons x/ℓ (gensym)))
+(define (alloc-intermediate ℓ s) (+ istart ℓ) #;(cons x/ℓ (gensym)))
 (define ρextend hash-set)
+(define (from-many v) (match v [(many vs) vs] [_ (set v)]))
 (define (σextend σ a v)
   ;;(hash-set σ a (set-add (hash-ref σ a (set)) v))
-s  (define old (vector-ref σ a))
-  (define new (set-add old v))
+  (define old (vector-ref σ a))
+  (define new (set-union old (from-many v)))
   (unless (= (set-count old) (set-count new))
     (vector-set! σ a new)
     (set! σt (add1 σt))))
@@ -60,9 +66,9 @@ s  (define old (vector-ref σ a))
   [((state: (epoint e ρ) σ k))
    (match e
      [(lam ℓ x eb) (add-state! (vpoint (clos x eb ρ)) σ k)]
-     [(app ℓ e0 e1) (add-state! (epoint e0 ρ) σ (cons (ar e1 ρ) k))]
-     [(var ℓ x) (for ([v (in-set (lookup σ ρ x))])
-                  (add-state! (vpoint v) σ k))])]
+     [(app ℓ ℓf e0 e1) (add-state! (epoint e0 ρ) σ (cons (ar ℓf e1 ρ) k))]
+     [(var ℓ x) (add-state! (vpoint (many (lookup σ ρ x))) σ k)]
+     [(letf ℓ x e0 e1) (add-state! (epoint e0 ρ) σ (cons (lt x e1 ρ) k))])]
 
   [((state: (and vp (vpoint v)) σ k))
    (match k
@@ -70,14 +76,25 @@ s  (define old (vector-ref σ a))
      [(rt ret-owner)
       (for ([k′ (in-set (hash-ref Ξ ret-owner))])
         (add-state! vp σ k′))]
-     [(cons (ar e ρ) k*) (add-state! (epoint e ρ) σ (cons (fn v) k*))]
-     [(cons (fn (clos x e ρ)) k*)
+     [(cons (ar ℓf e ρ) k*)
+      (define a (alloc-intermediate ℓf s))
+      (σextend σ a v)
+      (add-state! (epoint e ρ) σ (cons (fn a) k*))]
+     [(cons (fn fa) k*)
+      (for ([fnv (in-set (vector-ref σ fa))])
+        (match fnv
+          [(clos x e ρ)
+           (define a (alloc x s))
+           (define ρ′ (ρextend ρ x a))
+           (define σ′ (σextend σ a v))
+           (define p (epoint e ρ′))
+           (note-return-point! p k*)
+           (add-state! p σ′ (rt p))]))]
+     [(cons (lt x e ρ) k*)
       (define a (alloc x s))
       (define ρ′ (ρextend ρ x a))
       (define σ′ (σextend σ a v))
-      (define p (epoint e ρ′))
-      (note-return-point! p k*)
-      (add-state! p σ′ (rt p))])])
+      (add-state! (epoint e ρ′) σ′ k*)])])
 
 (define (aval e heap-size)
   (set! Ξ (make-hash))
@@ -97,9 +114,10 @@ s  (define old (vector-ref σ a))
       (fix)])))
 
 (define-syntax-rule (inc! box) (begin0 (unbox box) (set-box! box (add1 (unbox box)))))
-(define (parse sexp label-count var-count)  
+(define (parse sexp label-count var-count intermediate-count)
   (define (label!) (inc! label-count))
   (define (var!) (inc! var-count))
+  (define (intermediate!) (inc! intermediate-count))
   (let parse* ([sexp sexp] [ρ #hasheq()])
     (define-syntax-rule (define-fresh (ρ* n) x)
       (define-values (ρ* n)
@@ -110,12 +128,16 @@ s  (define old (vector-ref σ a))
       [`(,(or 'lambda 'λ) (,x) ,e)
        (define-fresh (ρ* n) x)
        (lam (label!) n (parse* e ρ*))]
-      [`(let ([,x ,e]) ,body) (parse* `((lambda (,x) ,body) ,e) ρ)]
+      [`(let ([,x ,e]) ,body)
+       (define-fresh (ρ* n) x)
+       (letf (label!) n (parse* e ρ) (parse* body ρ*))]
       [`(,e0 ,e1)
-       (app (label!) (parse* e0 ρ) (parse* e1 ρ))]
+       (app (label!) (intermediate!) (parse* e0 ρ) (parse* e1 ρ))]
       [_ (error 'parse "Bad sexp ~a" sexp)])))
 (define lcount (box 0))
 (define vcount (box 0))
+(define icount (box 0))
+(define (reset!) (set-box! lcount 0) (set-box! vcount 0) (set-box! icount 0))
 (define church
   (parse
    '(let ([plus
@@ -163,7 +185,6 @@ s  (define old (vector-ref σ a))
                                                 ((church=? ((sub e1) church1)) ((sub e2) church1))))))))))])
                               ((church=? ((mult church2) ((plus church1) church3)))
                                ((plus ((mult church2) church1)) ((mult church2) church3))))))))))))))))
-   lcount
-   vcount))
-
-(aval church (unbox vcount))
+   lcount vcount icount))
+(set! istart (unbox vcount))
+(aval church (+ (unbox icount) (unbox vcount)))
