@@ -226,7 +226,7 @@ means in the presence of first-class control in section \ref{sec:plt}.
 \end{figure}
 
 To turn this semantics into PDCFA's algorithm for constructing a Dyck
-state graph, we apply a widening operator to make $\mstore$, $\mkont$,
+state graph, we apply a widening operator ${\mathcal F}$ to make $\mstore$, $\mkont$,
 and $\mmemo$ shared amongst all states. Further techniques for a
 performant implementation can be found in
 \citet{ianjohnson:oaam:2013}.
@@ -241,7 +241,7 @@ performant implementation can be found in
                 \mktab' &=  \bigsqcup\setbuild{\mktab'}{\wn(\_, \_, \mktab', \_) \in I} \\
                 \mmemo' &=  \bigsqcup\setbuild{\mmemo'}{\wn(\_, \_, \_, \mmemo') \in I} \\
                 S' &= \setbuild{(\mastate',\mstore')}{\wn(\mastate', \_, \_, \_) \in I} \\
-                F' &= \setbuild{\mastate'}{(\mastate',\_) \in S' \setminus S} \\
+                F' &= \setbuild{\mastate'}{(\mastate',\_) \in S', (\mastate',\mstore') \notin S} \\
                 \wn(\tpl{(\mexpr,\menv),\mkont},\mstore,\mktab,\mmemo) &= \tpl{(\mexpr,\menv),\mstore,\mkont,\mktab,\mmemo}
 \end{align*}
 
