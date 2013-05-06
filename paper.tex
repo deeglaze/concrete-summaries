@@ -237,11 +237,11 @@ performant implementation can be found in
   {\mathcal F} &: \System \to \System \\
   {\mathcal F}(S, F, \mstore, \mktab, \mmemo) &= (S \cup S', F', \mstore', \mktab', \mmemo') \\
   \text{where } I &= \setbuild{\mstate'}{\mastate \in F, \wn(\mastate,\mstore,\mktab,\mmemo) \stepto \mstate'} \\
-                S' &= \setbuild{(\mastate',\mstore')}{\wn(\mastate', \mstore', \_, \_) \in I} \\
-                F' &= \setbuild{\mastate'}{(\mastate',\_) \in S' \setminus S} \\
                 \mstore' &= \bigsqcup\setbuild{\mstore'}{\wn(\_, \mstore',\_,\_) \in I} \\
                 \mktab' &=  \bigsqcup\setbuild{\mktab'}{\wn(\_, \_, \mktab', \_) \in I} \\
                 \mmemo' &=  \bigsqcup\setbuild{\mmemo'}{\wn(\_, \_, \_, \mmemo') \in I} \\
+                S' &= \setbuild{(\mastate',\mstore')}{\wn(\mastate', \_, \_, \_) \in I} \\
+                F' &= \setbuild{\mastate'}{(\mastate',\_) \in S' \setminus S} \\
                 \wn(\tpl{(\mexpr,\menv),\mkont},\mstore,\mktab,\mmemo) &= \tpl{(\mexpr,\menv),\mstore,\mkont,\mktab,\mmemo}
 \end{align*}
 
