@@ -233,8 +233,8 @@ performant implementation can be found in
 
 \begin{align*}
   \mastate \in \sa{State} &= \Expr \times \Env \times \Kont \\
-  \System &= \wp(\sa{State} \times \Store) \times \wp{\sa{State}} \times \Store \times (\Expr \times \Env \times \Store \to \wp(\Kont)) \times (\Expr \times \Env \times \Store \to \wp{\Value}) \\
-  {\mathcal F} : \System \to \System \\
+  \System &= \wp(\sa{State} \times \Store) \times \wp(\sa{State}) \times \Store \times \KTab \times \Memo \\
+  {\mathcal F} &: \System \to \System \\
   {\mathcal F}(S, F, \mstore, \mktab, \mmemo) &= (S \cup S', F', \mstore', \mktab', \mmemo') \\
   \text{where } I &= \setbuild{\mstate'}{\mastate \in F, \wn(\mastate,\mstore,\mktab,\mmemo) \stepto \mstate'} \\
                 S' &= \setbuild{(\mastate',\mstore')}{\wn(\mastate', \mstore', \_, \_) \in I} \\
@@ -242,7 +242,7 @@ performant implementation can be found in
                 \mstore' &= \bigsqcup\setbuild{\mstore'}{\wn(\_, \mstore',\_,\_) \in I} \\
                 \mktab' &=  \bigsqcup\setbuild{\mktab'}{\wn(\_, \_, \mktab', \_) \in I} \\
                 \mmemo' &=  \bigsqcup\setbuild{\mmemo'}{\wn(\_, \_, \_, \mmemo') \in I} \\
-                \wn(\tpl{\mexpr,\menv,\mkont},\mstore,\mktab,\mmemo) &= \tpl{(\mexpr,\menv),\mstore,\mkont,\mktab,\mmemo}
+                \wn(\tpl{(\mexpr,\menv),\mkont},\mstore,\mktab,\mmemo) &= \tpl{(\mexpr,\menv),\mstore,\mkont,\mktab,\mmemo}
 \end{align*}
 
 \section{Deriving CFA2}
