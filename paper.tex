@@ -8,12 +8,14 @@
 \newcommand{\inColor}[2]{{\Scribtexttt{\SColorize{#1}{#2}}}}
 \definecolor{PaleBlue}{rgb}{0.90,0.90,1.0}
 \newcommand{\rackett}[1]{\inColor{black}{#1}}
+\input{local-macros}
 
-\title{Concrete Pushdown Summarization}
-\author{J. Ian Johnson}
+\title{Concrete Semantics for Pushdown Analysis:\\The Essence of Summarization}
+\author{J. Ian Johnson and David Van Horn}
 \institute{Northeastern University \\
-           \email{ianj@ccs.neu.edu}}
+           \email{\{ianj,dvanhorn\}@ccs.neu.edu}}
 
+\usepackage{hyperref}
 \begin{document}
 \maketitle
 
@@ -38,10 +40,11 @@ This paper lays out a common framework to talk about pushdown analysis
 for higher-order languages. In particular, we extract the ``essence''
 of the existing techniques into a quality of the machine semantics
 that specify a language's meaning, much in the same way as
-~\citet{dvanhorn:VanHorn2012Systematic}. Once the machine semantics
-is in this form, simple pointwise abstraction leads to the
-summarization algorithms that we see in the literature. In effect, we
-give a \emph{concrete} semantics to pushdown analysis.
+~\citet{dvanhorn:VanHorn2012Systematic} (a method we will refer to as
+AAM: abstracting abstract machines). Once the machine semantics is in
+this form, simple pointwise abstraction leads to the summarization
+algorithms that we see in the literature. In effect, we give a
+\emph{concrete} semantics to pushdown analysis.
 
 Summarization algorithms need not be restricted to languages with
 well-bracketed calls and returns. We can adopt the technique for
@@ -53,14 +56,16 @@ impressive work illuminated the fact that we can harness the enhanced
 technology of pushdown analyses in non-pushdown models of
 computation. Doing this sacrifices call/return matching in the general
 case, but in practice the precision is much better than the
-alternative regular model. A downside of the work is that it was an
+alternative regular\footnote{Regular as in regular language.} model
+that, say, AAM would provide. A downside of the work is that it was an
 algorithmic change to the already complicated CFA2 - there was no
 recipe for how to do this for one's favorite control operator. Instead
 of deriving a ``pushdown'' analysis for a language with
 \rackett{call/cc}, we will show a new analysis for a language with the
-all the control operators in \citet{ianjohnson:Flatt:2007:ADC:1291151.1291178} (call it the
-PLT machine) in order to demonstrate the applicability of this
-viewpoint even in the context of complex control operators.
+all the control operators in
+\citet{ianjohnson:Flatt:2007:ADC:1291151.1291178} (call it the PLT
+machine) in order to demonstrate the applicability of this viewpoint
+even in the context of complex control operators.
 
 The remaining sections of the paper are
 \begin{itemize}
@@ -71,12 +76,360 @@ The remaining sections of the paper are
 
 \section{Deriving PDCFA}
 \label{sec:pdcfa}
+PDCFA is a simpler analysis than CFA2, and thus enjoys a polynomial
+complexity in the monovariant case. Its final ${\mathcal O}(n^6)$ form
+unfortunately is not a complete abstraction of an unbounded stack
+model. In this section, we show how to derive a ${\mathcal O}(n^9)$
+complete abstraction\footnote{Interestingly, the available
+  \emph{implementations} of PDCFA incorporate the fix and are
+  themselves ${\mathcal O}(n^9)$.}. These bounds are absolute worst
+case that would never ever happen in practice. The complete
+abstraction restricts value flow to fewer spurious paths, often
+leading to a faster analysis than a typical 0CFA.
+
+The magic of the method is in keeping a table of (local) continuations
+for each function $\times$ store pair. This closely mirrors the
+technique of store-allocating continuations used in AAM. Instead of
+deferring to the table (store) for the remainder of a continuation for
+each frame, we only have indirections at function call
+boundaries. Note that since AAM is about finitizing the state space,
+this step itself fits within the AAM method, since continuations
+within functions truncated at call boundaries are bounded by the
+nesting depth of those functions, thereby making the continuation
+space finite. In the monovariant case, the number of continuations is
+still linear in the size of the program.
+
+The tail of a continuation in the context of a function will contain
+the stackless context in which the function was called, in order to
+link up with the proper callsite(s). The context includes the function
+(or unique label of the function), the environment, and the store. If
+doing a flow analysis that takes advantage of the pushdown model, the
+context would also have a lattice element.
+
+Once we finitize the address space of the store, this computes a
+characteristic finite state machine that has only reachable states of
+the pushdown system the unbounded stack model embodies.
+
+A ``summary edge'' that is in the literature, in terms of pushdown
+systems, is an edge from the source of a push edge to the target of
+the matching pop edge. ``Matching'' here means there is a path through
+machine edges that don't change the stack, or through summary
+edges. There is an analogy to something more operational: summary
+edges embody memoization. Instead of following an entire path through
+a call to return a value, we simply jump from the call to the return
+(the result of the call). We are very conservative with how much of
+the context is necessary to memoize, so we use the entire heap. This
+conservativeness isn't useful for skipping any work in computing the
+flow analysis (so much so that we don't even bother consulting the
+memo table in the semantics), but it is useful for interpreting the
+results to talk about the behavior of the body of a function without
+detours to other functions. We will return to this analogy and what it
+means in the presence of first-class control in section \ref{sec:plt}.
+
+\begin{figure}
+  \begin{align*}
+    \mexpr \in \Expr &= \svar{\mvar} \mid \sapp{\mexpr}{\mexpr} \mid \slam{\mvar}{\mexpr} \\
+    \mstate \in \State &= (\Expr \times \Env) \times \Store \times \Kont \\
+    \mval \in \Value &::= (\slam{\mvar}{\mexpr},\ \menv) \\
+    \mkont \in \Kont &::= \kmt \mid \kar{\mexpr,\menv,\mkont} \mid \kfn{\mval,\mkont} \\
+    \menv \in \Env &= \Var \to \Addr \\
+    \mstore \in \Store &= \Addr \to \wp(\Value) \\
+    \Var &\text{ an infinite set} \\
+    \Addr &\text{ an infinite set}
+  \end{align*}
+  \caption{The CESK semantic spaces}
+\label{fig:cesk-spaces}
+\end{figure}
+
+\begin{figure}
+  \centering
+  $\mstate \stepto \mstate' \text{ where } \maddr = \alloc(\mstate)$ \\
+  \begin{tabular}{r|l}
+    \hline
+% variable lookup
+    $\tpl{(\svar\mvar, \menv), \mstore, \mkont}$
+    &
+    $\tpl{\mval,\mstore,\mkont}$ if $\mval \in \mstore(\menv(\mvar))$
+    \\
+% application
+    $\tpl{(\sapp{\mexpri0}{\mexpri1}, \menv), \mstore, \mkont}$
+    &
+    $\tpl{(\mexpri0, \menv), \mstore, \kar{\mexpri,\menv,\mkont}}$
+    \\
+% argument evaluation
+    $\tpl{\mval, \mstore, \kar{\mexpr,\menv,\mkont}}$
+    &
+    $\tpl{(\mexpr, \menv), \mstore, \kfn{\mval, \mkont}}$
+    \\
+% function call
+    $\tpl{\mval,\mstore,\kfn{\slam{\mvar}{\mexpr}, \mkont}}$
+    &
+    $\tpl{(\mexpr, \extm{\menv}{\mvar}{\maddr}), \joinone{\mstore}{\maddr}{\mval}, \mkont}$
+  \end{tabular}
+  \caption{The CESK machine}
+  \label{fig:base-semantics}
+\end{figure}
+
+\begin{figure}
+  \begin{align*}
+    \mstate \in \State &= (\Expr \times \Env) \times \Store \times \Kont \times \KTab \times \Memo \\
+    \mkont \in \Kont &::= \kmt \mid \kar{\mexpr,\menv,\mkont} \mid \kfn{\mval,\mkont} \mid \krt{(\mexpr,\menv),\mstore}\\
+    \KTab &= (\Expr \times \Env)\times \Store \to \wp(\Kont) \\
+    \Memo &= (\Expr \times \Env)\times \Store \to \wp(\Value)
+  \end{align*}
+  \caption{Extended semantic spaces}
+\label{fig:cesk-ext-spaces}
+\end{figure}
+
+
+\begin{figure}
+  \centering
+  $\mstate \stepto \mstate' \text{ where } \maddr = \alloc(\mstate)$ \\
+  \begin{tabular}{r|l}
+    \hline
+% variable lookup
+    $\tpl{(\svar\mvar, \menv), \mstore, \mkont, \mktab, \mmemo}$
+    &
+    $\tpl{\mval,\mstore,\mkont, \mktab, \mmemo}$ if $\mval \in \mstore(\menv(\mvar))$
+    \\
+% application
+    $\tpl{(\sapp{\mexpri0}{\mexpri1}, \menv), \mstore, \mkont, \mktab, \mmemo}$
+    &
+    $\tpl{(\mexpri0, \menv), \mstore, \kar{\mexpri1,\menv,\mkont}, \mktab, \mmemo}$
+    \\
+% argument evaluation
+    $\tpl{\mval, \mstore, \kar{\mexpr,\menv,\mkont}, \mktab, \mmemo}$
+    &
+    $\tpl{(\mexpr, \menv), \mstore, \kfn{\mval, \mkont}, \mktab, \mmemo}$
+    \\
+% function call
+    $\tpl{\mval,\mstore,\kfn{\slam{\mvar}{\mexpr}, \mkont},\mktab,\mmemo}$
+    & % actually do call,
+    $\tpl{\mpoint,
+          \mstore',
+          \krt{\mpoint, \mstore'},
+          \joinone{\mktab}{(\mpoint, \mstore')}{\mkont},
+          \mmemo}$
+    \\ % or, lookup in table
+%    & $\tpl{\mval, \mstore', \mkont,\mktab,\mmemo}$ if $\mval \in \mmemo(\mpoint, \mstore')$ \\    
+    where & $\mpoint = (\mexpr, \extm{\menv}{\mvar}{\maddr})$ \\
+          & $\mstore' = \joinone{\mstore}{\maddr}{\mval}$
+    \\
+% return
+    $\tpl{\mval, \mstore, \krt{\mpoint,\mstore'}, \mktab, \mmemo}$
+    &
+    $\tpl{\mval, \mstore, \mkont, \mktab, \joinone{\mmemo}{(\mpoint, \mstore')}{\mval}}$
+    if $\mkont \in \mktab(\mpoint, \mstore')$
+  \end{tabular}
+  \caption{The summarizing tabular stack machine}
+  \label{fig:summary-semantics}
+\end{figure}
+
+To turn this semantics into PDCFA's algorithm for constructing a Dyck
+state graph, we apply a widening operator to make $\mstore$, $\mkont$,
+and $\mmemo$ shared amongst all states. Further techniques for a
+performant implementation can be found in
+\citet{ianjohnson:oaam:2013}.
+
+\begin{align*}
+  \mastate \in \sa{State} &= \Expr \times \Env \times \Kont \\
+  \System &= \wp(\sa{State} \times \Store) \times \wp{\sa{State}} \times \Store \times (\Expr \times \Env \times \Store \to \wp(\Kont)) \times (\Expr \times \Env \times \Store \to \wp{\Value}) \\
+  {\mathcal F} : \System \to \System \\
+  {\mathcal F}(S, F, \mstore, \mktab, \mmemo) &= (S \cup S', F', \mstore', \mktab', \mmemo') \\
+  \text{where } I &= \setbuild{\mstate'}{\mastate \in F, \wn(\mastate,\mstore,\mktab,\mmemo) \stepto \mstate'} \\
+                S' &= \setbuild{(\mastate',\mstore')}{\wn(\mastate', \mstore', \_, \_) \in I} \\
+                F' &= \setbuild{\mastate'}{(\mastate',\_) \in S' \setminus S} \\
+                \mstore' &= \bigsqcup\setbuild{\mstore'}{\wn(\_, \mstore',\_,\_) \in I} \\
+                \mktab' &=  \bigsqcup\setbuild{\mktab'}{\wn(\_, \_, \mktab', \_) \in I} \\
+                \mmemo' &=  \bigsqcup\setbuild{\mmemo'}{\wn(\_, \_, \_, \mmemo') \in I} \\
+                \wn(\tpl{\mexpr,\menv,\mkont},\mstore,\mktab,\mmemo) &= \tpl{(\mexpr,\menv),\mstore,\mkont,\mktab,\mmemo}
+\end{align*}
 
 \section{Deriving CFA2}
 \label{sec:cfa2}
 
+CFA2 is the first published analysis of a higher-order programming
+language that could properly match calls and returns. Vardoulakis and
+Shivers had a clear goal of harnessing the extra information a
+pushdown model provides to produce a high-precision analysis that
+works well in practice. This resulted in more than just the
+call/return matching of the previous section, which is why we are
+showing the two separately. There are two extra features of the
+semantics:
+\begin{enumerate}
+\item{stack allocation for some bindings}
+\item{strong updates on stack frames for resolved nondeterminism}
+\end{enumerate}
+The first of these is an addition to the stackless context. There is a
+conservative pre-analysis that checks locally whether a binding will
+never escape, and classifies references as able to use the stack frame
+or not. Their criteria for a binding never escaping is that it is
+never referenced in a function that is not its binder. This can be
+extended in a language with more linguistic features; see Kranz's
+thesis about register-allocatable bindings in the Orbit Scheme
+compiler \citep{ianjohnson:kranz:thesis:1988}. A stackable reference
+is one that appears in the body of the binding function, by which we
+mean not within the body of nested function. They use the information
+that a binding never escapes to not bother allocating it in the
+heap. This has the advantage of not changing the heap, and thus leads
+to less propagation. The addition of these stack frames makes the
+analysis exponential in theory, though in practice they have proved to
+decrease running time in most cases.
+
+The second of these is to ameliorate a problem they call ``fake
+rebinding.'' That is, since bindings in the abstract represent several
+values, we don't want to reference a variable \texttt{x} in two
+different places and have it resolve to two different values. In AAM,
+a variable reference non-deterministically steps to all possible
+values associated with that variable. Here we want to say that once
+\texttt{x} is considered to stand for value $v$, then all subsequent
+references of \texttt{x} should be $v$. If they aren't, it looks as if
+\texttt{x} was rebound; it hasn't, and thus it is a ``fake
+rebinding.'' CFA2 does not step to all values on variable reference,
+but instead carries all its values around in superposition until they
+need to be observed at, say, a function call. We give a simplified
+semantics that is more along the AAM style, but CFA2's approach can
+easily be recovered from it.
+
+We show only the significantly modified rules of the semantics in
+figure \ref{fig:frame-semantics}. The other rules simply carry along
+the extra $\mframe$ component untouched.
+\begin{figure}
+  \centering
+  $\mstate \stepto \mstate' \text{ where } \maddr = \alloc(\mstate)$ \\
+  \begin{tabular}{r|l}
+    \hline
+% variable lookup
+    $\tpl{(\svar[\mlab]{\mvar}, \menv), \mstore, \mframe, \mkont}$
+    &
+    $\tpl{\mval,\mstore,\mframe',\mkont}$ if $(\mframe', \mval) \in \lookup(\mstore,\mframe,\menv,\mvar,\mlab)$
+    \\
+% % application
+%     $\tpl{(\sapp{\mexpri0}{\mexpri1}, \menv), \mstore, \mframe, \mkont}$
+%     &
+%     $\tpl{(\mexpri0, \menv), \mstore, \mframe, \kar{\mexpri1,\menv,\mkont}}$
+%     \\
+% % argument evaluation
+%     $\tpl{\mval, \mstore, \mframe, \kar{\mexpr,\menv,\mkont}}$
+%     &
+%     $\tpl{(\mexpr, \menv), \mstore, \mframe, \kfn{\mval, \mkont}}$
+%     \\
+% function call
+    $\tpl{\mval,\mstore,\mframe,\kfn{\slam{\mvar}{\mexpr}, \mkont}}$
+    &
+    $\tpl{(\mexpr, \extm{\menv}{\mvar}{\maddr}), \mstore', \mframe', \mkont}$
+    \\ where & $(\mstore',\mframe') = \bind(\mstore,\mframe,\maddr,\mvar,\mval)$
+  \end{tabular}
+  \caption{The CES$\xi$K machine}
+  \label{fig:frame-semantics}
+\end{figure}
+
+\begin{align*}
+  \bind(\mstore,\mframe,\maddr,\mvar,\mval) &=
+   \left\{\begin{array}{ll}
+            (\mstore, \snglm{\maddr}{\mval}) & \text{if } \mvar \text{ never escapes} \\
+            (\joinone{\mstore}{\maddr}{\mval}, \snglm{\maddr}{\mval}) & \text{otherwise } \\
+          \end{array}\right. \\
+  \lookup(\mstore,\mframe,\menv,\mvar,\mlab) &=
+    \left\{\begin{array}{ll}
+          \setbuild{(\extm{\mframe}{\menv(\mvar)}{\set{\mval}}, \mval)}
+                   {\mval \in \mframe(\menv(\mvar))}
+                   & \text{if } \mlab \text{ non-escaping} \\
+          \setbuild{(\mframe,\mval)}{\mval \in \mstore(\menv(\mvar))} & \text{otherwise}
+           \end{array}\right.
+\end{align*}
+
 \section{Analysis of the PLT machine}
 \label{sec:plt}
+
+There is contention among programming language researchers whether
+\rackett{call/cc} should be a language primitive, since it captures
+the entire stack, leading to space leaks
+\citep{ianjohnson:kiselyov:against-callcc}. Alternative control
+operators have been proposed that delimit how much of the stack to
+capture, such as Felleisen's $\%$ (read ``prompt'') and capture
+operator ${\mathcal F}$ (read ``control'')
+\citep{ianjohnson:felleisen:control:1988}, or Danvy and Filinski's
+\texttt{reset} (equivalent to $\%$) and \texttt{shift}
+\citep{ianjohnson:danvy:filinski:delim:1990}. However, the stacks
+captured by these operators always extend the stack when invoked,
+rather than replace it like those captured with
+\rackett{call/cc}. Continuations that have this extension behavior are
+called ``composable continuations.'' Stack replacement is simple to
+model in a regular analysis using the AAM approach, and Vardoulakis
+and Shivers showed it can be done in a pushdown approach (although it
+breaks the pushdown model). Stack extension, however, poses a new
+challenge for pushdown analysis, since one application of a composable
+continuation means pushing an unbounded amount of frames onto the
+stack. Vardoulakis' and Shivers' approach does not immediately apply
+in this situation, since their technique drops all knowledge of the
+stack at a continuation's invocation site; extension, however, must
+preserve it.
+
+Composable and non-composable continuations both have their uses, as
+it has been shown the two are not co-expressive when it comes to space
+complexity ~\citet{ianjohnson:dybvig:control:2007}. There is still
+merit in delimiting the stack in either case, as is argued by
+\citet{ianjohnson:Flatt:2007:ADC:1291151.1291178}. Their paper gives a
+semantics for the coexistence of composable and non-composable
+continuations in the presence of first-class prompts,
+\rackett{dynamic-wind} (protects entry/exit of a continuation with
+pre- and post-processors), and continuation marks. We will show how to
+apply pushdown analysis techniques in the presence of all this
+complexity.
+
+The way we have been splitting continuations at function calls has
+similarities to the meta-continuation approach to modeling delimited
+control ~\citep{ianjohnson:Biernacki2006274}. We could view each
+function call as inserting a prompt, and returns as aborting to the
+nearest prompt. This view contends with tail calls, but we can
+identify tail calls easily - any call with a prompt as its
+continuation is a tail call. Tail calls are important in language
+implementations for space complexity reasons
+\citep{ianjohnson:clinger:tail-calls:1998}, but in an analysis, these
+concerns are less important. The repeated popping of prompts inserted
+by what otherwise were tail-calls is synonymous with CFA2's
+``transitive summaries.''
+
+We first give a CESK semantics of the PLT machine with the allocation
+procedure as a parameter in order to first discuss the complexities
+any computable abstract semantics will have. We then present the key
+ideas to making it a table-based semantics, and how we can abstract it
+to a computable approximation.
+
+\subsection{PLT's CESK semantics}
+
+The treatment of prompts as first-class values and
+\rackett{dynamic-wind}'s interaction with non-composable continuations
+requires equality tests of dynamically generated values. Because of
+this, once we relax the freshness condition for $\alloc$, we need a
+semantics that can handle the possibility that two values aren't just
+equal or disequal - they \emph{may} be equal. This complication is
+separate from the pushdown approach we are presenting, so we give it a
+separate presentation in this section to subsequently amend with pushdown
+techniques.
+
+...TODO...
+
+\subsection{Tabular PLT semantics}
+
+Since continuations can now appear in the store, and the store is in
+the $\krt{}$ continuation, we introduced a circularity in the data
+represented in our machine - this is precisely what the AAM approach
+avoids in order to have a finite model. There is currently no known
+model of computation that allows stack capture and
+replacement/composition that has decidable reachability, so we choose
+to approximate in this case. We represent only a bounded amount of a
+continuation, after which we say that any continuation matching that
+prefix is acceptable. The amount to represent is a tunable parameter
+that we simply set to be one of the local continuations we already
+have in our model.
+
+\section{Related Work}
+
+AAM, PDCFA, CFA2, CFA2+, Reps
+
+\section{Conclusion}
 
 \bibliographystyle{chicago}
 \bibliography{bibliography}

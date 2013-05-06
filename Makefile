@@ -15,8 +15,10 @@ wc:
 
 # Open
 open:
-	open $(CURRENT).pdf
+	xdg-open $(CURRENT).pdf
 
+edit:
+	emacs $(CURRENT).tex &
 
 # Check style:
 proof:

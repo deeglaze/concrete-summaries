@@ -1,0 +1,61 @@
+% Metavariables from defined spaces
+\newcommand{\mexpr}{e}
+\newcommand{\mexpri}[1]{e_{#1}}
+\newcommand{\mvar}{x}
+\newcommand{\mval}{v}
+\newcommand{\maddr}{a}
+\newcommand{\menv}{\rho}
+\newcommand{\mstore}{\sigma}
+\newcommand{\mkont}{\kappa}
+\newcommand{\mstate}{\varsigma}
+\newcommand{\mastate}{\hat\varsigma}
+
+\newcommand{\mktab}{\Xi}
+\newcommand{\mmemo}{M}
+\newcommand{\mpoint}{p}
+\newcommand{\mframe}{\xi}
+\newcommand{\mlab}{\ell}
+
+% Metavariables for Spaces
+\newcommand{\Var}{\mathit{Var}}
+\newcommand{\Addr}{\mathit{Addr}}
+\newcommand{\Expr}{\mathit{Expr}}
+\newcommand{\Store}{\mathit{Store}}
+\newcommand{\Kont}{\mathit{Kont}}
+\newcommand{\Env}{\mathit{Env}}
+\newcommand{\State}{\mathit{State}}
+\newcommand{\System}{\mathit{System}}
+\newcommand{\Value}{\mathit{Value}}
+
+\newcommand{\KTab}{\mathit{KTable}}
+\newcommand{\Memo}{\mathit{Memo}}
+
+% Other metavariables (metafunction names, etc)
+\newcommand{\alloc}{\mathit{alloc}}
+\newcommand{\bind}{\mathit{bind}}
+\newcommand{\lookup}{{\mathcal L}}
+\newcommand{\wn}{\mathit{wn}}
+
+% Constructors
+\newcommand{\svar}[2][{}]{#2^{#1}}
+\newcommand{\sapp}[3][{}]{(#2\ #3)#1}
+\newcommand{\slam}[3][{}]{\lambda#1 #2. #3}
+\newcommand{\kar}[2][{}]{\mathbf{ar}#1(#2)}
+\newcommand{\kfn}[2][{}]{\mathbf{fn}#1(#2)}
+\newcommand{\krt}[1]{\mathbf{rt}(#1)}
+\newcommand{\kmt}{\mathbf{mt}}
+
+
+% Notations
+\newcommand{\tpl}[1]{\langle #1 \rangle}
+\newcommand{\set}[1]{\{ #1 \}}
+\newcommand{\setbuild}[2]{\{ #1\ :\ #2\}}
+\newcommand{\sa}[1]{\widehat{#1}}
+
+\newcommand{\snglm}[2]{[#1 \mapsto \set{#2}]}
+\newcommand{\extm}[3]{#1[#2 \mapsto #3]}
+\newcommand{\joinm}[3]{#1\sqcup[#2 \mapsto #3]}
+\newcommand{\joinone}[3]{#1\sqcup[#2 \mapsto \set{#3}]}
+
+%% Relations
+\newcommand{\stepto}{\longmapsto}
