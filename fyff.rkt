@@ -1,4 +1,6 @@
 #lang racket
+
+(provide R output)
 (require redex "fyff-grammar.rkt" "fyff-meta.rkt")
 
 (struct -output ()) (define output (-output))
@@ -6,168 +8,172 @@
 (define R
   (reduction-relation L
     ;; eval
-    [--> ((x ρ) σ k) (v σ k)
+    [--> ((x ρ) σ κ) (v σ κ)
          (where (any_0 ... v any_1 ...) (lookup σ ρ x))
          "variable"]
-    [--> (((label e_0 e_rest ...) ρ) σ k)
-         ((e_0 ρ) σ ((ev label (e_rest ...) () ρ) k))
+    [--> (((label e_0 e_rest ...) ρ) σ κ)
+         ((e_0 ρ) σ ((ev label (e_rest ...) () ρ) κ))
          "application"]
-    [--> (((begin e_0 e_1) ρ) σ k)
-         ((e_0 ρ) σ ((bgn (e_1 ρ)) k))
+    [--> (((begin e_0 e_1) ρ) σ κ)
+         ((e_0 ρ) σ ((bgn (e_1 ρ)) κ))
          "begin"]
-    [--> ((prims ρ) σ k) (prims σ k) "prim-v"]
-    [--> (((if e e_then e_else) ρ) σ k)
-         ((e ρ) σ ((ifk e_then e_else ρ) k)) "if"]
-    [--> (((set! x e) ρ) σ k)
-         ((e ρ) σ ((setk (ρlookup ρ x)) k))
+    [--> ((prims ρ) σ κ) (prims σ κ) "prim-v"]
+    [--> (((if e e_then e_else) ρ) σ κ)
+         ((e ρ) σ ((ifk e_then e_else ρ) κ)) "if"]
+    [--> (((set! x e) ρ) σ κ)
+         ((e ρ) σ ((setk (ρlookup ρ x)) κ))
          "set!"]
     ;; ;;;;;;;;;;;;;;;
     ;; Continue rules
     ;; ;;;;;;;;;;;;;;;
-    [--> (nullary σ ((ev label () () ρ_ignore) k))
-         (do-call label nullary () σ k)
+    [--> (nullary σ ((ev label () () ρ_ignore) κ))
+         (do-call label nullary () σ κ)
          "nullary fn"]
-    [--> (v σ ((ev label (e e_rest ...) (v_done ...) ρ) k))
-         ((e ρ) σ ((ev label (e_rest ...) (v_done ... v)) k))
+    [--> (v σ ((ev label (e e_rest ...) (v_done ...) ρ) κ))
+         ((e ρ) σ ((ev label (e_rest ...) (v_done ... v) ρ) κ))
          "argument"]
-    [--> (v σ ((prompt tag v_1) k))
-         (v σ k)
+    [--> (v σ ((prompt tag v_1) κ))
+         (v σ κ)
          "prompt-v"]
-    [--> (v σ ((bgn p) k))
-         (p σ k)
+    [--> (v σ ((bgn p) κ))
+         (p σ κ)
          "begin-v"]
-    [--> (name ς (v_last σ ((ev label () (((λ (x ...) e) ρ) v_args ...) ρ_ignore) k)))
-         (do-call label ((λ (x ...) e) ρ) (v_args ... v_last) σ k)
+    [--> (name ς (v_last σ ((ev label () (v_fn v_args ...) ρ_ignore) κ)))
+         (do-call label v_fn (v_args ... v_last) σ κ)
          "multiary fn call"]
-    [--> (#t σ ((ifk e_then e_else ρ) k))
-         ((e_then ρ) σ k)
+    [--> (#t σ ((ifk e_then e_else ρ) κ))
+         ((e_then ρ) σ κ)
          "if true"]
-    [--> (#f σ ((ifk e_then e_else ρ) k))
-         ((e_else ρ) σ k)
+    [--> (#f σ ((ifk e_then e_else ρ) κ))
+         ((e_else ρ) σ κ)
          "if false"]
-    [--> (v σ ((setk a) k))
-         (void σ_1 k)
+    [--> (v σ ((setk a) κ))
+         (#f σ_1 κ)
          (where σ_1 (σupdate σ a v))
          "mutate"]
     ;; ;;;;;;;;;;;;
     ;; apply rules
     ;; ;;;;;;;;;;;;
-    [--> (name ς (do-call label ((λ (x ..._i) e) ρ) (v ..._i) σ k))
-         ((e ρ_1) σ_1 k)
+    [--> (name ς (do-call label ((λ (x ..._i) e) ρ) (v ..._i) σ κ))
+         ((e ρ_1) σ_1 κ)
          (where (a ...) (alloc (x ...) ς))
-         (where (ρ_1 σ_1) (bind ρ σ (x ...) (a ...) (v ...)))
+         (where (ρ_1 σ_1) (bind σ ρ (x ...) (a ...) (v ...)))
          "call lambda"]
     ;; non-control primitives (zero? empty? first rest cons - print)
-    [--> (do-call label zero? (0) σ k)
-         (#t σ k)
+    [--> (do-call label zero? (0) σ κ)
+         (#t σ κ)
          "zero? true"]
-    [--> (do-call label zero? (v) σ k)
-         (#f σ k)
+    [--> (do-call label zero? (v) σ κ)
+         (#f σ κ)
          (side-condition/hidden (not (zero? (term v))))
          "zero? false"]
-    [--> (do-call label - (integer ...) σ k)
-         (,(apply - (term (integer ...))) σ k)
-         "minus"]
-    [--> (do-call label empty? ('()) σ k)
-         (#t σ k)
+    [--> (do-call label + (integer ...) σ κ)
+         (,(apply + (term (integer ...))) σ κ)
+         "plus"]
+    [--> (do-call label empty? ('()) σ κ)
+         (#t σ κ)
          "empty? true"]
-    [--> (do-call label empty? (v) σ k)
-         (#t σ k)
+    [--> (do-call label empty? (v) σ κ)
+         (#t σ κ)
          (side-condition/hidden (not (null? (term v))))
          "empty? false"]
-    [--> (do-call label first ((pair a_fst a_rst)) σ k)
-         (v σ k)
+    [--> (do-call label first ((pair a_fst a_rst)) σ κ)
+         (v σ κ)
          (where (any_0 ... v any_1 ...) (σlookup σ a_fst))
          "first"]
-    [--> (do-call label rest ((pair a_fst a_rst)) σ k)
-         (v σ k)
+    [--> (do-call label rest ((pair a_fst a_rst)) σ κ)
+         (v σ κ)
          (where (any_0 ... v any_1 ...) (σlookup σ a_rst))
          "rest"]
-    [--> (name ς (do-call label cons (v_0 v_1) σ k))
-         ((pair a_fst a_rst) σ_1 k)
+    [--> (name ς (do-call label cons (v_0 v_1) σ κ))
+         ((pair a_fst a_rst) σ_1 κ)
          (where (a_fst a_rst) (alloc ((π₀ label) (π₁ label)) ς))
-         (where σ_1 (σextend* (a_fst a_rst) (v_0 v_1)))
+         (where σ_1 (σextend* σ (a_fst a_rst) (v_0 v_1)))
          "cons"]
     ;; Printing is a little tricky in the abstract.
     ;; We're model output as continually adding output to a special list in the store.
-    [--> (name ς (do-call label print (v) σ k))
-         (void σ_2 k)
+    [--> (name ς (do-call label print (v) σ κ))
+         (#f σ_2 κ)
          (where (a_fst a_rst) (alloc ((π₀ label) (π₁ label)) ς))
          (where σ_0 (σextend σ a_rst (σlookups σ ,output)))
          (where σ_1 (σextend* σ_0 (a_fst) (v)))
-         (where σ_2 (σupdate σ_1 ,output (pair a_fst a_rst)))]
+         (where σ_2 (σupdate σ_1 ,output (pair a_fst a_rst)))
+         "print"]
     ;; control primitives
-    [--> (name ς (do-call label default-continuation-prompt-tag () σ k))
-         (default-tag σ k)
+    [--> (name ς (do-call label default-continuation-prompt-tag () σ κ))
+         (default-tag σ κ)
          "default tag"]
-    [--> (name ς (do-call label make-continuation-prompt-tag () σ k))
-         ((prompt-tag a) tag σ k)
+    [--> (name ς (do-call label make-continuation-prompt-tag () σ κ))
+         ((prompt-tag a) tag σ κ)
          (where a (alloc label ς))
          "make tag"]
-    [--> (do-call label call-with-continuation-prompt (((λ () e) ρ) tag v_handler) σ k)
-         ((e ρ) σ ((prompt tag v_handler) k))
+    [--> (do-call label call-with-continuation-prompt (((λ () e) ρ) tag v_handler) σ κ)
+         ((e ρ) σ ((prompt tag v_handler) κ))
          "prompt"]
-    [--> (do-call label call-with-composable-continuation (((λ (x) e) ρ) tag) σ k)
-         ((e ρ_1) σ_1 k)
+    [--> (name ς (do-call label cmp (((λ (x) e) ρ) tag) σ κ))
+         ((e ρ_1) σ_1 κ)
          (where (a) (alloc (x) ς))
          (where ρ_1 (extend ρ x a))
-         (where σ_1 (σextend σ a (capture-upto k tag)))
+         (where σ_1 (σextend σ a (capture-upto κ tag)))
          "call/comp"]
-    [--> (do-call label call-with-current-continuation (((λ (x) e) ρ) tag) σ k)
-         ((e ρ_1) σ_1 k)
+    [--> (name ς (do-call label cc (((λ (x) e) ρ) tag) σ κ))
+         ((e ρ_1) σ_1 κ)
          (where (a) (alloc (x) ς))
          (where ρ_1 (extend ρ x a))
-         (where σ_1 (σextend σ a (capture-upto/cc k tag)))
+         (where σ_1 (σextend σ a (capture-upto/cc κ tag)))
          "call/cc"]
-    [--> (do-call label abort-current-continuation (tag v) σ k)
-         ((e_post ρ) σ ((abort/i tag v) k_1))
-         (where (any_0 ... (((λ () e_post) ρ) k_1) any_1 ...) (abort-targets v_tag k σ))
+    [--> (do-call label abrt (tag v) σ κ)
+         ((e_post ρ) σ ((abort/i label tag v) κ_1))
+         (where (any_0 ... (((λ () e_post) ρ) κ_1) any_1 ...) (abort-targets κ tag σ))
          "abort-post"]
-    [--> (do-call abort-current-continuation (tag v) σ k)
-         ((e_handle ρ_1) σ_1 k_1)
-         (where (any_0 ... (((λ (x) e_handle) ρ) k_1) any_1 ...) (abort-targets v_tag k σ))
+    [--> (name ς (do-call label abrt (tag v) σ κ))
+         ((e_handle ρ_1) σ_1 κ_1)
+         (where (any_0 ... (((λ (x) e_handle) ρ) κ_1) any_1 ...) (abort-targets κ tag σ))
          (where (a) (alloc (x) ς))
          (where (ρ_1 σ_1) (bind σ ρ (x) (a) (v)))
          "abort"]
-    [--> (v σ ((dw a v_pre ((λ () e_post) ρ)) k))
-         ((e_post ρ) σ ((bgn v) k))
+    [--> (v σ ((dw a v_pre ((λ () e_post) ρ)) κ))
+         ((e_post ρ) σ ((bgn v) κ))
          "dw-v"]
-    [--> (name ς (do-call label dynamic-wind ((name v_pre ((λ () e_pre) ρ_pre)) ((λ () e_body) ρ_body) v_post) σ k))
-         ((e_pre ρ_pre) σ ((dw/i a v_pre v_post e_body ρ_body) k))
+    [--> (name ς (do-call label dynamic-wind ((name v_pre ((λ () e_pre) ρ_pre)) ((λ () e_body) ρ_body) v_post) σ κ))
+         ((e_pre ρ_pre) σ ((dw/i a v_pre v_post e_body ρ_body) κ))
          (where a (alloc label ς))
          "dw"]
-    [--> (do-call label (comp k_call) (v) σ k)
-         ((e_pre ρ) σ ((dw/call a v_pre v_post (comp k_next) v) k))
-         (where (((λ () e_pre) ρ) k_next) (first-preprocess k_call))
+    [--> (do-call label (comp κ_call) (v) σ κ)
+         ((e_pre ρ) σ ((dw/call label a v_pre v_post (comp κ_next) v) κ))
+         (where ((name v_pre ((λ () e_pre) ρ)) v_post κ_next) (first-preprocess κ_call))
          "comp-pre"]
-    [--> (do-call label (comp k_call) (v) σ k)
-         (v σ (kont-append k_call k))
-         (where #f (first-preprocess k_call))
+    [--> (do-call label (comp κ_call) (v) σ κ)
+         (v σ (kont-append κ_call κ))
+         (where #f (first-preprocess κ_call))
          "comp"]
-    [--> (do-call label (cont tag k_call) (v) σ k)
-         ((e_pre ρ) σ ((dw/call a v_pre v_post (cont tag k_call) v) k_next))
+    [--> (do-call label (cont tag κ_call) (v) σ κ)
+         ((e_pre ρ) σ ((dw/call label a v_pre v_post (cont tag κ_call) v) κ_next))
          (where (any_0 ...
                        (pre
                         a
                         (name v_pre ((λ () e_pre) ρ))
                         v_post
-                        k_next)
+                        κ_next)
                        any_1 ...)
-                (unwrap-call/cc k_call tag k))
+                (unwrap-call/cc κ_call tag κ))
          "cont-pre"]
-    [--> (do-call label (cont tag k_call) (v) σ k)
-         ((e_post ρ) σ ((call/i (cont tag k_call) v) k_next))
-         (where (any_0 ... (post e_post ρ k_next) any_1 ...)
-                (unwrap-call/cc k_call tag k))
+    [--> (name ς (do-call label (cont tag κ_call) (v) σ κ))
+         ((e_post ρ) σ ((call/i label (cont tag κ_call) v) κ_next))
+         (where (any_0 ... (post ((λ () e_post) ρ) κ_next) any_1 ...)
+                (unwrap-call/cc κ_call tag κ))
          "cont-post"]
-    [--> (do-call label (cont tag k_call) (v) σ k)
-         (v σ k_next)
-         (where (any_0 ... k_next any_1 ...) (unwrap-call/cc k_call tag k))
+    [--> (do-call label (cont tag κ_call) (v) σ κ)
+         (v σ κ_next)
+         (where (any_0 ... κ_next any_1 ...) (unwrap-call/cc κ_call tag κ))
          "cont"]
+    ;; continuation marks not covered
     ;; adiministrative reductions for control
-    [--> (v_ignore ((abort/i tag v) k)) (do-call abort-current-continuation (tag v) σ k)]
-    [--> (v_ignore σ ((dw/i a v_pre v_post e_body ρ_body) k))
-         ((e_body ρ_body) σ ((dw a v_pre v_post) k))]
-    [--> (v_ignore σ ((call/i v_fn v) k)) (do-call v_fn (v) σ k)]
-    [--> (v_ignore σ ((dw/call a v_pre v_post v_fn v) k))
-         (do-call v_fn (v) σ ((dw a v_pre v_post) k))]))
+    [--> (v_ignore σ ((abort/i label tag v) κ))
+         (do-call label abort-current-continuation (tag v) σ κ)]
+    [--> (v_ignore σ ((dw/i a v_pre v_post e_body ρ_body) κ))
+         ((e_body ρ_body) σ ((dw a v_pre v_post) κ))]
+    [--> (v_ignore σ ((call/i label v_fn v) κ))
+         (do-call label v_fn (v) σ κ)]
+    [--> (v_ignore σ ((dw/call label a v_pre v_post v_fn v) κ))
+         (do-call label v_fn (v) σ ((dw a v_pre v_post) κ))]))
