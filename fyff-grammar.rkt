@@ -21,7 +21,7 @@
   [cc call-with-current-continuation call/cc]
   [cmp call/comp call-with-composable-continuation]
   [abrt abort abort-current-continuation]
-  [prim zero? number boolean '() print + first rest empty? cons]
+  [prim zero? number boolean () print + first rest empty? cons]
   [nullary default-continuation-prompt-tag make-continuation-prompt-tag ((λ () e) ρ)]
   [prims control-prim prim]
   [label natural]
@@ -37,13 +37,13 @@
      (bgn p)
      (prompt v v)
      (setk a)]
+  [κ (f κ) mt]
   [p (e ρ) v]
   [boolean #t #f]
   [a any]
   [part (π₀ label) (π₁ label)]
   [alloc-point x part]
   [(ks vs as) (side-condition (name vs any) (set? (term vs)))]  
-  [κ (f κ) mt]
   [v ((λ (x ...) e) ρ) tag (cont v κ) (comp κ) (pair a a) prims]
   [tag default-tag (prompt-tag a) number boolean '()] ;; natural added to cope with fyff paper's tests.
   [ς (p σ κ) (do-call label v (v ...) σ κ)]

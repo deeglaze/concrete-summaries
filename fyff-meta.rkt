@@ -155,61 +155,129 @@
     (let revloop ([κ κ] [pre 'mt])
       (match κ
         ['mt (values pre 'mt)]
-        [`((dw ,a ,v-pre ,v-post) ,κ*)
-         (values `((dw ,a ,v-pre ,v-post) ,pre) κ*)]
+        [`(,(and dwf `(dw ,a ,v-pre ,v-post)) ,κ*)
+         (values pre κ)]
         [`(,f ,κ*) (revloop κ* `(,f ,pre))])))
-  (define (add-dw κ dws)
-    (match κ
-      [`((dw ,a ,v-pre ,v-post) ,κ*) (set-add dws a)]
-      [_ dws]))
+  (define (add-dw dwf dws)
+    (match dwf
+      [`(dw ,a ,v-pre ,v-post) (set-add dws a)]
+      [#f dws]))
   ;; Walk down both κ₀ and κ₁ building up their dw-delimited sections that aren't
   ;; shared, and then confirm that the rest (may be) equal.
   (let loop ([κ₀ κ₀] [κ₁ κ₁] [no-share₀ 'mt] [no-share₁ 'mt] [dws₀ (set)] [dws₁ (set)])
-    (trace loop)
+    (define (done)
+      (set (list κ₀ (term (kont-reverse ,no-share₀))
+                 κ₁ (term (kont-reverse ,no-share₁)))))
     (cond
      [(and (eq? κ₀ 'mt) (eq? κ₁ 'mt))
-      (set (list 'mt (term (kont-reverse ,no-share₀))
-                 'mt (term (kont-reverse ,no-share₁))))]
+      (done)]
      [else
       (define-values (κ₀-pre κ₀-post) (split-at-dw κ₀))
       (define-values (κ₁-pre κ₁-post) (split-at-dw κ₁))
-      (define dws₀* (add-dw κ₀-pre dws₀))
-      (define dws₁* (add-dw κ₁-pre dws₁))
-      (define noshared (compare-sets dws₀* dws₁*))
-      (printf "noshared ~a~%" noshared)
-      (set-union (if (and (memv #t (compare-sets dws₀ dws₁*))
-                            ;; don't run forever
-                            (not (equal? κ₁ κ₁-post)))
-                     (loop κ₀ κ₁-post no-share₀ (term (kont-append ,κ₁-pre ,no-share₁)) dws₀ dws₁*)
-                     (set))
-                 (if (and (memv #t (compare-sets dws₀* dws₁))
-                            ;; don't run forever
-                            (not (equal? κ₀ κ₀-post)))
-                     (loop κ₀-post κ₁ (term (kont-append ,κ₀-pre ,no-share₀)) no-share₁ dws₀* dws₁)
-                     (set))
-                 (if (memv #f noshared)
-                     ;; Only possible if the prefixes are the same.
-                     (match (term (sameDWs ,κ₀ ,κ₁))
-                       [(or '(#t) '(#t #f))
-                        (set (list κ₀ (term (kont-reverse ,no-share₀))
-                                   κ₁ (term (kont-reverse ,no-share₁))))]
-                       ['(#f) (set)])
-                     (set)))])))
+      (match* (κ₀-pre κ₁-pre)
+        [('mt 'mt)
+         (if (memv #t (term (sameDWs ,κ₀-post ,κ₁-post)))
+             (set (list κ₀ (term (kont-reverse ,no-share₀))
+                        κ₁ (term (kont-reverse ,no-share₁))))
+             (set-union
+              (match κ₀-post
+                [`(,(and dwf₀ `(dw ,a0 ,v-pre0 ,v-post0)) ,κ₀*)
+                 (define dws₀* (set-add dws₀ a0))
+                 (define cmp₀ (compare-sets dws₀* dws₁))
+                 (cond
+                  [(memv #t cmp₀) ;; try a dw of κ₀
+                   (loop κ₀* κ₁ (term (,dwf₀ ,no-share₀)) no-share₁ dws₀* dws₁)]
+                  [(memv #f cmp₀) ;; overlap started due to κ₀. See if there is overlap in κ₁.
+                   (match κ₁-post
+                     [`(,(and dwf₁ `(dw ,a1 ,v-pre1 ,v-post1)) ,κ₁*)
+                      (define dws₁* (set-add dws₁ a1))
+                      (define cmp₁ (compare-sets dws₀ dws₁*))
+                      (cond
+                       [(and (memv #t cmp₁)) ;; keep going down κ₁
+                        (loop κ₀ κ₁* no-share₀ (term (,dwf₁ ,no-share₁)) dws₀ dws₁*)]
+                       [(memv #f cmp₁) ;; totally done.
+                        (done)])]
+                     [_ (set)])])]
+                [_ (set)])
+              (match κ₁-post
+                [`(,(and dwf₁ `(dw ,a1 ,v-pre1 ,v-post1)) ,κ₁*)
+                 (define dws₁* (set-add dws₁ a1))
+                 (define cmp₁ (compare-sets dws₀ dws₁*))
+                 (cond
+                  [(memv #t cmp₁) ;; try a dw of κ₁
+                   (loop κ₀ κ₁* no-share₀ (term (,dwf₁ ,no-share₁)) dws₀ dws₁*)]
+                  [(memv #f cmp₁) ;; overlap started due to κ₁. See if there is overlap in κ₀
+                   (match κ₀-post
+                     [`(,(and dwf₁ `(dw ,a1 ,v-pre1 ,v-post1)) ,κ₁*)
+                      (define dws₁* (set-add dws₁ a1))
+                      (define cmp₁ (compare-sets dws₀ dws₁*))
+                      (cond
+                       [(memv #t cmp₁) ;; keep going down κ₁
+                        (loop κ₀ κ₁* no-share₀ (term (,dwf₁ ,no-share₁)) dws₀ dws₁*)]
+                       [(memv #f cmp₁)
+                        (done)])]
+                     ;; already checked for sameDWs. Stuck.
+                     [_ (set)])])]
+                [_ (set)])))]
+        [(_ _)
+         (loop κ₀-post κ₁-post
+               (term (kont-append ,κ₀-pre ,no-share₀))
+               (term (kont-append ,κ₁-pre ,no-share₁))
+               dws₀ dws₁)])])))
+
+(module+ test
+ (require rackunit)
+ (define tail
+   '((dw
+      (3 g2038)
+      ((λ () (4 print 2)) #hash((a . a) (do-a? . do-a?)))
+      ((λ () (7 print 3)) #hash((a . a) (do-a? . do-a?))))
+     ((bgn
+       ((8
+         dynamic-wind
+         (λ () (9 print 4))
+         (λ ()
+            (if do-a?
+                (begin (set! do-a? #f) (10 a (λ () 11)))
+                (begin (set! a #f) 12)))
+         (λ ()
+            (begin
+              (11 print 5)
+              (12
+               call/comp
+               (λ (k)
+                  (13
+                   call-with-continuation-prompt
+                   (λ () (14 k 10))
+                   0
+                   (λ (x) x)))
+               0))))
+        #hash((a . a) (do-a? . do-a?))))
+      ((dw
+        (1 g2035)
+        ((λ () (2 print 1)) #hash((a . a) (do-a? . do-a?)))
+        ((λ () (15 print 6)) #hash((a . a) (do-a? . do-a?))))
+       mt))))
+ (check equal?
+        (match-prefixes
+         tail
+         `((ev 5 () () #hash((a . a) (do-a? . do-a?)))
+           ,tail))
+        (set (list tail 'mt
+                   tail `((ev 5 () () #hash((a . a) (do-a? . do-a?))) mt)))))
 
 ;; Truncate a continuation at the innermost dw (first found dw)
-(define-metafunction L
-  [(innermost-dw mt) #f]
-  [(innermost-dw (name κ_pre ((dw a v_pre v_post) κ))) κ_pre]
-  [(innermost-dw (f κ)) (innermost-dw κ)])
+(define/match (innermost-dw κ)
+  [('mt) #f]
+  [(`((dw ,a ,v-pre ,v-post) ,κ*)) κ]
+  [(`(,f ,κ*)) (innermost-dw κ*)])
+(define (outermost-dw/last-dw-κ κ option-κ)
+  (match κ
+   ['mt option-κ]
+   [`((dw ,a ,v-pre ,v-post) ,κ*) (outermost-dw/last-dw-κ κ* κ)]
+   [`(,f ,κ*) (outermost-dw/last-dw-κ κ* option-κ)]))
+(define (outermost-dw κ) (outermost-dw/last-dw-κ κ #f))
 
-(define-metafunction L
-  [(outermost-dw/last-dw-κ mt any) any]
-  [(outermost-dw/last-dw-κ (name κ_pre ((dw a v_pre v_post) κ)) any)
-   (outermost-dw/last-dw-κ κ κ_pre)]
-  [(outermost-dw/last-dw-κ (f κ) any) (outermost-dw/last-dw-κ κ any)])
-
-(define-metafunction L
-  [(outermost-dw κ) (outermost-dw/last-dw-κ κ #f)])
 
 ;; The following metafunction is one of the most complicated.
 ;; It finds the applicability of the cont-pre, cont-post and cont rules.
@@ -226,16 +294,79 @@
     (for/fold ([out out]) ([split (in-set prefix-splits)])
       (match-define (list D₂ in-D₂ D₆ in-D₆) split)
       ;; If E₃ contains a dw, then we are in [cont-post].
-      (match (term (innermost-dw ,in-D₂))
-        [#f
+      (match (innermost-dw in-D₂)
+        [#f ;; in-D₂ is W₃
          ;; Otherwise, if E₄ contains a dw, then we are in [cont-pre].
-         (match (term (outermost-dw ,in-D₆))
-           ;; else, we are in [cont].
-           [#f (set-add out (term (kont-append ,κ-call ,outside)))]
-           [`((dw ,a ,v-pre ,v-post) ,W₄) ;; Don't need E₅
+         (match (outermost-dw in-D₆)
+           ;; else, we are in [cont].           
+           [#f ;; in-D₆ is W₄
+            (set-add out (term (kont-append ,κ-call ,outside)))]
+           [`((dw ,a ,v-pre ,v-post) ,W₄)
             (set-add out (term (pre ,a ,v-pre ,v-post (kont-append ,W₄ (kont-append ,D₆ ,outside)))))])]
         [`((dw ,a ,v-pre ,v-post) ,E₃)
          (set-add out (term (post ,v-post (kont-append ,E₃ (kont-append ,D₂ ,outside)))))]))))
+
+#|
+(calling-cont
+  '((ev 5 () () #hash((a . a) (do-a? . do-a?)))
+    ((dw
+      (3 g2038)
+      ((λ () (4 print 2)) #hash((a . a) (do-a? . do-a?)))
+      ((λ () (7 print 3)) #hash((a . a) (do-a? . do-a?))))
+     ((bgn
+       ((8
+         dynamic-wind
+         (λ () (9 print 4))
+         (λ ()
+           (if do-a?
+             (begin (set! do-a? #f) (10 a (λ () 11)))
+             (begin (set! a #f) 12)))
+         (λ ()
+           (begin
+             (11 print 5)
+             (12
+              call/comp
+              (λ (k)
+                (13
+                 call-with-continuation-prompt
+                 (λ () (14 k 10))
+                 0
+                 (λ (x) x)))
+              0))))
+        #hash((a . a) (do-a? . do-a?))))
+      ((dw
+        (1 g2035)
+        ((λ () (2 print 1)) #hash((a . a) (do-a? . do-a?)))
+        ((λ () (15 print 6)) #hash((a . a) (do-a? . do-a?))))
+       mt))))
+  0
+  '((dw
+     (3 g2038)
+     ((λ () (4 print 2)) #hash((a . a) (do-a? . do-a?)))
+     ((λ () (7 print 3)) #hash((a . a) (do-a? . do-a?))))
+    ((bgn
+      ((8
+        dynamic-wind
+        (λ () (9 print 4))
+        (λ ()
+          (if do-a?
+            (begin (set! do-a? #f) (10 a (λ () 11)))
+            (begin (set! a #f) 12)))
+        (λ ()
+          (begin
+            (11 print 5)
+            (12
+             call/comp
+             (λ (k)
+               (13 call-with-continuation-prompt (λ () (14 k 10)) 0 (λ (x) x)))
+             0))))
+       #hash((a . a) (do-a? . do-a?))))
+     ((dw
+       (1 g2035)
+       ((λ () (2 print 1)) #hash((a . a) (do-a? . do-a?)))
+       ((λ () (15 print 6)) #hash((a . a) (do-a? . do-a?))))
+      ((prompt 0 ((λ (x) x) #hash((a . a) (do-a? . do-a?)))) mt)))))
+|#
 (trace calling-cont match-prefixes)
 
 ;; continuations are in reverse order than W[v] notation.
@@ -246,6 +377,6 @@
 (define-metafunction L
   [(last-preprocess mt any κ_build) any]
   [(last-preprocess ((name f (dw a v_pre v_post)) κ) any κ_build)
-   (last-preprocess κ (v_pre v_post κ_build) (kont-snoc κ_build f))]
+   (last-preprocess κ (a v_pre v_post κ_build) (kont-snoc κ_build f))]
   [(last-preprocess (f κ) any κ_build)
    (last-preprocess κ any (kont-snoc κ_build f))])

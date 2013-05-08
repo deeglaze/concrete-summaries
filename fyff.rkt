@@ -60,23 +60,15 @@
          (where (ρ_1 σ_1) (bind σ ρ (x ...) (a ...) (v ...)))
          "call lambda"]
     ;; non-control primitives (zero? empty? first rest cons - print)
-    [--> (do-call label zero? (0) σ κ)
-         (#t σ κ)
-         "zero? true"]
     [--> (do-call label zero? (v) σ κ)
-         (#f σ κ)
-         (side-condition/hidden (not (zero? (term v))))
-         "zero? false"]
+         (,(zero? (term v)) σ κ)
+         "zero?"]
     [--> (do-call label + (integer ...) σ κ)
          (,(apply + (term (integer ...))) σ κ)
          "plus"]
-    [--> (do-call label empty? ('()) σ κ)
-         (#t σ κ)
-         "empty? true"]
     [--> (do-call label empty? (v) σ κ)
-         (#t σ κ)
-         (side-condition/hidden (not (null? (term v))))
-         "empty? false"]
+         (,(empty? (term v)) σ κ)
+         "empty?"]
     [--> (do-call label first ((pair a_fst a_rst)) σ κ)
          (v σ κ)
          (where (any_0 ... v any_1 ...) (σlookup σ a_fst))
@@ -141,7 +133,7 @@
          "dw"]
     [--> (do-call label (comp κ_call) (v) σ κ)
          ((e_pre ρ) σ ((dw/call label a v_pre v_post (comp κ_next) v) κ))
-         (where ((name v_pre ((λ () e_pre) ρ)) v_post κ_next) (first-preprocess κ_call))
+         (where (a (name v_pre ((λ () e_pre) ρ)) v_post κ_next) (first-preprocess κ_call))
          "comp-pre"]
     [--> (do-call label (comp κ_call) (v) σ κ)
          (v σ (kont-append κ_call κ))
@@ -161,7 +153,8 @@
     [--> (name ς (do-call label (cont tag κ_call) (v) σ κ))
          ((e_post ρ) σ ((call/i label (cont tag κ_call) v) κ_next))
          (where (any_0 ... (post ((λ () e_post) ρ) κ_next) any_1 ...)
-                (unwrap-call/cc κ_call tag κ))
+                ,(begin0 (term (unwrap-call/cc κ_call tag κ))
+                         (printf "Done~%")))
          "cont-post"]
     [--> (do-call label (cont tag κ_call) (v) σ κ)
          (v σ κ_next)
