@@ -31,6 +31,8 @@
 (define-metafunction L
   [(lookup σ ρ x) ,(hash-ref (term σ) (hash-ref (term ρ) (term x)))])
 (define-metafunction L
+  [(Mlookup M any) ,(hash-ref (term M) (term any) (set))])
+(define-metafunction L
   [(extend ρ x a) ,(hash-set (term ρ) (term x) (term a))])
 (define-metafunction L
   [(σextend σ a (many vs))
@@ -59,7 +61,7 @@
    ,(set->list (hash-ref (term Ξ) (term (· σ))))])
 
 (define-metafunction L
-  [(injectW e) (,(hash (term ((e #hash()) mt)) 0) ,(set (term ((e #hash()) mt))) #hash() 0 #hash())])
+  [(injectW e) (,(hash (term ((e #hash()) mt)) 0) ,(set (term ((e #hash()) mt))) #hash() 0 #hash() #hash())])
 
 (define (join σ₀ σ₁)
   (for/fold ([σ σ₀]) ([(a vs) (in-hash σ₁)])
@@ -69,40 +71,46 @@
   (reduction-relation L
     #:arrow -->
     ;; Variable reference
-    [--> ({(x ρ) k} σ Ξ)
-         ({(many (lookup σ ρ x)) k} () ())]
+    [--> ({(x ρ) k} σ Ξ M)
+         ({(many (lookup σ ρ x)) k} () () ())]
     ;; Evaluate application
-    [--> ({((e_0 e_1) ρ) k} σ Ξ)
-         ({(e_0 ρ) ((ar (e_1 ρ)) k)} () ())]
+    [--> ({((e_0 e_1) ρ) k} σ Ξ M)
+         ({(e_0 ρ) ((ar (e_1 ρ)) k)} () () ())]
     ;; Evaluate let binding
-    [--> ({((let ([x e_0]) e_1) ρ) k} σ Ξ)
-         ({(e_0 ρ) ((lt x e_1 ρ) k)} () ())]
+    [--> ({((let ([x e_0]) e_1) ρ) k} σ Ξ M)
+         ({(e_0 ρ) ((lt x e_1 ρ) k)} () () ())]
     ;; Function done. Evaluate argument
-    [--> ({v ((ar ·) k)} σ Ξ)
-         ({· ((fn v) k)} () ())]
+    [--> ({v ((ar ·) k)} σ Ξ M)
+         ({· ((fn v) k)} () () ())]
     ;; Function call
-    [--> ((name ς {v ((fn v_f) k)}) σ_0 Ξ)
-         ({· (rt · σ_0)} δ (push Ξ (· σ_0) k))
+    [--> ((name ς {v ((fn v_f) k)}) σ_0 Ξ M)
+         ({· (rt · σ_0)} δ (push Ξ (· σ_0) k) ())
          (where (v_p ... ((λf (x) e) ρ_0) v_s ...) (from-many v_f))
          (where (ρ_1 δ) (bind ς σ_0 ρ_0 x v))       
          (where · (e ρ_1))]
+    ;; Use memo table
+    [--> ((name ς {v ((fn v_f) k)}) σ_0 Ξ M)
+         ({(many (Mlookup M (· (applyΔ σ δ)))) k} () () ())
+         (where (v_p ... ((λf (x) e) ρ_0) v_s ...) (from-many v_f))
+         (where (ρ_1 δ) (bind ς σ_0 ρ_0 x v))
+         (where · (e ρ_1))]
     ;; Let binding
-    [--> ((name ς {v ((lt x e ρ_0) k)}) σ_0 Ξ)
-         ({· k} δ ())
+    [--> ((name ς {v ((lt x e ρ_0) k)}) σ_0 Ξ M)
+         ({· k} δ () ())
          (where (ρ_1 δ) (bind ς σ_0 ρ_0 x v))
          (where · (e ρ_1))]
     ;; "Return"
-    [--> ({v (rt · σ_rt)} σ Ξ)
-         ({v k} () ())
+    [--> ({v (rt · σ_rt)} σ Ξ M)
+         ({v k} () () ((· σ_rt) ,(set (term v))))
          (where (k_0 ... k k_1 ...) (pop Ξ (· σ_rt)))]
     ;; Answers self-reduce.
-    [--> ({v mt} σ Ξ) ({v_0 mt} () ())
+    [--> ({v mt} σ Ξ M) ({v_0 mt} () () ())
          (where (v_p ... v_0 v_s ...) (from-many v))]))
 
 (define W
   (reduction-relation L
-    [--> (Σ F σ σt Ξ)
-         ,(step-system (term Σ) (term F) (term σ) (term σt) (term Ξ))]))
+    [--> (Σ F σ σt Ξ M)
+         ,(step-system (term Σ) (term F) (term σ) (term σt) (term Ξ) (term M))]))
 
 (define (will-change? σ δ)
   (for/or ([pair (in-list δ)])
@@ -116,18 +124,19 @@
     (match pair
       [`(,k ,v) (hash-set h k (set-union (hash-ref h k (set)) v))])))
 
-(define (step-system Σ F σ σt Ξ)
-  (define-values (Σ* F* δ δΞ changes?)
+(define (step-system Σ F σ σt Ξ M)
+  (define-values (Σ* F* δ δΞ δM changes?)
     (for/fold ([Σ* Σ]
                [F* (set)]
                [δ '()]
                [δΞ '()]
+               [δM '()]
                [changes? #f])
         ([ς (in-set F)])
-      (for/fold ([Σ* Σ*] [F* F*] [δ δ] [δΞ δΞ] [changes? changes?])
-          ([ςσΞ (in-list (apply-reduction-relation R (term (,ς ,σ ,Ξ))))])
+      (for/fold ([Σ* Σ*] [F* F*] [δ δ] [δΞ δΞ] [δM δM] [changes? changes?])
+          ([ςσΞ (in-list (apply-reduction-relation R (term (,ς ,σ ,Ξ ,M))))])
         (match ςσΞ
-          [`(,ς ,δ* ,δΞ*)
+          [`(,ς ,δ* ,δΞ* ,δM*)
            (define changes* (or changes? (will-change? σ δ*)))
            (values (hash-set Σ* ς σt)
                    (cond
@@ -136,15 +145,17 @@
                     [else (set-add F* ς)])
                    (append δ* δ)
                    (append δΞ* δΞ)
+                   (append δM* δM)
                    changes*)]))))
   (define σ* (applyΔ σ δ))
   (define Ξ* (applyΔ Ξ δΞ))
+  (define M* (applyΔ M δM))
   (if (set-empty? F*)
       (term (,(for/set ([(ς _) (in-hash Σ*)]
                         #:when (redex-match L (v mt) ς))
                 (first ς))
              ,σ*))
-      (term (,Σ* ,F* ,σ* ,(if changes? (add1 σt) σt) ,Ξ*))))
+      (term (,Σ* ,F* ,σ* ,(if changes? (add1 σt) σt) ,Ξ* ,M*))))
 
 (define count-down
   (term (let ([Yf (lambda (f)

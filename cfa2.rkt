@@ -20,7 +20,7 @@
   [ctx (· ξ fake v σt)]
   [fake #f a]
   ;; returns are threaded through a table
-  [Ξ (side-condition (name Ξ any) (hash? (term Ξ)))]
+  [(Ξ M) (side-condition (name Ξ any) (hash? (term Ξ)))]
   [ς (· ξ k) (v ξ k)]
   [Σ (side-condition (name Σ any) (hash? (term Σ)))]
   [F (side-condition (name F any) (set? (term F)))]
@@ -66,6 +66,8 @@
                              (hash-ref (term ξ) a (λ () (error 'lookup "Bad ξ ~a" a)))
                              (hash-ref (term σ) a)))])
 (define-metafunction L
+  [(Mlookup M any) ,(hash-ref (term M) (term any) (set))])
+(define-metafunction L
   [(extend ρ x a) ,(hash-set (term ρ) (term x) (term a))])
 (define-metafunction L
   [(ξextend ξ a vs) ,(hash-set (term ξ) (term a) (term vs))])
@@ -107,6 +109,7 @@
     ,(set (term ((e #hash()) #hash() mt)))
     #hash()
     0
+    #hash()
     #hash())])
 
 (define (join σ₀ σ₁)
@@ -117,42 +120,50 @@
   (reduction-relation L
     #:arrow -->
     ;; Variable reference
-    [--> ({((x ℓ) ρ) ξ k} σ σt Ξ)
-         ({(many (lookup σ ρ ξ x ℓ)) ξ k} () ())]
+    [--> ({((x ℓ) ρ) ξ k} σ σt Ξ M)
+         ({(many (lookup σ ρ ξ x ℓ)) ξ k} () () ())]
     ;; Evaluate application
-    [--> ({((e_0 e_1) ρ) ξ k} σ σt Ξ)
-         ({(e_0 ρ) ξ ((ar (e_1 ρ) (unfakeable? e_0 ρ)) k)} () ())]
+    [--> ({((e_0 e_1) ρ) ξ k} σ σt Ξ M)
+         ({(e_0 ρ) ξ ((ar (e_1 ρ) (unfakeable? e_0 ρ)) k)} () () ())]
     ;; Evaluate let binding
-    [--> ({((let ([x e_0]) e_1) ρ) ξ k} σ σt Ξ)
-         ({(e_0 ρ) ξ ((lt x e_1 ρ) k)} () ())]
+    [--> ({((let ([x e_0]) e_1) ρ) ξ k} σ σt Ξ M)
+         ({(e_0 ρ) ξ ((lt x e_1 ρ) k)} () () ())]
     ;; Function done. Evaluate argument
-    [--> ({v ξ ((ar · fake) k)} σ σt Ξ)
-         ({· ξ ((fn v fake) k)} () ())]
+    [--> ({v ξ ((ar · fake) k)} σ σt Ξ M)
+         ({· ξ ((fn v fake) k)} () () ())]
     ;; Function call
-    [--> ((name ς {v ξ ((fn v_f fake) k)}) σ_0 σt Ξ)
-         ({· ξ_1 (rt ctx)} δ (push Ξ ctx ξ k))
+    [--> ((name ς {v ξ ((fn v_f fake) k)}) σ_0 σt Ξ M)
+         ({· ξ_1 (rt ctx)} δ (push Ξ ctx ξ k) ())
+         (where (v_p ... v_call v_s ...) (from-many v_f))
+         (where ((λf (x) e) ρ_0) v_call)
+         (where (ρ_1 ξ_1 δ) (bind ς σ_0 ρ_0 x v))       
+         (where · (e ρ_1))
+         (where ctx (· ξ_1 fake v_call σt))]
+    ;; Use memo table
+    [--> ((name ς {v ξ ((fn v_f fake) k)}) σ_0 σt Ξ M)
+         ({(many (Mlookup M ctx)) (unfake ξ fake v_call) k} () () ())
          (where (v_p ... v_call v_s ...) (from-many v_f))
          (where ((λf (x) e) ρ_0) v_call)
          (where (ρ_1 ξ_1 δ) (bind ς σ_0 ρ_0 x v))       
          (where · (e ρ_1))
          (where ctx (· ξ_1 fake v_call σt))]
     ;; Let binding
-    [--> ((name ς {v ξ ((lt x e ρ_0) k)}) σ_0 σt Ξ)
-         ({· ξ_1 k} δ ())
+    [--> ((name ς {v ξ ((lt x e ρ_0) k)}) σ_0 σt Ξ M)
+         ({· ξ_1 k} δ () ())
          (where (ρ_1 ξ_1 δ) (bind-let ς σ_0 ρ_0 ξ x v))
          (where · (e ρ_1))]
     ;; "Return" and fix fake rebinding if it can be fixed.
-    [--> ({v ξ (rt (name ctx (· ξ_ignore fake v_call σt_rt)))} σ σt Ξ)
-         ({v (unfake ξ_rt fake v_call) k} () ())
+    [--> ({v ξ (rt (name ctx (· ξ_ignore fake v_call σt_rt)))} σ σt Ξ M)
+         ({v (unfake ξ_rt fake v_call) k} () () ((ctx ,(set (term v)))))
          (where (any_0 ... (ξ_rt k) any_1 ...) (pop Ξ ctx))]
     ;; Answers self-reduce.
-    [--> ({v ξ mt} σ σt Ξ) ({v_0 ξ mt} () ())
+    [--> ({v ξ mt} σ σt Ξ M) ({v_0 ξ mt} () () ())
          (where (v_p ... v_0 v_s ...) (from-many v))]))
 
 (define W
   (reduction-relation L
-    [--> (Σ F σ σt Ξ)
-         ,(step-system (term Σ) (term F) (term σ) (term σt) (term Ξ))]))
+    [--> (Σ F σ σt Ξ M)
+         ,(step-system (term Σ) (term F) (term σ) (term σt) (term Ξ) (term M))]))
 
 (define (will-change? σ δ)
   (for/or ([pair (in-list δ)])
@@ -166,21 +177,22 @@
     (match pair
       [`(,k ,v) (hash-set h k (set-union (hash-ref h k (set)) v))])))
 
-(define (step-system Σ F σ σt Ξ)
+(define (step-system Σ F σ σt Ξ M)
   (define-values (Σ* F* δ δΞ changes?)
     (for/fold ([Σ* Σ]
                [F* (set)]
                [δ '()]
                [δΞ '()]
+               [δM '()]
                [changes? #f])
         ([ς (in-set F)])
-      (define reds (apply-reduction-relation R (term (,ς ,σ ,σt ,Ξ))))
+      (define reds (apply-reduction-relation R (term (,ς ,σ ,σt ,Ξ ,M))))
       (when (empty? reds)
         (printf "Irreducible ~a~%~%" (term (,ς ,σ ,σt ,Ξ))))
-      (for/fold ([Σ* Σ*] [F* F*] [δ δ] [δΞ δΞ] [changes? changes?])
+      (for/fold ([Σ* Σ*] [F* F*] [δ δ] [δΞ δΞ] [δM δM] [changes? changes?])
           ([ςσΞ (in-list reds)])
         (match ςσΞ
-          [`(,ς ,δ* ,δΞ*)
+          [`(,ς ,δ* ,δΞ* ,δM*)
            (define changes* (or changes? (will-change? σ δ*)))
            (values (hash-set Σ* ς σt)
                    (cond
@@ -189,15 +201,17 @@
                     [else (set-add F* ς)])
                    (append δ* δ)
                    (append δΞ* δΞ)
+                   (append δM* δM)
                    changes*)]))))
   (define σ* (applyΔ σ δ))
   (define Ξ* (applyΔ Ξ δΞ))
+  (define M* (applyΔ M δM))
   (if (set-empty? F*)
       (term (,(for/set ([(ς _) (in-hash Σ*)]
                         #:when (redex-match L (v ξ mt) ς))
                 (first ς))
              ,σ*))
-      (term (,Σ* ,F* ,σ* ,(if changes? (add1 σt) σt) ,Ξ*))))
+      (term (,Σ* ,F* ,σ* ,(if changes? (add1 σt) σt) ,Ξ* ,M*))))
 
 ;; Helper to make example programs not have to uniquely label all references.
 (define (label-references e)

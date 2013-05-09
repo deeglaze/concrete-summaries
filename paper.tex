@@ -118,7 +118,7 @@ operational semantics for the untyped lambda calculus (figure
 \begin{align*}
   \mexpr \in \Expr &= \svar{\mvar} \mid \sapp{\mexpr}{\mexpr} \mid \slam{\mvar}{\mexpr} \\
   \mstate \in \State &= (\Expr \times \Env) \times \Store \times \Kont \\
-  \mval \in \Value &::= \sclo{\slam{\mvar}{\mexpr}}{\menv} \\
+  \mval \in \Value &::= \vclo{\slam{\mvar}{\mexpr}}{\menv} \\
   \mkont \in \Kont &::= \kmt \mid \kar{\mexpr,\menv,\mkont} \mid \kfn{\mval,\mkont} \\
   \menv \in \Env &= \Var \to \Addr \\
   \mstore \in \Store &= \Addr \to \wp(\Value) \\
@@ -152,7 +152,7 @@ concrete semantics, we require the allocation metafunction $\alloc :
     $\tpl{(\mexpr, \menv), \mstore, \kfn{\mval, \mkont}}$
     \\
 % function call
-    $\tpl{\mval,\mstore,\kfn{\sclo{\slam{\mvar}{\mexpr}}{\menv}, \mkont}}$
+    $\tpl{\mval,\mstore,\kfn{\vclo{\slam{\mvar}{\mexpr}}{\menv}, \mkont}}$
     &
     $\tpl{(\mexpr, \extm{\menv}{\mvar}{\maddr}), \joinone{\mstore}{\maddr}{\mval}, \mkont}$
   \end{tabular}
@@ -241,7 +241,7 @@ means in the presence of first-class control in section \ref{sec:sr}.
     $\tpl{(\mexpr, \menv), \mstore, \kfn{\mval, \mkont}, \mktab, \mmemo}$
     \\
 % function call
-    $\tpl{\mval,\mstore,\kfn{\sclo{\slam{\mvar}{\mexpr}}{\menv}, \mkont},\mktab,\mmemo}$
+    $\tpl{\mval,\mstore,\kfn{\vclo{\slam{\mvar}{\mexpr}}{\menv}, \mkont},\mktab,\mmemo}$
     & % actually do call,
     $\tpl{\mpoint,
           \mstore',
@@ -368,7 +368,7 @@ the extra $\mframe$ component untouched.
 %     $\tpl{(\mexpr, \menv), \mstore, \mframe, \kfn{\mval, \mkont}}$
 %     \\
 % function call
-    $\tpl{\mval,\mstore,\mframe,\kfn{\sclo{\slam{\mvar}{\mexpr}}{\menv}, \mkont}}$
+    $\tpl{\mval,\mstore,\mframe,\kfn{\vclo{\slam{\mvar}{\mexpr}}{\menv}, \mkont}}$
     &
     $\tpl{(\mexpr, \extm{\menv}{\mvar}{\maddr}), \mstore', \mframe', \mkont}$
     \\ where & $(\mstore',\mframe') = \bind(\mstore,\mframe,\maddr,\mvar,\mval)$
@@ -478,6 +478,125 @@ as inserting a prompt, and returns as aborting to the nearest prompt.
   \end{tabular}  
   \caption{Machine semantics for shift/reset}
   \label{fig:shift-reset}
+\end{figure}
+
+Turning this into a table-based semantics involves making prompts a
+point of indirection, just like function calls. Memoization also gets
+a new context to consider, calling a continuation, because composable
+continuations act like functions. Figure \ref{fig:shift-reset-table0}
+has what one might naturally write using just this
+information. Unfortunately, since $\rt$ frames contain a store, and
+continuations can now appear in the store, this introduces a
+circularity that could cause the analysis to never terminate. For
+example, a loop that continually captures continuations would
+introduce unboundedly many continuation values due to the ever-growing
+store. This means the store is not finite height, and there may be no
+fixed point.
+
+\paragraph{Possible fixes to non-termination:} The simplest fix to the
+circularity would be to strip stores out of the context of the $\rt$
+frame in a captured continuation, and additionally consider contexts
+with a stripped store an abstraction of the same context with any
+store. This is a fairly brutal approximation of a captured
+continuation, so an alternative is to make this tunable with our
+precision-tuning friend, $\alloc$. Then, instead of entirely removing
+the store component of the $\rt$ context, we can replace it with an
+address of possible stores that it would approximate. The first
+brute-force approach is an instantiation of this, where the allocated
+address is always the same.
+
+\begin{figure}
+  \centering
+  $\mstate \stepto \mstate' \text{ where } \maddr = \alloc(\mstate)$ \\
+  \begin{tabular}{r|l}
+    \hline
+% Reset
+    $\tpl{(\sreset{\mexpr}, \menv), \mstore, \mkont, \mmkont, \mktab, \mmemo}$
+    &
+    $\tpl{\mpoint, \mstore, \kmt, \kprompt{\mctx}, \joinone{\mktab}{\mctx}{(\mkont,\mmkont)}, \mmemo}$
+    \\
+    where & $\mpoint = (\mexpr, \menv)$, $\mctx = (\mpoint, \mstore)$.
+    \\
+% Pop prompt
+    $\tpl{\mval, \mstore, \kmt, \kprompt{\mctx}, \mktab, \mmemo}$
+    &
+    $\tpl{\mval, \mstore, {\mkont}, {\mmkont}, \mktab, \joinone{\mmemo}{\mctx}{\mval}}$
+    if $(\mkont,\mmkont) \in \mktab(\mctx)$
+    \\
+% Shift
+    $\tpl{(\sshift{\mvar}{\mexpr}, \menv), \mstore, \mkont, \mmkont, \mktab, \mmemo}$
+    &
+    $\tpl{(\mexpr, \extm{\menv}{\mvar}{\maddr}), \joinone{\mstore}{\maddr}{\vcomp{\mkont}},\kmt,\mmkont,\mktab,\mmemo}$
+    \\
+% continuation call
+    $\tpl{\mval,\mstore,\kfn{\vcomp{\mkont'}, \mkont}, \mmkont, \mktab, \mmemo}$
+    &
+    $\tpl{\mval, \mstore, \mkont', \kprompt{\mctx}, \mktab',\mmemo}$
+    \\
+    where & $\mctx = (\mkont, \mval, \mstore')$ \\
+          & $\mktab' = \joinone{\mktab}{\mctx}{(\mkont,\mmkont)}$
+    \\
+% Memoized continuation call
+% continuation call
+    $\tpl{\mval,\mstore,\kfn{\vcomp{\mkont'}, \mkont}, \mmkont, \mktab, \mmemo}$
+    &
+    $\tpl{\mval', \mstore, \mkont, \mmkont, \mktab,\mmemo}$ if $\mval' \in \mmemo(\mkont',\mval,\mstore)$
+  \end{tabular}  
+  \caption{Faulty table-based semantics for shift/reset}
+  \label{fig:shift-reset-table0}
+\end{figure}
+
+The new indirection possibility changes $\Context$ to also include
+$\maddr$ where there was previously a $\mstore$, and $\KTab$ now
+additionally maps $\Addr$ to a set of stores. We introduce three new
+metafunctions to facilitate the new approximation:
+
+\newcommand{\replacectx}{\mathit{replace}\mstore}
+\newcommand{\addstore}{\mathit{add}\mstore}
+\begin{align*}
+  \returns(\mktab, ((\mexpr,\menv), \mstore)) &= \mktab((\mexpr,\menv), \mstore) \\
+  \returns(\mktab, ((\mexpr,\menv), \maddr)) &=
+    \bigcup\setbuild{\mktab((\mexpr,\menv),\mstore)}{\mstore \in \mktab(\maddr)}
+  \\[2pt]
+  \memoize(\mmemo, \mktab, ((\mexpr,\menv), \mstore), \mval) &=
+    \joinone{\mmemo}{((\mexpr,\menv), \mstore)}{\mval} \\
+  \memoize(\mmemo, \mktab, ((\mexpr,\menv), \maddr), \mval) &=
+    \mmemo \sqcup \bigsqcup\limits_{\mstore \in \mktab(\maddr)}\snglm{((\mexpr,\menv), \mstore)}{\mval}
+  \\[2pt]
+  \approximate(\mkont, \mktab, \maddr) &= (\replacectx(\mkont), \addstore{\mkont}) \\
+  \text{where }
+   \replacectx(\krt{((\mexpr,\menv),\_)}) &= \krt{((\mexpr,\menv),\maddr)} \\
+   \replacectx(\kar{\mexpr,\menv,\mkont}) &= \kar{\mexpr,\menv,\replacectx(\mkont)} \\
+   \replacectx(\kfn{\mval, \mkont}) &= \kfn{\mval,\replacectx(\mkont)}
+  \\[2pt]
+   \addstore(\krt{((\mexpr,\menv),\mstore)}) &= \joinone{\mktab}{\maddr}{\mstore} \\
+   \addstore(\krt{((\mexpr,\menv),\maddr')}) &= \joinm{\mktab}{\maddr}{\mktab(\maddr')} \\
+   \addstore(\kar{\mexpr,\menv,\mkont}) &= \addstore(\mkont) \\
+   \addstore(\kfn{\mval, \mkont}) &= \addstore(\mkont)
+\end{align*}
+
+\begin{figure}
+  \centering
+% Shift
+  $\mstate \stepto \mstate' \text{ where } \maddr = \alloc(\mstate)$ \\
+  \begin{tabular}{r|l}
+    \hline
+    $\tpl{(\sshift{\mvar}{\mexpr}, \menv), \mstore, \mkont, \mmkont, \mktab, \mmemo}$
+    &
+    $\tpl{(\mexpr, \extm{\menv}{\mvar}{\maddr}), \joinone{\mstore}{\maddr}{\vcomp{\mkont'}},\kmt,\mmkont,\mktab',\mmemo}$
+    \\
+    where & $\maddr = \alloc(\varsigma)$, $(\mkont',\mktab') = \approximate(\mkont, \mktab, \maddr)$
+\\
+% Return
+   $\tpl{\mval, \mstore, \krt{\mctx}, \mmkont, \mktab, \mmemo}$
+   &
+   $\tpl{\mval, \mstore, \mkont, \mmkont, \mktab, \mmemo'}$
+   if $\mkont \in \returns(\mktab, \mctx)$
+   \\
+   where & $\mmemo' = \memoize(\mmemo, \mktab, \mctx, \mval)$
+  \end{tabular}
+  \caption{Fixed table-based semantics for shift/reset}
+  \label{fig:shift-reset-table1}
 \end{figure}
 
 % Since continuations can now appear in the store, and the store is in

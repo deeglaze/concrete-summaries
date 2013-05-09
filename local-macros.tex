@@ -21,6 +21,7 @@
 \newcommand{\mktab}{\Xi}
 \newcommand{\mmemo}{M}
 \newcommand{\mpoint}{p}
+\newcommand{\mctx}{\mathit{ctx}}
 \newcommand{\mframe}{\xi}
 \newcommand{\mkframe}{\phi}
 \newcommand{\mlab}{\ell}
@@ -43,6 +44,8 @@
 \newcommand{\Value}{\mathit{Value}}
 \newcommand{\Prims}{\mathit{Prims}}
 
+\newcommand{\Context}{\mathit{Context}}
+
 \newcommand{\Point}{\mathit{Point}}
 \newcommand{\Frame}{\mathit{Frame}}
 
@@ -62,6 +65,10 @@
 \newcommand{\captureupto}{\mathit{capture\text{-}upto}}
 \newcommand{\aborttargets}{\mathit{abort\text{-}targets}}
 
+\newcommand{\returns}{\mathit{returns}}
+\newcommand{\memoize}{\mathit{memoize}}
+\newcommand{\approximate}{\mathit{approximate}}
+
 % Constructors
 \newcommand{\svar}[2][{}]{#2^{#1}}
 \newcommand{\sapp}[3][{}]{(#2\ #3)#1}
@@ -69,16 +76,16 @@
 \newcommand{\sprim}[1]{#1}
 \newcommand{\sreset}[1]{(\texttt{reset}\ #1)}
 \newcommand{\sshift}[2]{(\texttt{shift} (#1) #2)}
-\newcommand{\sclo}[2]{(#1, #2)}
 \newcommand{\vcont}[1]{\mathbf{cont}(#1)}
 \newcommand{\vcomp}[1]{\mathbf{comp}(#1)}
+\newcommand{\vclo}[2]{(#1, #2)}
 \newcommand{\kar}[2][{}]{\mathbf{ar}#1(#2)}
 \newcommand{\kfn}[2][{}]{\mathbf{fn}#1(#2)}
 \newcommand{\rt}{\mathbf{rt}}
 \newcommand{\krt}[1]{\rt(#1)}
 \newcommand{\kmt}{\mathbf{mt}}
 
-\newcommand{\kprompt}{\#}
+\newcommand{\kprompt}[1]{\#(#1)}
 \newcommand{\dw}{\mathbf{dw}}
 \newcommand{\kdw}[1]{\dw(#1)}
 \newcommand{\abrt}{\mathbf{abrt}}
