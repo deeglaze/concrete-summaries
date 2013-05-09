@@ -282,7 +282,7 @@ and $\mmemo$ shared amongst all states.
                 \mktab' &=  \bigsqcup\setbuild{\mktab'}{\wn(\_, \_, \mktab', \_) \in I} \\
                 \mmemo' &=  \bigsqcup\setbuild{\mmemo'}{\wn(\_, \_, \_, \mmemo') \in I} \\
                 S' &= \setbuild{(\mastate',\mstore')}{\wn(\mastate', \_, \_, \_) \in I} \\
-                F' &= \setbuild{\mastate'}{(\mastate',\_) \in S', (\mastate',\mstore') \notin S} \\
+                F' &= \setbuild{\mastate'}{(\mastate',\_) \in S' \setminus S} \\
                 \wn(\tpl{(\mexpr,\menv),\mkont},\mstore,\mktab,\mmemo)
                    &= \tpl{(\mexpr,\menv),\mstore,\mkont,\mktab,\mmemo}
 \end{align*}
@@ -448,8 +448,17 @@ preserve it.
 The way we have been splitting continuations at function calls has
 similarities to the meta-continuation approach to modeling delimited
 control, given in figure \ref{fig:shift-reset} (adapted from
-~\citep{ianjohnson:Biernacki2006274}). We could view each function call
-as inserting a prompt, and returns as aborting to the nearest prompt.
+~\citep{ianjohnson:Biernacki2006274}). We could view each function
+call as inserting a prompt, and returns as aborting to the nearest
+prompt. The changed semantic spaces for the shift/reset semantics are as
+follows:
+
+\begin{align*}
+  \mstate \in \State &::= \tpl{\mpoint, \mstore, \mkont, \mmkont} \\
+  \mpoint \in \Point &::= (\mexpr, \menv) \mid \mval \\
+  \mval \in \Value &::= \vclo{\slam{\mvar}{\mexpr}}{\menv} \mid \vcomp{\mkont} \\
+  \mmkont \in \MKont &::= \kmt \mid \mkapp{\mkont}{\mmkont}
+\end{align*}
 
 \begin{figure}
   \centering
@@ -483,15 +492,24 @@ as inserting a prompt, and returns as aborting to the nearest prompt.
 Turning this into a table-based semantics involves making prompts a
 point of indirection, just like function calls. Memoization also gets
 a new context to consider, calling a continuation, because composable
-continuations act like functions. Figure \ref{fig:shift-reset-table0}
-has what one might naturally write using just this
-information. Unfortunately, since $\rt$ frames contain a store, and
-continuations can now appear in the store, this introduces a
-circularity that could cause the analysis to never terminate. For
-example, a loop that continually captures continuations would
-introduce unboundedly many continuation values due to the ever-growing
-store. This means the store is not finite height, and there may be no
-fixed point.
+continuations act like functions. The new semantic spaces are then
+
+\begin{align*}
+  \mctx \in \Context &::= ((\mexpr,\menv),\mstore) \mid (\vcomp{\mkont},\mval,\mstore) \\
+  \mkont \in \Kont &= \kmt \mid \krt{\mctx} \mid \kar{\mexpr,\menv,\mkont} \mid \kfn{\mval,\mkont} \\
+  \mmkont \in \MKont &::= \kmt \mid \kprompt{\mctx} \\
+  \mktab \in \KTab &= \Context \to (\wp(\Kont \times \MKont) \cup \Kont) \\
+  \mmemo \in \Memo &= \Context \to \wp(\Value)
+\end{align*}
+
+Figure \ref{fig:shift-reset-table0} has what one might naturally write
+using just this information. Unfortunately, since $\rt$ frames contain
+a store, and continuations can now appear in the store, this
+introduces a circularity that could cause the analysis to never
+terminate. For example, a loop that continually captures continuations
+would introduce unboundedly many continuation values due to the
+ever-growing store. This means the store is not finite height, and
+there may be no fixed point.
 
 \paragraph{Possible fixes to non-termination:} The simplest fix to the
 circularity would be to strip stores out of the context of the $\rt$
@@ -501,9 +519,7 @@ store. This is a fairly brutal approximation of a captured
 continuation, so an alternative is to make this tunable with our
 precision-tuning friend, $\alloc$. Then, instead of entirely removing
 the store component of the $\rt$ context, we can replace it with an
-address of possible stores that it would approximate. The first
-brute-force approach is an instantiation of this, where the allocated
-address is always the same.
+address of possible stores that it would approximate.
 
 \begin{figure}
   \centering
@@ -547,32 +563,18 @@ address is always the same.
 \end{figure}
 
 The new indirection possibility changes $\Context$ to also include
-$\maddr$ where there was previously a $\mstore$, and $\KTab$ now
-additionally maps $\Addr$ to a set of stores. We introduce three new
-metafunctions to facilitate the new approximation:
+$\maddr$ where there was previously a $\mstore$ (though contexts for
+continuation calls remain unchanged), and $\KTab$ now additionally
+maps $\Addr$ to a set of stores. The rules that change are presented in figure \ref{fig:shift-reset-table1}.
 
-\newcommand{\replacectx}{\mathit{replace}\mstore}
-\newcommand{\addstore}{\mathit{add}\mstore}
 \begin{align*}
-  \returns(\mktab, ((\mexpr,\menv), \mstore)) &= \mktab((\mexpr,\menv), \mstore) \\
-  \returns(\mktab, ((\mexpr,\menv), \maddr)) &=
-    \bigcup\setbuild{\mktab((\mexpr,\menv),\mstore)}{\mstore \in \mktab(\maddr)}
-  \\[2pt]
-  \memoize(\mmemo, \mktab, ((\mexpr,\menv), \mstore), \mval) &=
-    \joinone{\mmemo}{((\mexpr,\menv), \mstore)}{\mval} \\
-  \memoize(\mmemo, \mktab, ((\mexpr,\menv), \maddr), \mval) &=
-    \mmemo \sqcup \bigsqcup\limits_{\mstore \in \mktab(\maddr)}\snglm{((\mexpr,\menv), \mstore)}{\mval}
-  \\[2pt]
-  \approximate(\mkont, \mktab, \maddr) &= (\replacectx(\mkont), \addstore{\mkont}) \\
-  \text{where }
-   \replacectx(\krt{((\mexpr,\menv),\_)}) &= \krt{((\mexpr,\menv),\maddr)} \\
-   \replacectx(\kar{\mexpr,\menv,\mkont}) &= \kar{\mexpr,\menv,\replacectx(\mkont)} \\
-   \replacectx(\kfn{\mval, \mkont}) &= \kfn{\mval,\replacectx(\mkont)}
-  \\[2pt]
-   \addstore(\krt{((\mexpr,\menv),\mstore)}) &= \joinone{\mktab}{\maddr}{\mstore} \\
-   \addstore(\krt{((\mexpr,\menv),\maddr')}) &= \joinm{\mktab}{\maddr}{\mktab(\maddr')} \\
-   \addstore(\kar{\mexpr,\menv,\mkont}) &= \addstore(\mkont) \\
-   \addstore(\kfn{\mval, \mkont}) &= \addstore(\mkont)
+  \mctx \in \Context &::= ((\mexpr,\menv),\mstore) \mid ((\mexpr,\menv),\maddr) \mid (\vcomp{\mkont},\mval,\mstore) \\
+  \msctx \in \SContext &::= ((\mexpr,\menv),\maddr) \\
+  \mskont \in \SKont &= \krt{\msctx} \mid \ldots \\
+  \mval \in \Value &= \vclo{\slam{\mvar}{\mexpr}}{\menv} \mid \vcomp{\mskont} \\
+  \mmkont \in \MKont &::= \kmt \mid \kprompt{\mctx} \\
+  \mktab \in \KTab &= (\Context \to (\wp(\Kont \times \MKont) \cup \Kont)) \\
+                   &\cup (\Addr \to \wp(\Store))
 \end{align*}
 
 \begin{figure}
@@ -599,27 +601,85 @@ metafunctions to facilitate the new approximation:
   \label{fig:shift-reset-table1}
 \end{figure}
 
-% Since continuations can now appear in the store, and the store is in
-% the $\rt$ continuation, we introduced a circularity in the data
-% represented in our machine, which can lead to a non-terminating
-% analysis --- this is precisely what the AAM approach avoids. There is
-% currently no known model of computation that allows stack capture and
-% replacement/composition that has decidable reachability, so we choose
-% to approximate in this case. We represent only a bounded amount of a
-% continuation, possibly with some gaps, after which we say that any
-% continuation matching that ``outline'' is acceptable. The amount to
-% represent is a tunable parameter; we can represent the continuation up
-% to boundedly-many function calls, or have innermost prompt tags
-% matching $\many\mtag$ for boundedly-long $\many\mtag$ (or a mix of
-% $dw$ frames and prompt tags), etc.
+The metafunctions mentioned in the fixed semantics all deal with the
+addition of $\maddr$ to contexts. If the context in an $\rt$ frame is
+approximate, we must return to all the continuations known for all the
+contexts it approximates ($\returns$). At return boundaries, the memo
+table must add the result to all the represented contexts
+($\memoize$). At capture time, we strip the store in the $\rt$ frame
+if there is one, and replace it with an address.
+
+\newcommand{\replacectx}{\mathit{replace}\mstore}
+\newcommand{\addstore}{\mathit{add}\mstore}
+\begin{align*}
+  \returns(\mktab, ((\mexpr,\menv), \mstore)) &= \mktab((\mexpr,\menv), \mstore) \\
+  \returns(\mktab, ((\mexpr,\menv), \maddr)) &=
+    \bigcup\setbuild{\mktab((\mexpr,\menv),\mstore)}{\mstore \in \mktab(\maddr)}
+  \\[2pt]
+  \memoize(\mmemo, \mktab, ((\mexpr,\menv), \mstore), \mval) &=
+    \joinone{\mmemo}{((\mexpr,\menv), \mstore)}{\mval} \\
+  \memoize(\mmemo, \mktab, ((\mexpr,\menv), \maddr), \mval) &=
+    \mmemo \sqcup \bigsqcup\limits_{\mstore \in \mktab(\maddr)}\snglm{((\mexpr,\menv), \mstore)}{\mval}
+  \\[2pt]
+  \approximate(\mkont, \mktab, \maddr) &= (\replacectx(\mkont), \addstore{\mkont}) \\
+  \text{where }
+   \replacectx(\kmt) &= \kmt \\
+   \replacectx(\krt{((\mexpr,\menv),\_)}) &= \krt{((\mexpr,\menv),\maddr)} \\
+   \replacectx(\kar{\mexpr,\menv,\mkont}) &= \kar{\mexpr,\menv,\replacectx(\mkont)} \\
+   \replacectx(\kfn{\mval, \mkont}) &= \kfn{\mval,\replacectx(\mkont)}
+  \\[2pt]
+   \addstore(\kmt) &= \mktab \\
+   \addstore(\krt{((\mexpr,\menv),\mstore)}) &= \joinone{\mktab}{\maddr}{\mstore} \\
+   \addstore(\krt{((\mexpr,\menv),\maddr')}) &= \joinm{\mktab}{\maddr}{\mktab(\maddr')} \\
+   \addstore(\kar{\mexpr,\menv,\mkont}) &= \addstore(\mkont) \\
+   \addstore(\kfn{\mval, \mkont}) &= \addstore(\mkont)
+\end{align*}
+
+The result of this viewpoint is a sound, precise, and computable
+semantics for a ``pushdown approach'' to analyzing delimited,
+composable control. To handle non-composable control, we can simply
+remove the prompts and keep $\approximate$.
 
 \section{Related Work}
 
-AAM, PDCFA, CFA2, CFA2+, Reps
+The immediately related work is that of PDCFA
+\citet{ianjohnson:earl2010pdcfa},
+CFA2~\citet{ianjohnson:vardoulakis-lmcs11,
+  ianjohnson:Vardoulakis2011Pushdown}, and AAM
+~\citet{dvanhorn:VanHorn2010Abstracting}, the first two of which we
+recreated in full detail. The version of CFA2 that handles
+\rackett{call/cc} does not handle composable control, and is dependent
+on a restricted CPS representation. They also had no way to tune the
+precision of their first class continuation approximation. Since
+\rackett{call/cc} can be simulated with shift/reset, this work
+supercedes theirs.
+
+Pushdown models have existed in the first-order static analysis
+literature ~\citet[Chapter
+7]{local:muchnick:jones:flow-analysis:1981}\citet{ianjohnson:reps:pushdown:1995},
+and the first-order model checking literature
+\citet{ianjohnson:bouajiani:esparza:pushdown:1997}, for some time. The
+higher-order setting imposes additional challenges that make their
+methods difficult to adapt. The most important constraint is that we
+can't know all call-sites of a function/method before the analysis
+begins, which their methods heavily rely on.
 
 \section{Conclusion}
 
-Tables, truncation and prompts are the solution to all life's ills.
+As the programming world continues to embrace behavioral values, it
+becomes more important to import the powerful techniques pioneered by
+the first-order analysis and model checking communities. CFA2 and
+PDCFA paved the way, and in large part inspired this work. It is our
+view that systematic approaches to applying the techniques are pivotal
+to scaling them to ``real languages.'' We believe that the recipe that
+this paper set forth is a step in that direction. That is, make
+continuation tables keyed with enough context, and memoize at the
+introduced indirection points. The result in a language with
+well-bracketed control is a ``pushdown analysis'' using
+summarization. In a language without well-bracketed control, we are
+not chained to a pushdown automaton as the target of the
+approximation, so the techniques still apply and give better precision
+than regular methods.
 
 \bibliographystyle{chicago}
 \bibliography{bibliography}
