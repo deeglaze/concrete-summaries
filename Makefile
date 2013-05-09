@@ -39,7 +39,7 @@ refresh: getbib
 getbib:
 	$(WGETDVANHORNBIB)
 	$(WGETIANJOHNSONBIB)
-	cat dvanhorn.bib ianjohnson.bib > bibliography.bib
+	cat dvanhorn.bib ianjohnson.bib local.bib > bibliography.bib
 	-bibclean bibliography.bib > bibliography.bib.clean
 	-mv bibliography.bib.clean bibliography.bib
 

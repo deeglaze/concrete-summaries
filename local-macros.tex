@@ -3,18 +3,32 @@
 \newcommand{\mexpri}[1]{e_{#1}}
 \newcommand{\mvar}{x}
 \newcommand{\mval}{v}
+\newcommand{\mvalpre}{v_\mathit{pre}}
+\newcommand{\mvalpost}{v_\mathit{post}}
+\newcommand{\mtag}{v_{\mathit{t}}}
+\newcommand{\mhandler}{v_\mathit{h}}
 \newcommand{\maddr}{a}
 \newcommand{\menv}{\rho}
 \newcommand{\mstore}{\sigma}
 \newcommand{\mkont}{\kappa}
+\newcommand{\mmkontacc}{C_\mathit{acc}}
+\newcommand{\mmkont}{C}
 \newcommand{\mstate}{\varsigma}
 \newcommand{\mastate}{\hat\varsigma}
+
+\newcommand{\mprim}{\mathit{prim}}
 
 \newcommand{\mktab}{\Xi}
 \newcommand{\mmemo}{M}
 \newcommand{\mpoint}{p}
 \newcommand{\mframe}{\xi}
+\newcommand{\mkframe}{\phi}
 \newcommand{\mlab}{\ell}
+
+\newcommand{\callcc}{\rackett{call/cc}}
+\newcommand{\callcomp}{\rackett{call/comp}}
+\newcommand{\abort}{\rackett{abort}}
+\newcommand{\dynamicwind}{\rackett{dynamic-wind}}
 
 % Metavariables for Spaces
 \newcommand{\Var}{\mathit{Var}}
@@ -22,10 +36,15 @@
 \newcommand{\Expr}{\mathit{Expr}}
 \newcommand{\Store}{\mathit{Store}}
 \newcommand{\Kont}{\mathit{Kont}}
+\newcommand{\MKont}{\mathit{MKont}}
 \newcommand{\Env}{\mathit{Env}}
 \newcommand{\State}{\mathit{State}}
 \newcommand{\System}{\mathit{System}}
 \newcommand{\Value}{\mathit{Value}}
+\newcommand{\Prims}{\mathit{Prims}}
+
+\newcommand{\Point}{\mathit{Point}}
+\newcommand{\Frame}{\mathit{Frame}}
 
 \newcommand{\KTab}{\mathit{KTable}}
 \newcommand{\Memo}{\mathit{Memo}}
@@ -35,22 +54,52 @@
 \newcommand{\bind}{\mathit{bind}}
 \newcommand{\lookup}{{\mathcal L}}
 \newcommand{\wn}{\mathit{wn}}
+\newcommand{\dom}{\text{dom}}
+\newcommand{\onep}{\mathit{One?}}
+\newcommand{\reverse}{\mathit{reverse}}
+\newcommand{\revapp}{\mathit{rev\text{-}append}}
+\newcommand{\finalize}{\mathit{finalize}}
+\newcommand{\captureupto}{\mathit{capture\text{-}upto}}
+\newcommand{\aborttargets}{\mathit{abort\text{-}targets}}
 
 % Constructors
 \newcommand{\svar}[2][{}]{#2^{#1}}
 \newcommand{\sapp}[3][{}]{(#2\ #3)#1}
 \newcommand{\slam}[3][{}]{\lambda#1 #2. #3}
+\newcommand{\sprim}[1]{#1}
+\newcommand{\sreset}[1]{(\texttt{reset}\ #1)}
+\newcommand{\sshift}[2]{(\texttt{shift} (#1) #2)}
+\newcommand{\sclo}[2]{(#1, #2)}
+\newcommand{\vcont}[1]{\mathbf{cont}(#1)}
+\newcommand{\vcomp}[1]{\mathbf{comp}(#1)}
 \newcommand{\kar}[2][{}]{\mathbf{ar}#1(#2)}
 \newcommand{\kfn}[2][{}]{\mathbf{fn}#1(#2)}
-\newcommand{\krt}[1]{\mathbf{rt}(#1)}
+\newcommand{\rt}{\mathbf{rt}}
+\newcommand{\krt}[1]{\rt(#1)}
 \newcommand{\kmt}{\mathbf{mt}}
 
+\newcommand{\kprompt}{\#}
+\newcommand{\dw}{\mathbf{dw}}
+\newcommand{\kdw}[1]{\dw(#1)}
+\newcommand{\abrt}{\mathbf{abrt}}
+\newcommand{\kabrt}[1]{\abrt(#1)}
+\newcommand{\kev}[1]{\mathbf{ev}(#1)}
+
+\newcommand{\mextag}[4]{(\#^{#2}_{#3} #1\ #4)}
+\newcommand{\kmatch}[4]{(?^{#2}_{#3} #1\ #4)}
+\newcommand{\mkapp}[2]{#1\circ #2}
 
 % Notations
 \newcommand{\tpl}[1]{\langle #1 \rangle}
+\newcommand{\vect}[1]{\langle #1 \rangle}
+\newcommand{\runpost}[1]{\langle #1 \rangle_{\mathit{post}}}
+\newcommand{\runhandler}[1]{\langle #1 \rangle_{\mathit{handler}}}
+\newcommand{\cstate}[1]{\langle #1 \rangle_{\mathit{call}}}
 \newcommand{\set}[1]{\{ #1 \}}
 \newcommand{\setbuild}[2]{\{ #1\ :\ #2\}}
 \newcommand{\sa}[1]{\widehat{#1}}
+
+\newcommand{\many}[1]{\overline{#1}}
 
 \newcommand{\snglm}[2]{[#1 \mapsto \set{#2}]}
 \newcommand{\extm}[3]{#1[#2 \mapsto #3]}
