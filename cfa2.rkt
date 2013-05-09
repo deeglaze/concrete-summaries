@@ -17,7 +17,7 @@
   ;; continuations are lists of frames terminated by mt or a return
   [ϕ (ar · fake) (fn v fake) (lt x e ρ)]
   [k (rt ctx) mt (ϕ k)]
-  [ctx (· ξ fake v σt)]
+  [ctx (· ξ σt)]
   [fake #f a]
   ;; returns are threaded through a table
   [(Ξ M) (side-condition (name Ξ any) (hash? (term Ξ)))]
@@ -133,12 +133,12 @@
          ({· ξ ((fn v fake) k)} () () ())]
     ;; Function call
     [--> ((name ς {v ξ ((fn v_f fake) k)}) σ_0 σt Ξ M)
-         ({· ξ_1 (rt ctx)} δ (push Ξ ctx ξ k) ())
+         ({· ξ_1 (rt ctx)} δ (push Ξ ctx (unfake ξ fake v_call) k) ())
          (where (v_p ... v_call v_s ...) (from-many v_f))
          (where ((λf (x) e) ρ_0) v_call)
          (where (ρ_1 ξ_1 δ) (bind ς σ_0 ρ_0 x v))       
          (where · (e ρ_1))
-         (where ctx (· ξ_1 fake v_call σt))]
+         (where ctx (· ξ_1 σt))]
     ;; Use memo table
     [--> ((name ς {v ξ ((fn v_f fake) k)}) σ_0 σt Ξ M)
          ({(many (Mlookup M ctx)) (unfake ξ fake v_call) k} () () ())
@@ -146,15 +146,15 @@
          (where ((λf (x) e) ρ_0) v_call)
          (where (ρ_1 ξ_1 δ) (bind ς σ_0 ρ_0 x v))       
          (where · (e ρ_1))
-         (where ctx (· ξ_1 fake v_call σt))]
+         (where ctx (· ξ_1 σt))]
     ;; Let binding
     [--> ((name ς {v ξ ((lt x e ρ_0) k)}) σ_0 σt Ξ M)
          ({· ξ_1 k} δ () ())
          (where (ρ_1 ξ_1 δ) (bind-let ς σ_0 ρ_0 ξ x v))
          (where · (e ρ_1))]
     ;; "Return" and fix fake rebinding if it can be fixed.
-    [--> ({v ξ (rt (name ctx (· ξ_ignore fake v_call σt_rt)))} σ σt Ξ M)
-         ({v (unfake ξ_rt fake v_call) k} () () ((ctx ,(set (term v)))))
+    [--> ({v ξ (rt (name ctx (· ξ_ignore σt_rt)))} σ σt Ξ M)
+         ({v ξ_rt k} () () ((ctx ,(set (term v)))))
          (where (any_0 ... (ξ_rt k) any_1 ...) (pop Ξ ctx))]
     ;; Answers self-reduce.
     [--> ({v ξ mt} σ σt Ξ M) ({v_0 ξ mt} () () ())

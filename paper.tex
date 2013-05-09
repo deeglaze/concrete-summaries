@@ -35,13 +35,13 @@
 % Future Work
 % Conclusion
 
-\abstract{GAH}
+\abstract{Lorem Ipsum}
 
 \section{Introduction}
 
 Programs in higher-order languages heavily use function calls and
 method dispatch as part of their control flow. Until recently, flow
-analyses could not handle return flow precisely
+analyses for higher-order languages could not handle return flow precisely
 \citep{ianjohnson:vardoulakis-lmcs11, ianjohnson:earl2010pdcfa}, which
 leads to several spurious paths (and thus false positives) due to
 their pervasiveness. These works, called CFA2 and PDCFA respectively,
@@ -53,10 +53,24 @@ gains of these analyses are so beneficial that we believe new analyses
 going forward should be using pushdown techniques. CFA2 and PDCFA have
 difficult details to easily apply to an off-the-shelf semantics ---
 especially if they feature non-local control transfer that breaks the
-pushdown model. 
+pushdown model. \\ 
 
-...
+This paper gives a common, simple framework to discuss both CFA2 and
+PDCFA along with a recipe to apply pushdown analysis techniques to an
+off-the-shelf semantics in a manner similar to
+~\citet{dvanhorn:VanHorn2010Abstracting} (a technique called
+abstracting abstract machines, or AAM). We then extend the state of
+the art by giving a novel analysis for delimited, composable control. \\
 
+Testing new ideas in analysis for improving precision or increasing
+performance can be a difficult venture. We contend that the machinery
+that we employ in the abstract should have a concrete counterpart that
+maintains the meaning of the language so that we can see their effect
+without introducing approximations which might mask correctness
+issues. Abstraction should be a simple process that is ``obviously
+correct.'' The framework we present in this paper is applicable in the
+concrete such that a pointwise abstraction leads to the pushdown
+analyses in the literature.
 
 \section{What to expect}
 
@@ -75,32 +89,31 @@ computation. Doing this sacrifices call/return matching in the general
 case, but in practice the precision is much better than the
 alternative regular model that, say, AAM would provide.
 
-This paper lays out a common framework to talk about pushdown analysis
-for higher-order languages. In particular, we extract the ``essence''
-of the existing techniques into a quality of the machine semantics
-that specify a language's meaning, much in the same way as
-~\citet{dvanhorn:VanHorn2012Systematic} (a method we will refer to as
-AAM: abstracting abstract machines). Once the machine semantics is in
-this form, simple pointwise abstraction leads to the summarization
-algorithms that we see in the literature. In effect, we give a
-\emph{concrete} semantics to pushdown analysis.
-
 A downside of the work providing \rackett{call/cc} is that it was an
 algorithmic change to the already complicated CFA2 --- there was no
 recipe for how to do this for one's favorite control operator. This
 paper seeks to do just that with an operational view of what
 summarization is, in essence. In other words, we give a concrete
 semantics to the tricks that the analyses in the literature use in the
-abstract. We also give intuitive analogies to well-established
-ideas/techniques so that you too can write a pushdown analysis for
-your language. In order to demonstrate the applicability of this
-viewpoint, we show a new analysis for a language with composable
-control. All of the semantics modeled in this paper are implemented in
-full detail in PLT Redex and available at
+abstract, and maintain the original meaning of the language. We also
+give intuitive analogies to well-established ideas/techniques so that
+you too can write a pushdown analysis for your language. In order to
+demonstrate the applicability of this viewpoint, we show a new
+analysis for a language with composable control. All of the semantics
+modeled in this paper are implemented in full detail in PLT Redex and
+available at
 
 \begin{center}
   \url{http://github.com/ianj/concrete-summaries}
 \end{center}
+
+There are common underpinnings of PDCFA and CFA2 that can be embodied
+as concrete machinery in the programming language semantics: breaking
+the recursive structure of continuations by indirecting them through a
+table with appropriately precise keys, and memoization.  Once the
+machine semantics is in this form, simple pointwise abstraction leads
+to the summarization algorithms that we see in the literature. In
+effect, we give a \emph{concrete} semantics to pushdown analysis.
 
 The remaining sections of the paper are
 \begin{itemize}
@@ -113,9 +126,10 @@ The remaining sections of the paper are
 \label{sec:pdcfa}
 
 PDCFA does not have some orthogonal semantic components that CFA2
-features to improve precision, so we start by deriving PDCFA from an
-operational semantics for the untyped lambda calculus (figure
-\ref{fig:base-semantics}). The semantic spaces for the machine follow.
+features to improve precision and is thus the simpler of the two. We
+start by deriving PDCFA from an operational semantics for the untyped
+lambda calculus (figure \ref{fig:base-semantics}). The semantic spaces
+for the machine follow.
 
 \begin{align*}
   \mexpr \in \Expr &= \svar{\mvar} \mid \sapp{\mexpr}{\mexpr} \mid \slam{\mvar}{\mexpr} \\
@@ -169,12 +183,12 @@ results. The common widening uses a worklist to only step states that
 need stepping --- the fact that the store is shared amongst all states
 makes this a semantic difference, and not just an implementation
 difference. Doing this bumps the complexity up to ${\mathcal
-  O}(n^9)$\footnote{The available \emph{implementations} of PDCFA
-  indeed do this and are themselves ${\mathcal O}(n^9)$.}. These
-bounds are (rough) absolute worst case that is highly unlikely, if
-ever, happen in practice. The worklist abstraction restricts value
-flow to fewer spurious paths, often leading to a faster analysis than
-a typical 0CFA.
+  O}(n^9)$. The available \emph{implementations} of PDCFA indeed do
+this and are themselves ${\mathcal O}(n^9)$. These bounds are (rough)
+absolute worst case that is highly unlikely, if ever, happen in
+practice. The worklist abstraction restricts value flow to fewer
+spurious paths, often leading to a faster analysis than a typical
+${\mathcal O}(n^3)$ 0CFA.
 
 \paragraph{Tracking return points:} the magic of the method is in
 keeping a table of (local) continuations for each function and store
@@ -362,7 +376,7 @@ extended in a language with more linguistic features; see Kranz's
 thesis about register-allocatable bindings in the Orbit Scheme
 compiler \citep{ianjohnson:kranz:thesis:1988}. A stackable reference
 is one that appears in the body of the binding function, by which we
-mean not within the body of nested function. They use the information
+mean not within the body of a nested function. They use the information
 that a binding never escapes to not bother allocating it in the
 heap. This has the advantage of not changing the heap, and thus leads
 to less propagation. The addition of these stack frames makes the
@@ -382,7 +396,7 @@ rebinding.'' CFA2 does not step to all values on variable reference,
 but instead carries all its values around in superposition until they
 need to be observed at, say, a function call. We give a simplified
 semantics that is more along the AAM style, but CFA2's approach can
-easily be recovered from it\footnote{Our Redex model implements the fake rebinding fix after function return}.
+easily be recovered from it\footnote{Our Redex model implements the fake rebinding strategy CFA2 itself employs}.
 
 We show only the significantly modified rules of the semantics in
 figure \ref{fig:frame-semantics}. The other rules simply carry along
@@ -443,20 +457,15 @@ frame so any subsequent reference means what it meant previously in
 the function. Lookup would then always try the stack frame before
 falling back on the heap.
 
-The widening we applied to PDCFA also applies here in order to get
-CFA2. Both PDCFA and CFA2 use $\epsilon$-edges and summaries to
-seemingly skip work when new stacks reach a function, but the summary
-is not likely to be there, so we just drop that whole bit of
-complexity from the semantics. CFA2 also included what they called
-``transitive summaries'' to deal with tail calls. We insert an $\rt$
-frame at every function call.  This view contends with tail calls, but
-we can identify tail calls easily --- any call with an $\rt$ as its
-continuation is a tail call. Tail calls are important in language
-implementations for space complexity reasons
-\citep{ianjohnson:clinger:tail-calls:1998}, but in an analysis, these
-concerns are less important. The repeated popping of $\rt$ inserted
-by what otherwise were tail-calls is synonymous with CFA2's transitive
-summaries.
+CFA2 also includes what they called ``transitive summaries'' to deal
+with tail calls. We insert an $\rt$ frame at every function call.
+This view contends with tail calls, but we can identify tail calls
+easily --- any call with an $\rt$ as its continuation is a tail
+call. Tail calls are important in language implementations for space
+complexity reasons \citep{ianjohnson:clinger:tail-calls:1998}, but in
+an analysis, these concerns are less important. The repeated popping
+of $\rt$ inserted by what otherwise were tail-calls is synonymous with
+CFA2's transitive summaries.
 
 \paragraph{Example:} if we use this semantics to run through the
 example of the previous section, we find that with the addition of
@@ -633,7 +642,7 @@ maps $\Addr$ to a set of stores. The rules that change are presented in figure \
     &
     $\tpl{(\mexpr, \extm{\menv}{\mvar}{\maddr}), \joinone{\mstore}{\maddr}{\vcomp{\mkont'}},\kmt,\mmkont,\mktab',\mmemo}$
     \\
-    where & $\maddr = \alloc(\varsigma)$, $(\mkont',\mktab') = \approximate(\mkont, \mktab, \maddr)$
+    where & $(\mkont',\mktab') = \approximate(\mkont, \mktab, \maddr)$
 \\
 % Return
    $\tpl{\mval, \mstore, \krt{\mctx}, \mmkont, \mktab, \mmemo}$
