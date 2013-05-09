@@ -1,6 +1,6 @@
 \documentclass{llncs}
 
-\usepackage{amsmath,stmaryrd,natbib}
+\usepackage{amsmath,stmaryrd,natbib,listings}
 \usepackage[usenames,dvipsnames]{color}
 
 \newcommand{\Scribtexttt}[1]{{\texttt{#1}}}
@@ -34,6 +34,8 @@
 % Related Work
 % Future Work
 % Conclusion
+
+\abstract{GAH}
 
 \section{Introduction}
 
@@ -297,6 +299,44 @@ resulting from stepping the previous frontier that we haven't seen at
 this next store. Systematic techniques for a performant implementation
 can be found in \citet{ianjohnson:oaam:2013}.
 
+\paragraph{Example:} Let's consider a monovariant allocation strategy
+(the address for each binding is the variable name itself) to run the
+following example:
+\begin{lstlisting}[mathescape]
+  (let* ([id ($\lambda$ (x) x)]
+         [y (id 0)]
+         [z (id 1)])
+    ($\le$ y z))
+\end{lstlisting}
+We should expect that a pushdown analysis would predict this evaluates
+to true, and there are no loops in the program. 0CFA claims there is a
+loop from the second call of \texttt{id} to the first, and thusly
+predicts this program evaluates to true or false. PDCFA claims there
+is no loop, and depending on the implementation, that the result is
+true or false (paper), or just true (implemented). Let's take a look
+at the evaluation after binding \texttt{id} ($\mstore_0 = [\texttt{id} \mapsto \set{\vclo{\slam{\texttt{x}}{\texttt{x}}}{\bot}}]$):
+
+\begin{enumerate}
+\item{\texttt{(id 0)} steps to \texttt{x} at $\krt{((\texttt{x}, [\texttt{x}\mapsto\texttt{x}]), \mstore_0)}$ with $\mstore_1 =
+    \mstore_0[\texttt{x} \mapsto \set{0}]$ and
+    (let $\mctx_1 = ((\texttt{x},[\texttt{x}\mapsto\texttt{x}]),\mstore_1)$,
+         $\mkont_1$ = \texttt{(letk y (let ([z (id 1)]) ($\le$ y z)) $[\texttt{id}\mapsto{\texttt{id}}]$)})
+    $\mktab_1 = [\mctx_0 \mapsto \set{\mkont_0}]$}
+\item{\texttt{0} at $\krt{\mctx_1}$ steps to $0$ at $\mkont_1$ and $\mmemo_1 = [\mctx_1 \mapsto \set{0}]$}
+\item{\texttt{0} at $\mkont_1$ steps to \texttt{(let ([z (id 1)]) ($\le$ y z))} and $\mstore_2 = \mstore_1[\texttt{y} \mapsto \set{0}]$}
+\item{\texttt{(let ([z (id 1)]) ($\le$ y z))} steps to \texttt{(id 1)} at \texttt{(letk z ($\le$ y z) $[\texttt{id} \mapsto \texttt{id}, \texttt{y} \mapsto \texttt{y}]$)} (call this $\mkont_2$).}
+\item{\texttt{(id 1)} steps to $x$ with $\mstore_3 = \mstore_2[\texttt{x} \mapsto \set{0,1}]$ and
+      (let $\mctx_3 = ((\texttt{x},[\texttt{x}\mapsto\texttt{x}]),\mstore_3)$) $\mktab_3 =\mktab_1[\mctx_3 \mapsto \set{\mkont_2}]$.}
+\item{\texttt{0} or \texttt{1} at $\krt{\mctx_3}$ steps to \texttt{0} or \texttt{1} at $\mkont_2$ and $\mmemo_3 = \mmemo_1[\mctx_3 \mapsto \set{0,1}]$.}
+\item{\texttt{z} gets bound to $\set{0,1}$, and \texttt{($\le$ y z)} evaluates to true.}
+\end{enumerate}
+
+We maintained enough context to distinguish the return points of
+\texttt{id} to not rebind \texttt{y} to 1. When determining control
+flow through the expression, we consult $\mmemo$ to continue past
+function calls, so there is no confusion about a back edge from the
+second call to \texttt{id}.
+
 \section{Deriving CFA2}
 \label{sec:cfa2}
 
@@ -417,6 +457,12 @@ implementations for space complexity reasons
 concerns are less important. The repeated popping of $\rt$ inserted
 by what otherwise were tail-calls is synonymous with CFA2's transitive
 summaries.
+
+\paragraph{Example:} if we use this semantics to run through the
+example of the previous section, we find that with the addition of
+stack frames, there is no confusion about \texttt{z}'s value either,
+so if the operator weren't $\le$ but instead $<$ or $+$, we could
+still constant fold that away.
 
 \section{Analysis of delimited, composable control}
 \label{sec:sr}
@@ -643,10 +689,10 @@ remove the prompts and keep $\approximate$.
 \section{Related Work}
 
 The immediately related work is that of PDCFA
-\citet{ianjohnson:earl2010pdcfa},
-CFA2~\citet{ianjohnson:vardoulakis-lmcs11,
+\citep{ianjohnson:earl2010pdcfa},
+CFA2~\citep{ianjohnson:vardoulakis-lmcs11,
   ianjohnson:Vardoulakis2011Pushdown}, and AAM
-~\citet{dvanhorn:VanHorn2010Abstracting}, the first two of which we
+~\citep{dvanhorn:VanHorn2010Abstracting}, the first two of which we
 recreated in full detail. The version of CFA2 that handles
 \rackett{call/cc} does not handle composable control, and is dependent
 on a restricted CPS representation. They also had no way to tune the
@@ -655,16 +701,16 @@ precision of their first class continuation approximation. Since
 supercedes theirs.
 
 Pushdown models have existed in the first-order static analysis
-literature ~\citet[Chapter
-7]{local:muchnick:jones:flow-analysis:1981}\citet{ianjohnson:reps:pushdown:1995},
+literature ~\citep[Chapter
+7]{local:muchnick:jones:flow-analysis:1981}\citep{ianjohnson:reps:pushdown:1995},
 and the first-order model checking literature
-\citet{ianjohnson:bouajiani:esparza:pushdown:1997}, for some time. The
+\citep{ianjohnson:bouajiani:esparza:pushdown:1997}, for some time. The
 higher-order setting imposes additional challenges that make their
 methods difficult to adapt. The most important constraint is that we
 can't know all call-sites of a function/method before the analysis
 begins, which their methods heavily rely on.
 
-\section{Conclusion}
+\section{Conclusion and future work}
 
 As the programming world continues to embrace behavioral values, it
 becomes more important to import the powerful techniques pioneered by
@@ -680,6 +726,21 @@ summarization. In a language without well-bracketed control, we are
 not chained to a pushdown automaton as the target of the
 approximation, so the techniques still apply and give better precision
 than regular methods.
+
+Our goal in the future is to show that this technique is even more
+widely applicable than shift and reset, but indeed to the most
+intricate control operators in production languages such as in
+\citet{ianjohnson:Flatt:2007:ADC:1291151.1291178}. The control
+structures there are difficult to model even with AAM's techniques,
+but once we can tackle AAM, there should be a straightforward route to
+extending it with the pushdown techniques of this paper.
+
+There is also the question of clients of these analyses. Most
+obviously we would want to know where we can implement first-class
+control more efficiently. On top of optimizations, there are security
+analyses. Greater control of the stack gives us the ability to drill
+deep into context-sensitive security properties and make precise
+predictions.
 
 \bibliographystyle{chicago}
 \bibliography{bibliography}
