@@ -1,5 +1,6 @@
 \documentclass{llncs}
 
+\pagestyle{plain}
 \usepackage{amsmath,stmaryrd,natbib,listings}
 \usepackage[usenames,dvipsnames]{color}
 
@@ -72,7 +73,7 @@ maintains the meaning of the language so that we can see their effect
 without introducing approximations which might mask correctness
 issues. Abstraction should be a simple process that is ``obviously
 correct.'' The framework we present in this paper is applicable in the
-concrete such that a pointwise abstraction leads to the pushdown
+concrete such that a point-wise abstraction leads to the pushdown
 analyses in the literature.
 
 This paper gives a common, simple framework to derive both CFA2 and
@@ -119,7 +120,7 @@ as concrete machinery in the programming language semantics:
 table with appropriately precise keys, and}
 \item{memoization.}
 \end{enumerate}
-Once the machine semantics is in this form, simple pointwise
+Once the machine semantics is in this form, simple point-wise
 abstraction leads to the summarization algorithms that we see in the
 literature.
 
@@ -134,10 +135,24 @@ The remaining sections of the paper are
 \label{sec:pdcfa}
 
 PDCFA does not have some orthogonal semantic components that CFA2
-features to improve precision and is thus the simpler of the two. We
-start by deriving PDCFA from an operational semantics for the untyped
-lambda calculus (figure \ref{fig:base-semantics}). The semantic spaces
-for the machine follow.
+features to improve precision and is thus the simpler of the two. The
+key to their method is to notice in languages without stack-capturing
+features, the continuation is only modified a frame at a time. If the
+state space without the stack is finite (and it can be made finite
+with an approximation ala AAM), then the model falls directly into the
+realm of pushdown systems. They thus recast the problem in terms of
+pushdown systems. The whole of their machinery is then computing the
+pushdown system on-the-fly, only considering states reachable from the
+root (initial) state. To match nodes that push frames with later nodes
+following the pop of that frame, they additionally compute an
+$\epsilon$-closure graph, which keeps edges between nodes that have a
+net-zero stack change path between them. We skip the detour to
+pushdown systems altogether and show an operational understanding of
+the resulting analysis.
+
+We start by deriving PDCFA from an operational semantics for the
+untyped lambda calculus (figure \ref{fig:base-semantics}). The
+semantic spaces for the machine follow.
 
 \begin{align*}
   \mexpr \in \Expr &= \svar{\mvar} \mid \sapp{\mexpr}{\mexpr} \mid \slam{\mvar}{\mexpr} \\
@@ -151,13 +166,16 @@ for the machine follow.
 \end{align*}
 
 The $\Addr$ space is what controls the precision of the model. For a
-concrete semantics, we require the allocation metafunction $\alloc :
+concrete semantics, we require the allocation meta-function $\alloc :
 \State \to \Addr$ to return fresh addresses ($\maddr \notin
-\dom(\mstore)$), but any choice of address is sound. This metafunction
-along with the commitment to having no recursive datastructures is the
-key to the AAM technique. All recursion can be expressed by
-indirecting through addresses into a store --- tying Landin's knot. We
-borrow this technique on top of our own.
+\dom(\mstore)$), but any choice of address is sound. If $\alloc$ only
+uses addresses from a finite subset of $\Addr$, then the state space
+without continuations is finite, and the space of contination frames
+is finite (thus the pushdown system interpretation is apt). This
+meta-function along with the commitment to having no recursive
+data-structures is the key to the AAM technique. All recursion can be
+expressed by indirecting through addresses into a store --- tying
+Landin's knot. We borrow this technique on top of our own.
 
 \begin{figure}
   \centering
@@ -172,7 +190,7 @@ borrow this technique on top of our own.
 % application
     $\tpl{(\sapp{\mexpri0}{\mexpri1}, \menv), \mstore, \mkont}$
     &
-    $\tpl{(\mexpri0, \menv), \mstore, \kar{\mexpri,\menv,\mkont}}$
+    $\tpl{(\mexpri0, \menv), \mstore, \kar{\mexpri1,\menv,\mkont}}$
     \\
 % argument evaluation
     $\tpl{\mval, \mstore, \kar{\mexpr,\menv,\mkont}}$
@@ -188,26 +206,13 @@ borrow this technique on top of our own.
   \label{fig:base-semantics}
 \end{figure}
 
-Since PDCFA is a simpler analysis than CFA2, it enjoys a polynomial
-complexity in the monovariant case. Its final ${\mathcal O}(n^6)$ form
-is a naive ``step all states'' widening, which yields poor
-results. The common widening uses a worklist to only step states that
-need stepping --- the fact that the store is shared amongst all states
-makes this a semantic difference, and not just an implementation
-difference. Doing this bumps the complexity up to ${\mathcal
-  O}(n^9)$. The available \emph{implementations} of PDCFA indeed do
-this and are themselves ${\mathcal O}(n^9)$. These bounds are (rough)
-absolute worst case that is highly unlikely, if ever, happen in
-practice. The worklist abstraction restricts value flow to fewer
-spurious paths, often leading to a faster analysis than a typical
-${\mathcal O}(n^3)$ 0CFA.
-
 \paragraph{Tracking return points:} the magic of the method is in
-keeping a table of (local) continuations for each function and store
-pair. This closely mirrors the technique of store-allocating
-continuations used in AAM. Instead of deferring to the table (store)
-for the remainder of a continuation for each frame, we only have
-indirections at function call boundaries (see rules 4 and 5 in figure
+keeping a table of continuation segments for each function and store
+pair, where the continuation is segmented at function boundaries. This
+closely mirrors the technique of store-allocating continuations used
+in AAM. Instead of deferring to the table (store) for the remainder of
+a continuation for each frame, we only have indirections at function
+call boundaries (see rules 4 and 5 in figure
 \ref{fig:summary-semantics} for saving and restoring
 continuations). Note that since AAM is about finitizing the state
 space, this step itself fits within the AAM method, since
@@ -217,14 +222,16 @@ continuation space finite. In the monovariant case, the number of
 continuations is still linear in the size of the program.
 
 The tail of a continuation in the context of a function will contain
-the stackless context in which the function was called, in order to
+the stack-less context in which the function was called, in order to
 link up with the proper call-site(s). The context includes the
 function (or unique label of the function), the environment, and the
 store. Notice that this choice can be viewed as a special allocation
-strategy for continuations in the AAM viewpoint; the store is the
-important ingredient to maintaining enough precision to keep a
-pushdown abstraction. We separate the concepts in this paper for the
-exposition. The semantic spaces for the machine are modified thusly:
+strategy for continuations in the AAM viewpoint, but we separate the
+table of continuations from the store since continuations themselves
+contain stores in $\rt$ frames --- this leads to a recursive
+data-structure that we are trying to avoid. The store is an important
+ingredient to maintaining enough precision to keep a pushdown
+abstraction. The semantic spaces for the machine are modified thusly:
 
 \begin{align*}
   \mstate \in \State &= (\Expr \times \Env) \times \Store \times \Kont \times \KTab \times \Memo \\
@@ -367,6 +374,23 @@ flow through the expression, we consult $\mmemo$ to continue past
 function calls, so there is no confusion about a back edge from the
 second call to \texttt{id}.
 
+\paragraph{PDCFA paper versus implementation:} since PDCFA is a
+simpler analysis than CFA2, it enjoys a polynomial complexity in the
+monovariant case. Its final ${\mathcal O}(n^6)$ form is a naive ``step
+all states'' widening, which yields poor results as evident in the
+above example. The common widening uses a work-list to only step
+states that need stepping like the frontier-based widening we use ---
+the fact that the store is shared amongst all states makes this a
+semantic difference, and not just an implementation difference. Doing
+this bumps the complexity up to ${\mathcal O}(n^9)$. The available
+\emph{implementations} of PDCFA indeed do this and are themselves
+${\mathcal O}(n^9)$. These bounds are (rough) absolute worst case that
+is highly unlikely, if ever, to happen in practice. The work-list
+abstraction restricts value flow to fewer spurious paths, often
+leading to a faster analysis than a typical ${\mathcal O}(n^3)$ 0CFA
+~\citep{ianjohnson:vardoulakis-lmcs11,
+  dvanhorn:Earl2012Introspective}.
+
 \section{Deriving CFA2}
 \label{sec:cfa2}
 
@@ -381,9 +405,9 @@ is why we are showing the two separately. There are two orthogonal
 features of the semantics:
 \begin{enumerate}
 \item{stack allocation for some bindings}
-\item{strong updates on stack frames for resolved nondeterminism}
+\item{strong updates on stack frames for resolved non-determinism}
 \end{enumerate}
-The first of these is an addition to the stackless context. There is a
+The first of these is an addition to the stack-less context. There is a
 conservative pre-analysis that checks locally whether a binding will
 never escape, and classifies references as able to use the stack frame
 or not. Their criteria for a binding never escaping is that it is
@@ -412,7 +436,18 @@ rebinding.'' CFA2 does not step to all values on variable reference,
 but instead carries all its values around in superposition until they
 need to be observed at, say, a function call. We give a simplified
 semantics that is more along the AAM style, but CFA2's approach can
-easily be recovered from it\footnote{Our Redex model implements the fake rebinding strategy CFA2 itself employs}.
+easily be recovered from it\footnote{Our Redex model implements the
+  fake rebinding strategy CFA2 itself employs}.
+
+CFA2 uses a ``local semantics'' that is similar to our segmenting
+continuations at function boundaries, but gets stuck when it gets to a
+point where it would need to ``return.'' It instead appeals to an
+external, imperative algorithm for summarization to sew the function
+calls and returns together. What we show here is almost wholly the
+same, only embodied still in terms of a machine semantics and thus
+more easily reasoned about. The analogy to memoization as
+summarization guide us in the construction of the analysis in the
+coming section.
 
 We show only the significantly modified rules of the semantics in
 figure \ref{fig:frame-semantics}. The other rules simply carry along
@@ -447,8 +482,8 @@ the extra $\mframe$ component untouched.
   \label{fig:frame-semantics}
 \end{figure}
 
-The metafunctions the semantics uses to entend and consult the heap
-and stack use implicit information from the preanalysis we described
+The meta-functions the semantics uses to extend and consult the heap
+and stack use implicit information from the pre-analysis we described
 above:
 
 \begin{align*}
@@ -468,9 +503,9 @@ above:
 
 Sidestepping fake rebinding does not need to be restricted to
 stackable references, but that is what CFA2 does. Indeed, as soon as
-the nondeterminism has been determined, we could extend the stack
+the non-determinism has been determined, we could extend the stack
 frame so any subsequent reference means what it meant previously in
-the function. Lookup would then always try the stack frame before
+the function. Look-up would then always try the stack frame before
 falling back on the heap.
 
 CFA2 also includes what they called ``transitive summaries'' to deal
@@ -672,7 +707,7 @@ maps $\Addr$ to a set of stores. The rules that change are presented in figure \
   \label{fig:shift-reset-table1}
 \end{figure}
 
-The metafunctions mentioned in the fixed semantics all deal with the
+The meta-functions mentioned in the fixed semantics all deal with the
 addition of $\maddr$ to contexts. If the context in an $\rt$ frame is
 approximate, we must return to all the continuations known for all the
 contexts it approximates ($\returns$). At return boundaries, the memo
@@ -743,7 +778,7 @@ begins, which their methods heavily rely on.
 A new temporal logic that itself understands well-bracketing of call
 and returns for stating and validating propositions, NWTL
 ~\citep{ianjohnson:alur:nwtl:2007}, applies to visibly pushdown
-systems, which can precisely model progamming languages that only have
+systems, which can precisely model programming languages that only have
 well-bracketed call and returns. The propositional form of the logic
 has decidable satisfiability checking, and control-flow queries are
 shallow propositions to pose in the logic. However, the satisfiability
@@ -752,7 +787,7 @@ the on-the-fly form that a higher-order language would need to
 effectively answer control-flow queries without already knowing the
 answers. The logic itself is an exciting new frontier for expressing
 program correctness properties, and a higher-order version would be a
-welcome addition to the functional programmer's toolbelt.
+welcome addition to the functional programmer's tool belt.
 
 The trend of deriving static analyses from abstract machines does not
 stop at flow analyses. The model-checking community showed how to
@@ -803,7 +838,7 @@ stack gives us the ability to drill deep into context-sensitive
 security properties and make precise predictions such as, ``is it
 possible to send image data on the network outside the context of the
 user's permission?'' This way a user can use an image taking/sharing
-application without the application surrepticiously taking and sending
+application without the application surreptitiously taking and sending
 images the user doesn't know about.
 
 \bibliographystyle{chicago}
