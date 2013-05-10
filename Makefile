@@ -45,8 +45,8 @@ getbib:
 
 all:
 	pdflatex $(CURRENT)
-	pdflatex $(CURRENT)
 	bibtex $(CURRENT)
+	pdflatex $(CURRENT)
 	pdflatex $(CURRENT)
 
 # Run bibtex:

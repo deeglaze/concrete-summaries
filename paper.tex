@@ -35,32 +35,35 @@
 % Future Work
 % Conclusion
 
-\abstract{Lorem Ipsum}
+\begin{abstract}
+  Lorem Ipsum
+\end{abstract}
 
 \section{Introduction}
 
 Programs in higher-order languages heavily use function calls and
 method dispatch as part of their control flow. Until recently, flow
-analyses for higher-order languages could not handle return flow precisely
-\citep{ianjohnson:vardoulakis-lmcs11, ianjohnson:earl2010pdcfa}, which
-leads to several spurious paths (and thus false positives) due to
-their pervasiveness. These works, called CFA2 and PDCFA respectively,
-use pushdown automata as their approximation's target model of
-computation. They are hence called ``pushdown analyses.''\footnote{We
-  will refer to the classic finite model analyses as ``regular
-  analyses'' after regular languages.} The precision and performance
-gains of these analyses are so beneficial that we believe new analyses
-going forward should be using pushdown techniques. CFA2 and PDCFA have
-difficult details to easily apply to an off-the-shelf semantics ---
-especially if they feature non-local control transfer that breaks the
-pushdown model. \\ 
+analyses for higher-order languages could not handle return flow
+precisely \citep{ianjohnson:vardoulakis-lmcs11,
+  ianjohnson:earl2010pdcfa}, which leads to several spurious paths
+(and thus false positives) due to the pervasiveness of function/method
+calls and subsequent returns. These works, called CFA2 and PDCFA
+respectively, use pushdown automata as their approximation's target
+model of computation. They are hence called ``pushdown
+analyses.''\footnote{We will refer to the classic finite model
+  analyses as ``regular analyses'' after regular languages.} CFA2 and
+PDCFA have difficult details to easily apply to an off-the-shelf
+semantics --- especially if they feature non-local control transfer
+that breaks the pushdown model.
 
-This paper gives a common, simple framework to discuss both CFA2 and
-PDCFA along with a recipe to apply pushdown analysis techniques to an
-off-the-shelf semantics in a manner similar to
-~\citet{dvanhorn:VanHorn2010Abstracting} (a technique called
-abstracting abstract machines, or AAM). We then extend the state of
-the art by giving a novel analysis for delimited, composable control. \\
+There is a systematic process for transforming off-the-shelf
+programming language semantics into a form amenable to \emph{regular}
+analysis that has been widely applied with great success to production
+programming languages ~\citet{dvanhorn:VanHorn2010Abstracting} (a
+technique called abstracting abstract machines, or AAM). A
+contribution of this paper is a systematic process to construct
+\emph{pushdown} analyses of programming languages, due to the
+precision (and often performance) benefits.
 
 Testing new ideas in analysis for improving precision or increasing
 performance can be a difficult venture. We contend that the machinery
@@ -71,6 +74,11 @@ issues. Abstraction should be a simple process that is ``obviously
 correct.'' The framework we present in this paper is applicable in the
 concrete such that a pointwise abstraction leads to the pushdown
 analyses in the literature.
+
+This paper gives a common, simple framework to derive both CFA2 and
+PDCFA using a recipe to apply pushdown analysis techniques to
+arbitrary semantics in a manner similar to AAM. To exercise the recipe further, 
+we give a novel analysis for delimited, composable control. \\
 
 \section{What to expect}
 
@@ -97,23 +105,23 @@ summarization is, in essence. In other words, we give a concrete
 semantics to the tricks that the analyses in the literature use in the
 abstract, and maintain the original meaning of the language. We also
 give intuitive analogies to well-established ideas/techniques so that
-you too can write a pushdown analysis for your language. In order to
-demonstrate the applicability of this viewpoint, we show a new
-analysis for a language with composable control. All of the semantics
-modeled in this paper are implemented in full detail in PLT Redex and
-available at
-
-\begin{center}
-  \url{http://github.com/ianj/concrete-summaries}
-\end{center}
+the working semanticist can write a pushdown analysis for her
+language. In order to demonstrate the applicability of this viewpoint,
+we show a new analysis for a language with composable control. All of
+the semantics modeled in this paper are implemented in full detail in
+PLT Redex~\citep{ianjohnson:Felleisen:2009:SEP:1795772} and available
+online\footnote{\url{http://github.com/ianj/concrete-summaries}}.
 
 There are common underpinnings of PDCFA and CFA2 that can be embodied
-as concrete machinery in the programming language semantics: breaking
-the recursive structure of continuations by indirecting them through a
-table with appropriately precise keys, and memoization.  Once the
-machine semantics is in this form, simple pointwise abstraction leads
-to the summarization algorithms that we see in the literature. In
-effect, we give a \emph{concrete} semantics to pushdown analysis.
+as concrete machinery in the programming language semantics: 
+\begin{enumerate}
+\item{breaking the recursive structure of continuations by indirecting them through a
+table with appropriately precise keys, and}
+\item{memoization.}
+\end{enumerate}
+Once the machine semantics is in this form, simple pointwise
+abstraction leads to the summarization algorithms that we see in the
+literature.
 
 The remaining sections of the paper are
 \begin{itemize}
@@ -145,7 +153,11 @@ for the machine follow.
 The $\Addr$ space is what controls the precision of the model. For a
 concrete semantics, we require the allocation metafunction $\alloc :
 \State \to \Addr$ to return fresh addresses ($\maddr \notin
-\dom(\mstore)$), but any choice of address is sound.
+\dom(\mstore)$), but any choice of address is sound. This metafunction
+along with the commitment to having no recursive datastructures is the
+key to the AAM technique. All recursion can be expressed by
+indirecting through addresses into a store --- tying Landin's knot. We
+borrow this technique on top of our own.
 
 \begin{figure}
   \centering
@@ -195,13 +207,14 @@ keeping a table of (local) continuations for each function and store
 pair. This closely mirrors the technique of store-allocating
 continuations used in AAM. Instead of deferring to the table (store)
 for the remainder of a continuation for each frame, we only have
-indirections at function call boundaries. Note that since AAM is about
-finitizing the state space, this step itself fits within the AAM
-method, since continuations within functions truncated at call
-boundaries are bounded by the nesting depth of those functions,
-thereby making the continuation space finite. In the monovariant case,
-the number of continuations is still linear in the size of the
-program.
+indirections at function call boundaries (see rules 4 and 5 in figure
+\ref{fig:summary-semantics} for saving and restoring
+continuations). Note that since AAM is about finitizing the state
+space, this step itself fits within the AAM method, since
+continuations within functions truncated at call boundaries are
+bounded by the nesting depth of those functions, thereby making the
+continuation space finite. In the monovariant case, the number of
+continuations is still linear in the size of the program.
 
 The tail of a continuation in the context of a function will contain
 the stackless context in which the function was called, in order to
@@ -231,10 +244,12 @@ a path through machine reductions that don't change the stack, or
 through summary edges. In our model, we only ``push'' when we call a
 function, and we only ``pop'' when we return with a value. There is an
 analogy to something more operational: summary edges embody
-memoization. Instead of following an entire path through a call to
-return a value, we simply jump from the call to the return (the result
-of the call). We will return to this analogy and what it
-means in the presence of first-class control in section \ref{sec:sr}.
+memoization (see the last rule in figure
+\ref{fig:summary-semantics}). Instead of following an entire path
+through a call to return a value, we simply jump from the call to the
+return with the result of the call (the second case of rule 4). We
+will return to this analogy and what it means in the presence of
+first-class control in section \ref{sec:sr}.
 
 \begin{figure}
   \centering
@@ -265,7 +280,8 @@ means in the presence of first-class control in section \ref{sec:sr}.
           \joinone{\mktab}{(\mpoint, \mstore')}{\mkont},
           \mmemo}$
 \\
-    & $\tpl{\mval, \mstore', \mkont, \mktab, \mmemo} \text{ if } \mval \in \mmemo(\mpoint,\mstore')$
+    & or \\
+    & $\tpl{\mval_\mathit{result}, \mstore', \mkont, \mktab, \mmemo} \text{ if } \mval_\mathit{result} \in \mmemo(\mpoint,\mstore')$
     \\ % or, lookup in table
 %    & $\tpl{\mval, \mstore', \mkont,\mktab,\mmemo}$ if $\mval \in \mmemo(\mpoint, \mstore')$ \\    
     where & $\mpoint = (\mexpr, \extm{\menv}{\mvar}{\maddr})$ \\
@@ -707,7 +723,12 @@ recreated in full detail. The version of CFA2 that handles
 on a restricted CPS representation. They also had no way to tune the
 precision of their first class continuation approximation. Since
 \rackett{call/cc} can be simulated with shift/reset, this work
-supercedes theirs.
+supercedes theirs. The extended version of PDCFA that does garbage
+collection \citep{dvanhorn:Earl2012Introspective} also fits into our
+model, although we did not explicitly show it. The addresses that the
+stack keeps alive can be accumulated by ``reading through'' the
+continuation table, building up the set of addresses in each portion
+of the stack that we come across.
 
 Pushdown models have existed in the first-order static analysis
 literature ~\citep[Chapter
@@ -718,6 +739,31 @@ higher-order setting imposes additional challenges that make their
 methods difficult to adapt. The most important constraint is that we
 can't know all call-sites of a function/method before the analysis
 begins, which their methods heavily rely on.
+
+A new temporal logic that itself understands well-bracketing of call
+and returns for stating and validating propositions, NWTL
+~\citep{ianjohnson:alur:nwtl:2007}, applies to visibly pushdown
+systems, which can precisely model progamming languages that only have
+well-bracketed call and returns. The propositional form of the logic
+has decidable satisfiability checking, and control-flow queries are
+shallow propositions to pose in the logic. However, the satisfiability
+problem is \textsc{2Exptime}-hard and the algorithm is not given in
+the on-the-fly form that a higher-order language would need to
+effectively answer control-flow queries without already knowing the
+answers. The logic itself is an exciting new frontier for expressing
+program correctness properties, and a higher-order version would be a
+welcome addition to the functional programmer's toolbelt.
+
+The trend of deriving static analyses from abstract machines does not
+stop at flow analyses. The model-checking community showed how to
+check temporal logic queries for collapsible pushdown automata (CPDA),
+or equivalently, higher-order recursion schemes, by deriving the
+checking algorithm from the Krivine
+machine~\citep{ianjohnson:Salvati:2011:KMH:2027223.2027239}. The
+expressiveness of CPDAs outweighs that of PDAs, but it is unclear how
+to adapt higher-order recursion schemes to model arbitrary programming
+language features. The method is strongly tied to the simply-typed
+call-by-name lambda calculus and depends on finite sized base-types.
 
 \section{Conclusion and future work}
 
@@ -737,19 +783,28 @@ approximation, so the techniques still apply and give better precision
 than regular methods.
 
 Our goal in the future is to show that this technique is even more
-widely applicable than shift and reset, but indeed to the most
-intricate control operators in production languages such as in
+widely applicable than shift and reset. We conjecture that the same
+recipe will apply to the most intricate control operators in
+production languages such as in
 \citet{ianjohnson:Flatt:2007:ADC:1291151.1291178}. The control
-structures there are difficult to model even with AAM's techniques,
+structures there are difficult to model even with AAM's techniques due
+to the ability to capture and compose continuations with arbitrarily many prompts,
 but once we can tackle AAM, there should be a straightforward route to
 extending it with the pushdown techniques of this paper.
 
 There is also the question of clients of these analyses. Most
 obviously we would want to know where we can implement first-class
-control more efficiently. On top of optimizations, there are security
-analyses. Greater control of the stack gives us the ability to drill
-deep into context-sensitive security properties and make precise
-predictions.
+control more efficiently. In particular, we would want to have an
+escape analysis to find first-class continuations that don't need to
+be heap-allocated, and single target abort operations that can be
+turned into long jumps after a computed stack unraveling. On top of
+optimizations, there are security analyses. Greater control of the
+stack gives us the ability to drill deep into context-sensitive
+security properties and make precise predictions such as, ``is it
+possible to send image data on the network outside the context of the
+user's permission?'' This way a user can use an image taking/sharing
+application without the application surrepticiously taking and sending
+images the user doesn't know about.
 
 \bibliographystyle{chicago}
 \bibliography{bibliography}
