@@ -37,7 +37,22 @@
 % Conclusion
 
 \begin{abstract}
-  Lorem Ipsum
+Pushdown analysis is better than finite-state analysis in precision and
+performance. Why then have we not seen total widespread adoption of these
+techniques? For one, the known techniques are technically burdened and
+difficult to understand or extend. Control structure of the programming language
+gets pulled into the model of computation, which makes extensions to
+non-pushdown control structures, such as \rackett{call/cc} or \rackett{shift} and
+\rackett{reset}, non-trivial.
+
+We show a derivational approach to abstract interpretation that yields
+transparently sound static analyses that can precisely match calls and
+returns when applied to well-known abstract machines. We show that
+adding memoization and segmenting the continuation into bounded pieces
+leads to machines that abstract to static analyses for context-free
+reachability by simply bounding the stores. This technique allows us
+to derive existing, more technically involved analyses, and a novel
+pushdown analysis for delimited, composable control.
 \end{abstract}
 
 \section{Introduction}
@@ -306,10 +321,10 @@ first-class control in section \ref{sec:sr}.
 
 Once we finitize the address space of the store, this computes a
 characteristic finite state machine that has only reachable states of
-the pushdown system the unbounded stack model embodies.
-To turn this semantics into PDCFA's (implemented) algorithm for constructing a Dyck
-state graph, we apply a widening operator ${\mathcal F}$ to make $\mstore$, $\mkont$,
-and $\mmemo$ shared amongst all states.
+the pushdown system the unbounded stack model embodies.  To turn this
+semantics into PDCFA's algorithm for constructing a Dyck state graph,
+we apply a widening operator ${\mathcal F}$ to make $\mstore$,
+$\mkont$, and $\mmemo$ shared amongst all states.
 
 \begin{align*}
   \mastate \in \sa{State} &= (\Expr \times \Env) \times \Kont \\
@@ -350,8 +365,11 @@ to true, and there are no loops in the program. 0CFA claims there is a
 loop from the second call of \texttt{id} to the first, and thusly
 predicts this program evaluates to true or false. PDCFA claims there
 is no loop, and depending on the implementation, that the result is
-true or false (paper), or just true (implemented). Let's take a look
-at the evaluation after binding \texttt{id} ($\mstore_0 = [\texttt{id} \mapsto \set{\vclo{\slam{\texttt{x}}{\texttt{x}}}{\bot}}]$):
+true or false (paper), or just true (implemented)\footnote{This is
+  because the paper steps every seen state with the current store
+  every iteration, but the implementation only steps states that need stepping.}. Let's take a look at the evaluation after binding
+\texttt{id} ($\mstore_0 = [\texttt{id} \mapsto
+\set{\vclo{\slam{\texttt{x}}{\texttt{x}}}{\bot}}]$):
 
 \begin{enumerate}
 \item{\texttt{(id 0)} steps to \texttt{x} at $\krt{((\texttt{x}, [\texttt{x}\mapsto\texttt{x}]), \mstore_0)}$ with $\mstore_1 =
@@ -373,23 +391,6 @@ We maintained enough context to distinguish the return points of
 flow through the expression, we consult $\mmemo$ to continue past
 function calls, so there is no confusion about a back edge from the
 second call to \texttt{id}.
-
-\paragraph{PDCFA paper versus implementation:} since PDCFA is a
-simpler analysis than CFA2, it enjoys a polynomial complexity in the
-monovariant case. Its final ${\mathcal O}(n^6)$ form is a naive ``step
-all states'' widening, which yields poor results as evident in the
-above example. The common widening uses a work-list to only step
-states that need stepping like the frontier-based widening we use ---
-the fact that the store is shared amongst all states makes this a
-semantic difference, and not just an implementation difference. Doing
-this bumps the complexity up to ${\mathcal O}(n^9)$. The available
-\emph{implementations} of PDCFA indeed do this and are themselves
-${\mathcal O}(n^9)$. These bounds are (rough) absolute worst case that
-is highly unlikely, if ever, to happen in practice. The work-list
-abstraction restricts value flow to fewer spurious paths, often
-leading to a faster analysis than a typical ${\mathcal O}(n^3)$ 0CFA
-~\citep{ianjohnson:vardoulakis-lmcs11,
-  dvanhorn:Earl2012Introspective}.
 
 \section{Deriving CFA2}
 \label{sec:cfa2}
@@ -443,11 +444,10 @@ CFA2 uses a ``local semantics'' that is similar to our segmenting
 continuations at function boundaries, but gets stuck when it gets to a
 point where it would need to ``return.'' It instead appeals to an
 external, imperative algorithm for summarization to sew the function
-calls and returns together. What we show here is almost wholly the
-same, only embodied still in terms of a machine semantics and thus
-more easily reasoned about. The analogy to memoization as
-summarization guide us in the construction of the analysis in the
-coming section.
+calls and returns together by pattern matching on the states that the
+local semantics produces. What we show here is almost wholly the same
+in character, only embodied still in terms of a machine semantics and
+thus more easily reasoned about, and can be run in the concrete.
 
 We show only the significantly modified rules of the semantics in
 figure \ref{fig:frame-semantics}. The other rules simply carry along
@@ -556,8 +556,8 @@ similarities to the meta-continuation approach to modeling delimited
 control, given in figure \ref{fig:shift-reset} (adapted from
 ~\citep{ianjohnson:Biernacki2006274}). We could view each function
 call as inserting a prompt, and returns as aborting to the nearest
-prompt. The changed semantic spaces for the shift/reset semantics are as
-follows:
+prompt. Resets then insert a second-tier prompt. The changed semantic
+spaces for the shift/reset semantics are as follows:
 
 \begin{align*}
   \mstate \in \State &::= \tpl{\mpoint, \mstore, \mkont, \mmkont} \\
