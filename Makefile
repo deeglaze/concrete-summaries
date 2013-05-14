@@ -37,8 +37,8 @@ refresh: getbib
 
 # Forcibly refresh bibliogaphy:
 getbib:
-	$(WGETDVANHORNBIB)
-	$(WGETIANJOHNSONBIB)
+#	$(WGETDVANHORNBIB)
+#	$(WGETIANJOHNSONBIB)
 	cat dvanhorn.bib ianjohnson.bib local.bib > bibliography.bib
 	-bibclean bibliography.bib > bibliography.bib.clean
 	-mv bibliography.bib.clean bibliography.bib
