@@ -1,4 +1,4 @@
-\documentclass{llncs}
+\documentclass{sigplanconf}
 
 \pagestyle{plain}
 \usepackage{amsmath,stmaryrd,natbib,listings}
@@ -12,9 +12,7 @@
 \input{local-macros}
 
 \title{Concrete Semantics for Pushdown Analysis:\\The Essence of Summarization}
-\author{J. Ian Johnson and David Van Horn}
-\institute{Northeastern University \\
-           \email{\{ianj,dvanhorn\}@ccs.neu.edu}}
+\authorinfo{J. Ian Johnson and David Van Horn}{Northeastern University}{\{ianj,dvanhorn\}@ccs.neu.edu}
 
 \usepackage{hyperref}
 \begin{document}
@@ -158,7 +156,8 @@ with an approximation ala AAM), then the model falls directly into the
 realm of pushdown systems. They thus recast the problem in terms of
 pushdown systems. The whole of their machinery is then computing the
 pushdown system on-the-fly, only considering states reachable from the
-root (initial) state. To match nodes that push frames with later nodes
+root (initial) state. They call the main data-structure for this a
+Dyck state graph. To match nodes that push frames with later nodes
 following the pop of that frame, they additionally compute an
 $\epsilon$-closure graph, which keeps edges between nodes that have a
 net-zero stack change path between them. We skip the detour to
@@ -269,9 +268,7 @@ analogy to something more operational: summary edges embody
 memoization (see the last rule in figure
 \ref{fig:summary-semantics}). Instead of following an entire path
 through a call to return a value, we simply jump from the call to the
-return with the result of the call (the second case of rule 4). We
-will return to this analogy and what it means in the presence of
-first-class control in section \ref{sec:sr}.
+return with the result of the call (the second case of rule 4).
 
 \begin{figure}
   \centering
@@ -299,36 +296,46 @@ first-class control in section \ref{sec:sr}.
     $\tpl{\mpoint,
           \mstore',
           \krt{\mpoint, \mstore'},
-          \joinone{\mktab}{(\mpoint, \mstore')}{\mkont},
+          \mktab',
           \mmemo}$
 \\
     & or \\
-    & $\tpl{\mval_\mathit{result}, \mstore', \mkont, \mktab, \mmemo} \text{ if } \mval_\mathit{result} \in \mmemo(\mpoint,\mstore')$
+    & $\tpl{\mval_\mathit{result},
+            \mstore',
+            \mkont,
+            \mktab',
+            \mmemo}$
+    \\ & \quad if $\mval_\mathit{result} \in \mmemo(\mpoint,\mstore')$
     \\ % or, lookup in table
 %    & $\tpl{\mval, \mstore', \mkont,\mktab,\mmemo}$ if $\mval \in \mmemo(\mpoint, \mstore')$ \\    
     where & $\mpoint = (\mexpr, \extm{\menv}{\mvar}{\maddr})$ \\
-          & $\mstore' = \joinone{\mstore}{\maddr}{\mval}$
+          & $\mstore' = \joinone{\mstore}{\maddr}{\mval}$ \\
+          & $\mktab' = \joinone{\mktab}{(\mpoint, \mstore')}{\mkont}$
     \\
 % return
     $\tpl{\mval, \mstore, \krt{\mpoint,\mstore'}, \mktab, \mmemo}$
     &
     $\tpl{\mval, \mstore, \mkont, \mktab, \joinone{\mmemo}{(\mpoint, \mstore')}{\mval}}$
-    if $\mkont \in \mktab(\mpoint, \mstore')$
+    \\ & \quad if $\mkont \in \mktab(\mpoint, \mstore')$
   \end{tabular}
   \caption{The summarizing tabular stack machine}
   \label{fig:summary-semantics}
 \end{figure}
 
-Once we finitize the address space of the store, this computes a
-characteristic finite state machine that has only reachable states of
-the pushdown system the unbounded stack model embodies.  To turn this
-semantics into PDCFA's algorithm for constructing a Dyck state graph,
-we apply a widening operator ${\mathcal F}$ to make $\mstore$,
-$\mkont$, and $\mmemo$ shared amongst all states.
+To turn this semantics into PDCFA's algorithm for constructing a Dyck
+state graph, given the appropriate $\alloc$, we apply a widening
+operator to make $\mstore$, $\mkont$, and $\mmemo$ shared amongst all
+states (meaning states then become represented without these
+compontents), in what is then called a $\System$.  Since these
+components are shared, they are always the least upper bound of any
+respective component that the semantics produces (the intermediate set
+$I$) in order to stay sound. We use a meta-function $\wn$, ``wide to
+narrow'', to shift between the two representations of states.
 
 \begin{align*}
   \mastate \in \sa{State} &= (\Expr \times \Env) \times \Kont \\
-  \System &= \wp(\sa{State} \times \Store) \times \wp(\sa{State}) \times \Store \times \KTab \times \Memo \\
+  \System &= \wp(\sa{State} \times \Store) \times \wp(\sa{State}) \\
+          &\phantom{=} \times \Store \times \KTab \times \Memo \\
   {\mathcal F} &: \System \to \System \\
   {\mathcal F}(S, F, \mstore, \mktab, \mmemo) &= (S \cup S', F', \mstore', \mktab', \mmemo') \\
   \text{where } I &= \setbuild{\mstate'}{\mastate \in F, \wn(\mastate,\mstore,\mktab,\mmemo) \stepto \mstate'} \\
@@ -349,7 +356,7 @@ current store, after which the next store is the least upper bound of
 all the resulting stores. The next frontier contains only states
 resulting from stepping the previous frontier that we haven't seen at
 this next store. Systematic techniques for a performant implementation
-can be found in \citet{ianjohnson:oaam:2013}.
+can be found in \citet{DBLP:journals/corr/abs-1211-3722}.
 
 \paragraph{Example:} Let's consider a monovariant allocation strategy
 (the address for each binding is the variable name itself) to run the
@@ -360,8 +367,14 @@ following example:
          [z (id 1)])
     ($\le$ y z))
 \end{lstlisting}
+Suppose we extend our semantics to allow numbers, numeric primitives
+and \texttt{let}. The continuation frame for a \texttt{let} contains
+the identifier to bind to the resulting value, along with the body of
+the \texttt{let} with its environment. Call the constructor of this
+frame $\mathbf{lt}$.
+
 We should expect that a pushdown analysis would predict this evaluates
-to true, and there are no loops in the program. 0CFA claims there is a
+to true, and there are no loops in the program. 0CFA ~\citep{ianjohnson:Shivers:1991:CFA} claims there is a
 loop from the second call of \texttt{id} to the first, and thusly
 predicts this program evaluates to true or false. PDCFA claims there
 is no loop, and depending on the implementation, that the result is
@@ -375,11 +388,13 @@ true or false (paper), or just true (implemented)\footnote{This is
 \item{\texttt{(id 0)} steps to \texttt{x} at $\krt{((\texttt{x}, [\texttt{x}\mapsto\texttt{x}]), \mstore_0)}$ with $\mstore_1 =
     \mstore_0[\texttt{x} \mapsto \set{0}]$ and
     (let $\mctx_1 = ((\texttt{x},[\texttt{x}\mapsto\texttt{x}]),\mstore_1)$,
-         $\mkont_1$ = \texttt{(letk y (let ([z (id 1)]) ($\le$ y z)) $[\texttt{id}\mapsto{\texttt{id}}]$)})
+         $\mkont_1 = \klet{\texttt{y}, \texttt{(let ([z (id 1)]) ($\le$ y z))}, [\texttt{id}\mapsto{\texttt{id}}]}$)
     $\mktab_1 = [\mctx_0 \mapsto \set{\mkont_0}]$}
 \item{\texttt{0} at $\krt{\mctx_1}$ steps to $0$ at $\mkont_1$ and $\mmemo_1 = [\mctx_1 \mapsto \set{0}]$}
 \item{\texttt{0} at $\mkont_1$ steps to \texttt{(let ([z (id 1)]) ($\le$ y z))} and $\mstore_2 = \mstore_1[\texttt{y} \mapsto \set{0}]$}
-\item{\texttt{(let ([z (id 1)]) ($\le$ y z))} steps to \texttt{(id 1)} at \texttt{(letk z ($\le$ y z) $[\texttt{id} \mapsto \texttt{id}, \texttt{y} \mapsto \texttt{y}]$)} (call this $\mkont_2$).}
+\item{\texttt{(let ([z (id 1)]) ($\le$ y z))} steps to \texttt{(id 1)} at \\
+      $\klet{\texttt{z}, \texttt{($\le$ y z)}, [\texttt{id} \mapsto \texttt{id}, \texttt{y} \mapsto \texttt{y}]}$
+      (call this $\mkont_2$).}
 \item{\texttt{(id 1)} steps to $x$ with $\mstore_3 = \mstore_2[\texttt{x} \mapsto \set{0,1}]$ and
       (let $\mctx_3 = ((\texttt{x},[\texttt{x}\mapsto\texttt{x}]),\mstore_3)$) $\mktab_3 =\mktab_1[\mctx_3 \mapsto \set{\mkont_2}]$.}
 \item{\texttt{0} or \texttt{1} at $\krt{\mctx_3}$ steps to \texttt{0} or \texttt{1} at $\mkont_2$ and $\mmemo_3 = \mmemo_1[\mctx_3 \mapsto \set{0,1}]$.}
@@ -405,24 +420,25 @@ more than just the call/return matching of the previous section, which
 is why we are showing the two separately. There are two orthogonal
 features of the semantics:
 \begin{enumerate}
-\item{stack allocation for some bindings}
+\item{stack allocation for some bindings in an additional $\mframe \in \Store$}
 \item{strong updates on stack frames for resolved non-determinism}
 \end{enumerate}
-The first of these is an addition to the stack-less context. There is a
-conservative pre-analysis that checks locally whether a binding will
-never escape, and classifies references as able to use the stack frame
-or not. Their criteria for a binding never escaping is that it is
-never referenced in a function that is not its binder. This can be
-extended in a language with more linguistic features; see Kranz's
-thesis about register-allocatable bindings in the Orbit Scheme
-compiler \citep{ianjohnson:kranz:thesis:1988}. A stackable reference
-is one that appears in the body of the binding function, by which we
-mean not within the body of a nested function. They use the information
-that a binding never escapes to not bother allocating it in the
-heap. This has the advantage of not changing the heap, and thus leads
-to less propagation. The addition of these stack frames makes the
-analysis exponential in theory, though in practice they have been
-observed to decrease running time in most cases.
+The first of these is an addition to the stack-less context. There is
+a conservative pre-analysis that checks locally whether a binding will
+never escape, and classifies references (labeled with a distinguishing
+$\mlab$ from an arbitrary space of labels) as able to use the stack frame or not. Their criteria for a
+binding never escaping is that it is never referenced in a function
+that is not its binder. This can be extended in a language with more
+linguistic features; see Kranz's thesis about register-allocatable
+bindings in the Orbit Scheme compiler
+\citep{ianjohnson:kranz:thesis:1988}. A stackable reference is one
+that appears in the body of the binding function, by which we mean not
+within the body of a nested function. They use the information that a
+binding never escapes to not bother allocating it in the heap. This
+has the advantage of not changing the heap, and thus leads to less
+propagation. The addition of these stack frames makes the analysis
+exponential in theory, though in practice they have been observed to
+decrease running time in most cases.
 
 The second of these is to ameliorate a problem they call ``fake
 rebinding.'' That is, since bindings in the abstract represent several
@@ -488,16 +504,16 @@ above:
 
 \begin{align*}
   \bind(\mstore,\mframe,\maddr,\mvar,\mval) &=
-   \left\{\begin{array}{ll}
-            (\mstore, \snglm{\maddr}{\mval}) & \text{if } \mvar \text{ never escapes} \\
-            (\joinone{\mstore}{\maddr}{\mval}, \snglm{\maddr}{\mval}) & \text{otherwise } \\
+   \left\{\begin{array}{l}
+            (\mstore, \snglm{\maddr}{\mval}) \text{ if } \mvar \text{ never escapes} \\
+            (\joinone{\mstore}{\maddr}{\mval}, \snglm{\maddr}{\mval}) \text{ otherwise} \\
           \end{array}\right. \\
   \lookup(\mstore,\mframe,\menv,\mvar,\mlab) &=
-    \left\{\begin{array}{ll}
+    \left\{\begin{array}{l}
           \setbuild{(\extm{\mframe}{\menv(\mvar)}{\set{\mval}}, \mval)}
                    {\mval \in \mframe(\menv(\mvar))}
-                   & \text{if } \mlab \text{ non-escaping} \\
-          \setbuild{(\mframe,\mval)}{\mval \in \mstore(\menv(\mvar))} & \text{otherwise}
+                   \\ \qquad \text{if } \mlab \text{ non-escaping} \\
+          \setbuild{(\mframe,\mval)}{\mval \in \mstore(\menv(\mvar))} \text{ otherwise}
            \end{array}\right.
 \end{align*}
 
@@ -532,16 +548,16 @@ There is contention among programming language researchers whether
 the entire stack, leading to space leaks
 \citep{ianjohnson:kiselyov:against-callcc}. Alternative control
 operators have been proposed that delimit how much of the stack to
-capture, such as Felleisen's $\%$ (read ``prompt'') and capture
-operator ${\mathcal F}$ (read ``control'')
-\citep{ianjohnson:felleisen:control:1988}, or Danvy and Filinski's
-\texttt{reset} (equivalent to $\%$) and \texttt{shift}
+capture, such as $\%$ (read ``prompt'') and capture operator
+${\mathcal F}$ (read ``control'')
+\citep{ianjohnson:felleisen:control:1988}, or \texttt{reset}
+(equivalent to $\%$) and \texttt{shift}
 \citep{ianjohnson:danvy:filinski:delim:1990}. However, the stacks
 captured by these operators always extend the stack when invoked,
 rather than replace it like those captured with
 \rackett{call/cc}. Continuations that have this extension behavior are
-called ``composable continuations.'' Stack replacement is simple to
-model in a regular analysis using the AAM approach, and Vardoulakis
+called ``composable continuations.'' Stack replacement is easily
+modeled in a regular analysis using the AAM approach, and Vardoulakis
 and Shivers showed it can be done in a pushdown approach (although it
 breaks the pushdown model). Stack extension, however, poses a new
 challenge for pushdown analysis, since one application of a composable
@@ -584,7 +600,8 @@ spaces for the shift/reset semantics are as follows:
 % Shift
     $\tpl{(\sshift{\mvar}{\mexpr}, \menv), \mstore, \mkont, \mmkont}$
     &
-    $\tpl{(\mexpr, \extm{\menv}{\mvar}{\maddr}), \joinone{\mstore}{\maddr}{\mkont},\kmt,\mmkont}$
+    $\tpl{(\mexpr, \extm{\menv}{\mvar}{\maddr}), \mstore',\kmt,\mmkont}$
+    \\ & where $\mstore' = \joinone{\mstore}{\maddr}{\mkont}$
     \\
 % continuation call
     $\tpl{\mval,\mstore,\kfn{\mkont', \mkont}, \mmkont}$
@@ -604,7 +621,8 @@ continuations act like functions. The new semantic spaces are then
   \mctx \in \Context &::= ((\mexpr,\menv),\mstore) \mid (\vcomp{\mkont},\mval,\mstore) \\
   \mkont \in \Kont &= \kmt \mid \krt{\mctx} \mid \kar{\mexpr,\menv,\mkont} \mid \kfn{\mval,\mkont} \\
   \mmkont \in \MKont &::= \kmt \mid \kprompt{\mctx} \\
-  \mktab \in \KTab &= \Context \to (\wp(\Kont \times \MKont) \cup \Kont) \\
+  \mathit{KTabRange} &= \wp(\Kont \times \MKont) \cup \wp(\Kont) \\
+  \mktab \in \KTab &= \Context \to \mathit{KTabRange} \\
   \mmemo \in \Memo &= \Context \to \wp(\Value)
 \end{align*}
 
@@ -627,7 +645,7 @@ precision-tuning friend, $\alloc$. Then, instead of entirely removing
 the store component of the $\rt$ context, we can replace it with an
 address of possible stores that it would approximate.
 
-\begin{figure}
+\begin{figure*}
   \centering
   $\mstate \stepto \mstate' \text{ where } \maddr = \alloc(\mstate)$ \\
   \begin{tabular}{r|l}
@@ -655,7 +673,7 @@ address of possible stores that it would approximate.
     &
     $\tpl{\mval, \mstore, \mkont', \kprompt{\mctx}, \mktab',\mmemo}$
     \\
-    where & $\mctx = (\mkont, \mval, \mstore')$ \\
+    where & $\mctx = (\mkont', \mval, \mstore)$ \\
           & $\mktab' = \joinone{\mktab}{\mctx}{(\mkont,\mmkont)}$
     \\
 % Memoized continuation call
@@ -666,7 +684,7 @@ address of possible stores that it would approximate.
   \end{tabular}  
   \caption{Faulty table-based semantics for shift/reset}
   \label{fig:shift-reset-table0}
-\end{figure}
+\end{figure*}
 
 The new indirection possibility changes $\Context$ to also include
 $\maddr$ where there was previously a $\mstore$ (though contexts for
@@ -674,16 +692,17 @@ continuation calls remain unchanged), and $\KTab$ now additionally
 maps $\Addr$ to a set of stores. The rules that change are presented in figure \ref{fig:shift-reset-table1}.
 
 \begin{align*}
-  \mctx \in \Context &::= ((\mexpr,\menv),\mstore) \mid ((\mexpr,\menv),\maddr) \mid (\vcomp{\mkont},\mval,\mstore) \\
+  \mctx \in \Context &::= ((\mexpr,\menv),\mstore) \mid ((\mexpr,\menv),\maddr)
+                     \\ & \mid (\vcomp{\mkont},\mval,\mstore) \\
   \msctx \in \SContext &::= ((\mexpr,\menv),\maddr) \\
   \mskont \in \SKont &= \krt{\msctx} \mid \ldots \\
   \mval \in \Value &= \vclo{\slam{\mvar}{\mexpr}}{\menv} \mid \vcomp{\mskont} \\
   \mmkont \in \MKont &::= \kmt \mid \kprompt{\mctx} \\
-  \mktab \in \KTab &= (\Context \to (\wp(\Kont \times \MKont) \cup \Kont)) \\
+  \mktab \in \KTab &= (\Context \to \mathit{KTabRange}) \\
                    &\cup (\Addr \to \wp(\Store))
 \end{align*}
 
-\begin{figure}
+\begin{figure*}
   \centering
 % Shift
   $\mstate \stepto \mstate' \text{ where } \maddr = \alloc(\mstate)$ \\
@@ -705,29 +724,33 @@ maps $\Addr$ to a set of stores. The rules that change are presented in figure \
   \end{tabular}
   \caption{Fixed table-based semantics for shift/reset}
   \label{fig:shift-reset-table1}
-\end{figure}
+\end{figure*}
 
 The meta-functions mentioned in the fixed semantics all deal with the
 addition of $\maddr$ to contexts. If the context in an $\rt$ frame is
 approximate, we must return to all the continuations known for all the
-contexts it approximates ($\returns$). At return boundaries, the memo
-table must add the result to all the represented contexts
-($\memoize$). At capture time, we strip the store in the $\rt$ frame
-if there is one, and replace it with an address.
-
-\newcommand{\replacectx}{\mathit{replace}\mstore}
-\newcommand{\addstore}{\mathit{add}\mstore}
+contexts it approximates:
 \begin{align*}
   \returns(\mktab, ((\mexpr,\menv), \mstore)) &= \mktab((\mexpr,\menv), \mstore) \\
   \returns(\mktab, ((\mexpr,\menv), \maddr)) &=
     \bigcup\setbuild{\mktab((\mexpr,\menv),\mstore)}{\mstore \in \mktab(\maddr)}
-  \\[2pt]
+\end{align*}
+
+At return boundaries, the memo
+table must add the result to all the represented contexts:=
+\begin{align*}
   \memoize(\mmemo, \mktab, ((\mexpr,\menv), \mstore), \mval) &=
-    \joinone{\mmemo}{((\mexpr,\menv), \mstore)}{\mval} \\
+  \joinone{\mmemo}{((\mexpr,\menv), \mstore)}{\mval} \\
   \memoize(\mmemo, \mktab, ((\mexpr,\menv), \maddr), \mval) &=
-    \mmemo \sqcup \bigsqcup\limits_{\mstore \in \mktab(\maddr)}\snglm{((\mexpr,\menv), \mstore)}{\mval}
-  \\[2pt]
-  \approximate(\mkont, \mktab, \maddr) &= (\replacectx(\mkont), \addstore{\mkont}) \\
+  \mmemo \sqcup \bigsqcup\limits_{\mstore \in \mktab(\maddr)}\snglm{((\mexpr,\menv), \mstore)}{\mval}
+\end{align*}
+At capture time, we strip the store in the $\rt$ frame
+if there is one, and replace it with an address:
+
+\newcommand{\replacectx}{\mathit{replace}\mstore}
+\newcommand{\addstore}{\mathit{add}\mstore}
+\begin{align*}
+  \approximate(\mkont, \mktab, \maddr) &= (\replacectx(\mkont), \addstore(\mkont)) \\
   \text{where }
    \replacectx(\kmt) &= \kmt \\
    \replacectx(\krt{((\mexpr,\menv),\_)}) &= \krt{((\mexpr,\menv),\maddr)} \\
@@ -737,8 +760,7 @@ if there is one, and replace it with an address.
    \addstore(\kmt) &= \mktab \\
    \addstore(\krt{((\mexpr,\menv),\mstore)}) &= \joinone{\mktab}{\maddr}{\mstore} \\
    \addstore(\krt{((\mexpr,\menv),\maddr')}) &= \joinm{\mktab}{\maddr}{\mktab(\maddr')} \\
-   \addstore(\kar{\mexpr,\menv,\mkont}) &= \addstore(\mkont) \\
-   \addstore(\kfn{\mval, \mkont}) &= \addstore(\mkont)
+   \addstore(\kar{\mexpr,\menv,\mkont}) &= \addstore(\kfn{\mval, \mkont}) = \addstore(\mkont)
 \end{align*}
 
 The result of this viewpoint is a sound, precise, and computable
@@ -835,13 +857,9 @@ be heap-allocated, and single target abort operations that can be
 turned into long jumps after a computed stack unraveling. On top of
 optimizations, there are security analyses. Greater control of the
 stack gives us the ability to drill deep into context-sensitive
-security properties and make precise predictions such as, ``is it
-possible to send image data on the network outside the context of the
-user's permission?'' This way a user can use an image taking/sharing
-application without the application surreptitiously taking and sending
-images the user doesn't know about.
+security properties and make precise predictions.
 
-\bibliographystyle{chicago}
+\bibliographystyle{plainnat}
 \bibliography{bibliography}
 
 \end{document}
