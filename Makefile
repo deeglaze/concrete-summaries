@@ -1,11 +1,13 @@
 CURRENT=paper
+TARGET=lncs
+FILE=$(CURRENT)$(TARGET)
 
 WGETDVANHORNBIB=curl -o dvanhorn.bib "http://www.citeulike.org/bibtex/user/dvanhorn?fieldmap=posted-at:date-added&do_username_prefix=1&key_type=4&fieldmap=url:x-url&fieldmap=doi:x-doi&fieldmap=address:x-address&fieldmap=isbn:x-isbn&fieldmap=issn:x-issn&fieldmap=month:x-month&fieldmap=comment:comment&fieldmap=booktitle:booktitle&fieldmap=abstract:x-abstract&fieldmap=pages:pages&volume:volume"
 WGETIANJOHNSONBIB=wget -O ianjohnson.bib \
 	          "http://www.citeulike.org/bibtex/user/ianjohnson?fieldmap=posted-at:date-added&do_username_prefix=1&key_type=4&fieldmap=url:x-url&fieldmap=doi:x-doi&fieldmap=address:x-address&fieldmap=isbn:x-isbn&fieldmap=issn:x-issn&fieldmap=month:x-month&fieldmap=comment:comment&fieldmap=booktitle:booktitle&fieldmap=abstract:x-abstract&fieldmap=pages:pages&volume:volume"
 
-default: $(CURRENT).pdf
-
+default: $(FILE).pdf
+	rubber -d $(FILE).tex
 
 # Crude word-counting:
 .PHONY: wc
@@ -15,10 +17,10 @@ wc:
 
 # Open
 open:
-	xdg-open $(CURRENT).pdf
+	xdg-open $(FILE).pdf
 
 edit:
-	emacs $(CURRENT).tex &
+	emacs $(FILE).tex &
 
 # Check style:
 proof:
@@ -37,28 +39,28 @@ refresh: getbib
 
 # Forcibly refresh bibliogaphy:
 getbib:
-#	$(WGETDVANHORNBIB)
-#	$(WGETIANJOHNSONBIB)
+	$(WGETDVANHORNBIB)
+	$(WGETIANJOHNSONBIB)
 	cat dvanhorn.bib ianjohnson.bib local.bib > bibliography.bib
 	-bibclean bibliography.bib > bibliography.bib.clean
 	-mv bibliography.bib.clean bibliography.bib
 
 all:
-	pdflatex $(CURRENT)
-	bibtex $(CURRENT)
-	pdflatex $(CURRENT)
-	pdflatex $(CURRENT)
+	pdflatex $(FILE)
+	bibtex $(FILE)
+	pdflatex $(FILE)
+	pdflatex $(FILE)
 
 # Run bibtex:
 bibtex:
-	bibtex $(CURRENT)
+	bibtex $(FILE)
 
 
 %.dvi: %.tex *.tex
 	latex $(basename $@)
 
 %.pdf: *.tex
-	pdflatex $(CURRENT)
+	pdflatex $(FILE)
 
 # %.pdf: %.dvi
 #	dvipdfm -o $(basename $@).pdf $(basename $@).dvi
@@ -70,6 +72,6 @@ flush: clean
 
 # Clean out local intermediate files:
 clean:
-	rm -f paper.{dvi,ps,pdf,log,toc,blg,bbl,aux,rel} *.log *~
+	rm -f $(FILE).{dvi,ps,pdf,log,toc,blg,bbl,aux,rel} *.log *~
 
 

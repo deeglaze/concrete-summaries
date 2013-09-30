@@ -1,0 +1,11 @@
+*.rkt
+*.cls
+*.out
+*.log
+*.blg
+\#*
+compiled
+*.bib
+*.aux
+*.bbl
+*~

@@ -1,0 +1,49 @@
+\documentclass[article]{llncs}
+
+%\pagestyle{plain}
+\usepackage{amsmath,stmaryrd,listings}
+\usepackage[usenames,dvipsnames]{color}
+
+\newcommand{\Scribtexttt}[1]{{\texttt{#1}}}
+\newcommand{\SColorize}[2]{\color{#1}{#2}}
+\newcommand{\inColor}[2]{{\Scribtexttt{\SColorize{#1}{#2}}}}
+\definecolor{PaleBlue}{rgb}{0.90,0.90,1.0}
+\newcommand{\rackett}[1]{\inColor{black}{#1}}
+\input{local-macros}
+\usepackage[numbers,sectionbib]{natbib}
+\usepackage[english]{babel}
+\usepackage[hidelinks]{hyperref}
+\usepackage{cleveref}
+\usepackage{placeins}
+
+\begin{document}
+
+%\conferenceinfo{WXYZ '05}{date, City.}
+%\copyrightyear{2005}
+%\copyrightdata{[to be supplied]}
+%% \title{Static Verification of\\ Temporal Higher-Order Contracts via\\
+%% Regular Expression Derivatives}
+\title{Concrete Semantics for Pushdown Analysis:\\The Essence of Summarization}
+\author{J. Ian Johnson and David Van Horn}
+
+%\authorinfo{J. Ian Johnson \and Nicholas Alexander Marquez \and David Van Horn}
+%           {Northeastern University}
+%           {}
+\institute{Northeastern University}
+
+\maketitle
+
+\begin{abstract}
+\input{abstract}
+\end{abstract}
+
+\input{content}
+
+% Uncomment for camera-ready.
+%\paragraph{Acknowledgments}{We thank Jay McCarthy for helpful discussions on the semantics
+%and implementation of temporal contracts, and Stephen Chang for his feedback on early drafts.}
+
+\bibliographystyle{splncsnat}
+\bibliography{bibliography}
+
+\end{document}

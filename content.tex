@@ -1,58 +1,3 @@
-\documentclass{sigplanconf}
-
-\pagestyle{plain}
-\usepackage{amsmath,stmaryrd,natbib,listings}
-\usepackage[usenames,dvipsnames]{color}
-
-\newcommand{\Scribtexttt}[1]{{\texttt{#1}}}
-\newcommand{\SColorize}[2]{\color{#1}{#2}}
-\newcommand{\inColor}[2]{{\Scribtexttt{\SColorize{#1}{#2}}}}
-\definecolor{PaleBlue}{rgb}{0.90,0.90,1.0}
-\newcommand{\rackett}[1]{\inColor{black}{#1}}
-\input{local-macros}
-
-\title{Concrete Semantics for Pushdown Analysis:\\The Essence of Summarization}
-\authorinfo{J. Ian Johnson and David Van Horn}{Northeastern University}{\{ianj,dvanhorn\}@ccs.neu.edu}
-
-\usepackage{hyperref}
-\begin{document}
-\maketitle
-
-% Outline:
-% Introduction.
-% High level
-% PDCFA
-% - Concrete
-% - Abstract
-% CFA2
-% - Concrete
-% - Abstract
-% WCM machine
-% - Concrete
-% - Abstract
-% Related Work
-% Future Work
-% Conclusion
-
-\begin{abstract}
-Pushdown analysis is better than finite-state analysis in precision and
-performance. Why then have we not seen total widespread adoption of these
-techniques? For one, the known techniques are technically burdened and
-difficult to understand or extend. Control structure of the programming language
-gets pulled into the model of computation, which makes extensions to
-non-pushdown control structures, such as \rackett{call/cc} or \rackett{shift} and
-\rackett{reset}, non-trivial.
-
-We show a derivational approach to abstract interpretation that yields
-transparently sound static analyses that can precisely match calls and
-returns when applied to well-known abstract machines. We show that
-adding memoization and segmenting the continuation into bounded pieces
-leads to machines that abstract to static analyses for context-free
-reachability by simply bounding the stores. This technique allows us
-to derive existing, more technically involved analyses, and a novel
-pushdown analysis for delimited, composable control.
-\end{abstract}
-
 \section{Introduction}
 
 Programs in higher-order languages heavily use function calls and
@@ -254,7 +199,7 @@ abstraction. The semantic spaces for the machine are modified thusly:
                      \mid \kfn{\mval,\mkont}
                      \mid \krt{(\mexpr,\menv),\mstore}\\
   \mktab \in \KTab &= (\Expr \times \Env)\times \Store \to \wp(\Kont) \\
-  \mmemo \in \Memo &= (\Expr \times \Env)\times \Store \to \wp(\Value)
+  \mmemo \in \Memo &= (\Expr \times \Env)\times \Store \to \wp(\Value \times \Store)
 \end{align*}
 
 \paragraph{The role of summaries:} notice the additional $\Memo$
@@ -268,7 +213,7 @@ analogy to something more operational: summary edges embody
 memoization (see the last rule in figure
 \ref{fig:summary-semantics}). Instead of following an entire path
 through a call to return a value, we simply jump from the call to the
-return with the result of the call (the second case of rule 4).
+return with the result of the call, with the resulting context changes---in this case only the store (the second case of rule 4).
 
 \begin{figure}
   \centering
@@ -301,11 +246,11 @@ return with the result of the call (the second case of rule 4).
 \\
     & or \\
     & $\tpl{\mval_\mathit{result},
-            \mstore',
+            \mstore'',
             \mkont,
             \mktab',
             \mmemo}$
-    \\ & \quad if $\mval_\mathit{result} \in \mmemo(\mpoint,\mstore')$
+    \\ & \quad if $(\mval_\mathit{result},\mstore'') \in \mmemo(\mpoint,\mstore')$
     \\ % or, lookup in table
 %    & $\tpl{\mval, \mstore', \mkont,\mktab,\mmemo}$ if $\mval \in \mmemo(\mpoint, \mstore')$ \\    
     where & $\mpoint = (\mexpr, \extm{\menv}{\mvar}{\maddr})$ \\
@@ -315,7 +260,7 @@ return with the result of the call (the second case of rule 4).
 % return
     $\tpl{\mval, \mstore, \krt{\mpoint,\mstore'}, \mktab, \mmemo}$
     &
-    $\tpl{\mval, \mstore, \mkont, \mktab, \joinone{\mmemo}{(\mpoint, \mstore')}{\mval}}$
+    $\tpl{\mval, \mstore, \mkont, \mktab, \joinone{\mmemo}{(\mpoint, \mstore')}{(\mval,\mstore)}}$
     \\ & \quad if $\mkont \in \mktab(\mpoint, \mstore')$
   \end{tabular}
   \caption{The summarizing tabular stack machine}
@@ -332,6 +277,8 @@ respective component that the semantics produces (the intermediate set
 $I$) in order to stay sound. We use a meta-function $\wn$, ``wide to
 narrow'', to shift between the two representations of states.
 
+%% FIXME: remove stores from memo-table since they will always be unchanged
+%% TODO: Show that store widening and store/memo/KTab widening have a bisimulation.
 \begin{align*}
   \mastate \in \sa{State} &= (\Expr \times \Env) \times \Kont \\
   \System &= \wp(\sa{State} \times \Store) \times \wp(\sa{State}) \\
@@ -351,12 +298,14 @@ narrow'', to shift between the two representations of states.
 A $\System$ embodies the states seen and at which store, $S$, the
 frontier set of states yet to analyze, $F$, the shared store for the
 frontier, $\mstore$, the continuation table $\mktab$ and the memo
-table $\mmemo$. All the states in the frontier are stepped with the
-current store, after which the next store is the least upper bound of
-all the resulting stores. The next frontier contains only states
-resulting from stepping the previous frontier that we haven't seen at
-this next store. Systematic techniques for a performant implementation
-can be found in \citet{DBLP:journals/corr/abs-1211-3722}.
+table $\mmemo$. The memo table need only map to values, since the
+global store will always subsume the store that would otherwise be
+mapped. All the states in the frontier are stepped with the current
+store, after which the next store is the least upper bound of all the
+resulting stores. The next frontier contains only states resulting
+from stepping the previous frontier that we haven't seen at this next
+store. Systematic techniques for a performant implementation can be
+found in \citet{ianjohnson:oaam:icfp2013}.
 
 \paragraph{Example:} Let's consider a monovariant allocation strategy
 (the address for each binding is the variable name itself) to run the
@@ -384,6 +333,7 @@ true or false (paper), or just true (implemented)\footnote{This is
 \texttt{id} ($\mstore_0 = [\texttt{id} \mapsto
 \set{\vclo{\slam{\texttt{x}}{\texttt{x}}}{\bot}}]$):
 
+%% FIXME stores in memo-table
 \begin{enumerate}
 \item{\texttt{(id 0)} steps to \texttt{x} at $\krt{((\texttt{x}, [\texttt{x}\mapsto\texttt{x}]), \mstore_0)}$ with $\mstore_1 =
     \mstore_0[\texttt{x} \mapsto \set{0}]$ and
@@ -406,6 +356,17 @@ We maintained enough context to distinguish the return points of
 flow through the expression, we consult $\mmemo$ to continue past
 function calls, so there is no confusion about a back edge from the
 second call to \texttt{id}.
+
+\begin{conjecture}
+  Tabular semantics has a bisimulation with the standard semantics with a sound allocation strategy.
+\end{conjecture}
+\begin{proof}
+  
+\end{proof}
+
+\begin{conjecture}
+  Store-widened tabular semantics has a bisimulation with store/memo/k-table-widened semantics.
+\end{conjecture}
 
 \section{Deriving CFA2}
 \label{sec:cfa2}
@@ -522,7 +483,7 @@ stackable references, but that is what CFA2 does. Indeed, as soon as
 the non-determinism has been determined, we could extend the stack
 frame so any subsequent reference means what it meant previously in
 the function. Look-up would then always try the stack frame before
-falling back on the heap.
+falling back on the heap (of course this must be limited to immutable addresses).
 
 CFA2 also includes what they called ``transitive summaries'' to deal
 with tail calls. We insert an $\rt$ frame at every function call.
@@ -540,8 +501,15 @@ stack frames, there is no confusion about \texttt{z}'s value either,
 so if the operator weren't $\le$ but instead $<$ or $+$, we could
 still constant fold that away.
 
+\begin{conjecture}
+  Tabular semantics has a bisimulation with standard semantics.
+\end{conjecture}
+
 \section{Analysis of delimited, composable control}
 \label{sec:sr}
+
+%% TODO (thanks to ccshan): Discuss difference between CPS for shift/reset and this approach,
+%% Discuss how this does not generalize to first class prompts due to append versus cons.
 
 There is contention among programming language researchers whether
 \rackett{call/cc} should be a language primitive, since it captures
@@ -623,7 +591,7 @@ continuations act like functions. The new semantic spaces are then
   \mmkont \in \MKont &::= \kmt \mid \kprompt{\mctx} \\
   \mathit{KTabRange} &= \wp(\Kont \times \MKont) \cup \wp(\Kont) \\
   \mktab \in \KTab &= \Context \to \mathit{KTabRange} \\
-  \mmemo \in \Memo &= \Context \to \wp(\Value)
+  \mmemo \in \Memo &= \Context \to \wp(\Value \times \Store)
 \end{align*}
 
 Figure \ref{fig:shift-reset-table0} has what one might naturally write
@@ -660,7 +628,7 @@ address of possible stores that it would approximate.
 % Pop prompt
     $\tpl{\mval, \mstore, \kmt, \kprompt{\mctx}, \mktab, \mmemo}$
     &
-    $\tpl{\mval, \mstore, {\mkont}, {\mmkont}, \mktab, \joinone{\mmemo}{\mctx}{\mval}}$
+    $\tpl{\mval, \mstore, {\mkont}, {\mmkont}, \mktab, \joinone{\mmemo}{\mctx}{(\mval,\mstore)}}$
     if $(\mkont,\mmkont) \in \mktab(\mctx)$
     \\
 % Shift
@@ -680,7 +648,7 @@ address of possible stores that it would approximate.
 % continuation call
     $\tpl{\mval,\mstore,\kfn{\vcomp{\mkont'}, \mkont}, \mmkont, \mktab, \mmemo}$
     &
-    $\tpl{\mval', \mstore, \mkont, \mmkont, \mktab,\mmemo}$ if $\mval' \in \mmemo(\mkont',\mval,\mstore)$
+    $\tpl{\mval', \mstore', \mkont, \mmkont, \mktab,\mmemo}$ if $(\mval',\mstore') \in \mmemo(\mkont',\mval,\mstore)$
   \end{tabular}  
   \caption{Faulty table-based semantics for shift/reset}
   \label{fig:shift-reset-table0}
@@ -720,7 +688,7 @@ maps $\Addr$ to a set of stores. The rules that change are presented in figure \
    $\tpl{\mval, \mstore, \mkont, \mmkont, \mktab, \mmemo'}$
    if $\mkont \in \returns(\mktab, \mctx)$
    \\
-   where & $\mmemo' = \memoize(\mmemo, \mktab, \mctx, \mval)$
+   where & $\mmemo' = \memoize(\mstore,\mmemo, \mktab, \mctx, \mval)$
   \end{tabular}
   \caption{Fixed table-based semantics for shift/reset}
   \label{fig:shift-reset-table1}
@@ -739,10 +707,10 @@ contexts it approximates:
 At return boundaries, the memo
 table must add the result to all the represented contexts:=
 \begin{align*}
-  \memoize(\mmemo, \mktab, ((\mexpr,\menv), \mstore), \mval) &=
-  \joinone{\mmemo}{((\mexpr,\menv), \mstore)}{\mval} \\
-  \memoize(\mmemo, \mktab, ((\mexpr,\menv), \maddr), \mval) &=
-  \mmemo \sqcup \bigsqcup\limits_{\mstore \in \mktab(\maddr)}\snglm{((\mexpr,\menv), \mstore)}{\mval}
+  \memoize(\mstore,\mmemo, \mktab, ((\mexpr,\menv), \mstore'), \mval) &=
+  \joinone{\mmemo}{((\mexpr,\menv), \mstore')}{(\mval,\mstore')} \\
+  \memoize(\mstore,\mmemo, \mktab, ((\mexpr,\menv), \maddr), \mval) &=
+  \mmemo \sqcup \bigsqcup\limits_{\mstore' \in \mktab(\maddr)}\snglm{((\mexpr,\menv), \mstore')}{(\mval,\mstore)}
 \end{align*}
 At capture time, we strip the store in the $\rt$ frame
 if there is one, and replace it with an address:
@@ -767,6 +735,33 @@ The result of this viewpoint is a sound, precise, and computable
 semantics for a ``pushdown approach'' to analyzing delimited,
 composable control. To handle non-composable control, we can simply
 remove the prompts and keep $\approximate$.
+
+\begin{conjecture}
+  Tabular semantics has a bisimulation with standard semantics given fresh allocation.
+\end{conjecture}
+
+\begin{conjecture}
+  Tabular semantics simulates standard semantics with abstract allocation.
+\end{conjecture}
+
+%% TODO: complete
+\paragraph{Comparison to CFA2 CPS'd to remove {\tt shift} and {\tt reset}:}{
+  One might ask what this different model buys us over using a CPS transform to compile away {\tt shift} and {\tt reset} forms.
+%
+The short answer is that we get better precision for capture and invocation of continuations.
+%
+In pushdown analysis, we track function return points with entire calling contexts rather than the $k$-CFA way of allocating the continuation in the heap at some lower-precision address, like a variable.
+%
+In our summarizing analysis of delimited composable control, we get the same added precision for {\tt reset}, {\tt shift}, and continuation invocation points.
+%
+Consider the following program and its CPS transform for comparison:
+\begin{lstlisting}
+  mumble
+\end{lstlisting}
+
+PDCFA with a monovariant allocation strategy will predict the CPS'd version returns ???.
+%
+Our specialized analysis for delimited control, also with a monovariant allocation strategy, will predict the non-CPS'd version returns ???.}
 
 \section{Related Work}
 
@@ -858,8 +853,3 @@ turned into long jumps after a computed stack unraveling. On top of
 optimizations, there are security analyses. Greater control of the
 stack gives us the ability to drill deep into context-sensitive
 security properties and make precise predictions.
-
-\bibliographystyle{plainnat}
-\bibliography{bibliography}
-
-\end{document}
