@@ -14,7 +14,7 @@ CFA2 and PDCFA have difficult details to easily apply to an off-the-shelf semant
 %%
 
 %%
-There is a systematic process for transforming off-the-shelf programming language semantics into a form amenable to \emph{regular} analysis that has been widely applied with great success to production programming languages ~\citet{dvanhorn:VanHorn2010Abstracting} (a technique called abstracting abstract machines, or AAM).
+There is a systematic process for transforming off-the-shelf programming language semantics into a form amenable to \emph{regular} analysis that has been widely applied with great success to production programming languages~\citet{dvanhorn:VanHorn2010Abstracting} (a technique called abstracting abstract machines, or AAM).
 %
 A contribution of this paper is a systematic process to construct \emph{pushdown} analyses of programming languages, due to the precision (and often performance) benefits.
 %%
@@ -71,9 +71,10 @@ Once the machine semantics is in this form, simple point-wise abstraction leads 
 
 The remaining sections of the paper are
 \begin{itemize}
-\item{section \ref{sec:pdcfa}: we derive a cousin of PDCFA}
-\item{section \ref{sec:cfa2}: we make additions to the previous semantics to get a direct-style CFA2 without first-class control}
-\item{section \ref{sec:sr}: we give a novel analysis of delimited and composable first-class control.}
+\item{\autoref{sec:pdcfa}: we derive a cousin of PDCFA}
+\item{\autoref{sec:gc}: we show how abstract garbage collection ``falls out'' of this approach.}
+\item{\autoref{sec:cfa2}: we make additions to the PDCFA semantics to get a direct-style CFA2 without first-class control}
+\item{\autoref{sec:sr}: we give a novel analysis of delimited and composable first-class control.}
 \end{itemize}
 
 \section{Deriving PDCFA}
@@ -175,7 +176,7 @@ The tail of a continuation in the context of a function will contain the stack-l
 %
 The context includes the function (or unique label of the function), the environment, and the store.
 %
-Notice that this choice can be viewed as a special allocation strategy for continuations in the AAM viewpoint, but we separate the table of continuations from the store since continuations themselves contain stores in $\rt$ frames --- this leads to a recursive data-structure that we are trying to avoid.
+Notice that this choice can be viewed as a special allocation strategy for continuations in the AAM viewpoint, but we separate the table of continuations from the store since continuations themselves contain stores in $\rt$ continuations --- this leads to a recursive data-structure that we are trying to avoid.
 %
 The store is an important ingredient to maintaining enough precision to keep a pushdown abstraction.
 %
@@ -346,7 +347,7 @@ More formally, $\alloc$ and $\alloc^*$ are comparable if this implication holds:
             {\alloc(\tpl{\mpoint,\mstore,\mkont}) = \alloc^*(\tpl{\mpoint,\mstore,\mkont^*,\mktab,\mmemo})}
 \end{mathpar}
 
-The $\mathit{unroll}$ function interprets what are all the valid continuations that $\mktab$ encodes for a given continuation that contains $\krt{\mctx}$:
+The $\mathit{unroll}$ function interprets what are all the valid continuations that $\mktab$ encodes for a given continuation that contains $\krt{\mctx}$, defined as the greatest fixed point of the following rules:
 \begin{mathpar}
   \inferrule{ }{\kmt \in \unroll{\mktab}{\kmt}} \quad
   \inferrule{\mkont \in \unroll{\mktab}{\mkont'}}{\mkframe:\mkont \in \unroll{\mktab}{\mkframe:\mkont'}} \quad
@@ -357,12 +358,21 @@ The $\mathit{unroll}$ function interprets what are all the valid continuations t
 
 The astute reader may find this definition is dubious, since there is a possibility for unguarded corecursion here.
 %
-A function with ill-founded recursion can lead to a table such that $\krt{\mctx} \in \mktab(\mctx)$.
+Interpreting a function with ill-founded recursion can lead to a table such that $\krt{\mctx} \in \mktab(\mctx)$.
 %
 The abstractions that we impose on our data might also cause this situation, even though the concrete execution might always terminate.
 %
-Our interpretation of $\stepto$ is in a fixed-point computation, so circularities are not a problem for termination.
+Our interpretation of $\stepto$ is in a fixed-point computation, so circularities are not a problem for termination, but we augment the definition here to guard against circularities in our proofs:
 
+\begin{mathpar}
+  \inferrule{ }{\kmt \in \unroll{\mktab}{\kmt, G}} \quad
+  \inferrule{\mkont \in \unroll{\mktab}{\mkont', \bot}}{\mkframe:\mkont \in \unroll{\mktab}{\mkframe:\mkont', G}} \\
+  \inferrule{G \neq \mctx \\
+             \mkont^\circ \in \mktab(\mctx) \\
+             \mkont \in \unroll{\mktab}{\mkont^\circ, \mctx}}
+            {\mkont \in \unroll{\mktab}{\krt{\mctx}, G}}  
+\end{mathpar}
+Consider later uses of $\mathit{unroll}$ to implicitly give $\bot$ for $G$.
 
 \begin{lemma}[Stack irrelevance]\label{lem:irrelevance}
   $\hastail(\mtrace,\mkont)$ implies $\replacetail(\mtrace,\mkont,\mkont')$ is a valid trace.
@@ -403,7 +413,7 @@ The different tables we have encode information about execution history that we 
   Tabular semantics has a bisimulation with memo/k-table-widened semantics.
 \end{theorem}
 
-\section{Deriving GC from the introspective pushdown model}
+\section{Deriving GC from the introspective pushdown model}\label{sec:gc}
 
 Abstract garbage collection~\citep{dvanhorn:Might:2006:GammaCFA} is a powerful technique for regaining precision in an abstract interpretation.
 %
@@ -446,6 +456,10 @@ The ``reaches'' metafunction ($\reaches$) is a transitive closure of ``touches''
                             {\maddr \rightsquigarrow_\mstore b}
 \end{align*}
 
+This semantics of course enjoys the soundness properties that GC does not introduce dangling pointers, and (in the concrete) any two reduction sequences of the same length lead to states equal up to GC.
+%
+Unconstrained allocation functions
+
 \section{Deriving CFA2}
 \label{sec:cfa2}
 
@@ -457,12 +471,47 @@ Vardoulakis and Shivers had a clear goal of harnessing the extra information a p
 %
 This resulted in more than just the call/return matching of the previous section, which is why we are showing the two separately.
 %
-There are two orthogonal features of the semantics:
+There are two orthogonal features of the semantics, embodied by our semantics' two metafunctions ($\bind$ and $\lookup$, respectively in \autoref{fig:frame-semantics}):
 \begin{enumerate}
 \item{stack allocation for some bindings in an additional $\mframe \in \Store$}
 \item{strong updates on stack frames for resolved non-determinism}
 \end{enumerate}
 The first of these is an addition to the stack-less context.
+
+\begin{figure}
+  \centering
+  $\mstate \stepto \mstate' \text{ where } \maddr = \alloc(\mstate)$ \\
+  \begin{tabular}{r|l}
+    \hline
+% variable lookup
+    $\tpl{(\svar[\mlab]{\mvar}, \menv), \mstore, \mframe, \mkont}$
+    &
+    $\tpl{\mval,\mstore,\mframe',\mkont}$ if $(\mframe', \mval) \in \lookup(\mstore,\mframe,\menv,\mvar,\mlab)$
+    \\
+% % application
+%     $\tpl{(\sapp{\mexpri0}{\mexpri1}, \menv), \mstore, \mframe, \mkont}$
+%     &
+%     $\tpl{(\mexpri0, \menv), \mstore, \mframe, \kar{\mexpri1,\menv,\mkont}}$
+%     \\
+% % argument evaluation
+%     $\tpl{\mval, \mstore, \mframe, \kar{\mexpr,\menv,\mkont}}$
+%     &
+%     $\tpl{(\mexpr, \menv), \mstore, \mframe, \kfn{\mval, \mkont}}$
+%     \\
+% function call
+    $\tpl{\mval,\mstore,\mframe,\kcons{\kfn{\vclo{\slam{\mvar}{\mexpr}}{\menv}}}{\mkont}}$
+    &
+    $\tpl{(\mexpr, \extm{\menv}{\mvar}{\maddr}), \mstore', \mframe', \kcons{\kpush{\mframe}}{\mkont}}$
+    \\ where & $(\mstore',\mframe') = \bind(\mstore,\maddr,\mvar,\mval)$
+    \\
+    $\tpl{\mval,\mstore,\mframe,\kcons{\kpush{\mframe'}}{\mkont}}$
+    &
+    $\tpl{\mval,\mstore,\mframe',\mkont}$
+  \end{tabular}
+  \caption{The CES$\xi$K machine}
+  \label{fig:frame-semantics}
+\end{figure}
+
 %
 There is a conservative pre-analysis that checks locally whether a binding will never escape, and classifies references (labeled with a distinguishing $\mlab$ from an arbitrary space of labels) as able to use the stack frame or not.
 %
@@ -507,48 +556,13 @@ What we show here is almost wholly the same in character, only embodied still in
 We show only the significantly modified rules of the semantics in figure \ref{fig:frame-semantics}.
 %
 The other rules simply carry along the extra $\mframe$ component untouched.
-\begin{figure}
-  \centering
-  $\mstate \stepto \mstate' \text{ where } \maddr = \alloc(\mstate)$ \\
-  \begin{tabular}{r|l}
-    \hline
-% variable lookup
-    $\tpl{(\svar[\mlab]{\mvar}, \menv), \mstore, \mframe, \mkont}$
-    &
-    $\tpl{\mval,\mstore,\mframe',\mkont}$ if $(\mframe', \mval) \in \lookup(\mstore,\mframe,\menv,\mvar,\mlab)$
-    \\
-% % application
-%     $\tpl{(\sapp{\mexpri0}{\mexpri1}, \menv), \mstore, \mframe, \mkont}$
-%     &
-%     $\tpl{(\mexpri0, \menv), \mstore, \mframe, \kar{\mexpri1,\menv,\mkont}}$
-%     \\
-% % argument evaluation
-%     $\tpl{\mval, \mstore, \mframe, \kar{\mexpr,\menv,\mkont}}$
-%     &
-%     $\tpl{(\mexpr, \menv), \mstore, \mframe, \kfn{\mval, \mkont}}$
-%     \\
-% function call
-    $\tpl{\mval,\mstore,\mframe,\kcons{\kfn{\vclo{\slam{\mvar}{\mexpr}}{\menv}}}{\mkont}}$
-    &
-    $\tpl{(\mexpr, \extm{\menv}{\mvar}{\maddr}), \mstore', \mframe', \kcons{\kpush{\mframe}}{\mkont}}$
-    \\ where & $(\mstore',\mframe') = \bind(\mstore,\mframe,\maddr,\mvar,\mval)$
-    \\
-    $\tpl{\mval,\mstore,\mframe,\kcons{\kpush{\mframe'}}{\mkont}}$
-    &
-    $\tpl{\mval,\mstore,\mframe',\mkont}$
-  \end{tabular}
-  \caption{The CES$\xi$K machine}
-  \label{fig:frame-semantics}
-\end{figure}
-
-The meta-functions the semantics uses to extend and consult the heap
-and stack use implicit information from the pre-analysis we described
-above:
+%
+The meta-functions the semantics uses to extend and consult the heap and stack use implicit information from the pre-analysis we described above:
 
 \begin{align*}
-  \bind(\mstore,\mframe,\maddr,\mvar,\mval) &=
+  \bind(\mstore,\maddr,\mvar,\mval) &=
    \left\{\begin{array}{l}
-            (\mstore, \snglm{\maddr}{\mval}) \text{ if } \mvar \text{ never escapes} \\
+            (\mstore, \snglm{\maddr}{\mval}) \text{ if } \mvar \text{ allocations never escape} \\
             (\joinone{\mstore}{\maddr}{\mval}, \snglm{\maddr}{\mval}) \text{ otherwise} \\
           \end{array}\right. \\
   \lookup(\mstore,\mframe,\menv,\mvar,\mlab) &=
@@ -567,10 +581,29 @@ Indeed, as soon as the non-determinism has been determined, we could extend the 
 Look-up would then always try the stack frame before falling back on the heap (of course this must be limited to immutable addresses).
 %%
 
+A tabular semantics for the CES$\xi$K machine follows the previous section almost entirely, except that $\mktab$ now stores $(\mkont, \mframe)$ pairs, and returns reinstate the saved $\mframe$:
+\begin{align*}
+  \tpl{\mval,\mstore,\kcons{\kfn{\vclo{\slam{\mvar}{\mexpr}}{\menv}}}{\mkont},\mktab,\mmemo} &\stepto
+  \tpl{\mpoint,
+    \mstore',
+    \mframe',
+    \krt{\mpoint, \mstore'},
+    \mktab',
+    \mmemo} \\
+  \text{where }
+  & \mpoint = (\mexpr, \extm{\menv}{\mvar}{\maddr}) \\
+  & (\mstore',\mframe') = \bind(\mstore,\maddr,\mvar,\mval) \\
+  & \mktab' = \joinone{\mktab}{(\mpoint, \mstore')}{(\mkont,\mframe)}
+\\[2pt]
+ \tpl{\mval, \mstore, \mframe, \krt{\mpoint,\mstore'}, \mktab, \mmemo} &\stepto
+ \tpl{\mval, \mstore, \mframe', \mkont, \mktab, \joinone{\mmemo}{(\mpoint, \mstore')}{(\mval,\mstore)}}
+  \\ & \quad\text{if } (\mkont,\mframe') \in \mktab(\mpoint, \mstore')
+\end{align*}
+
 %%
 CFA2 also includes what they called ``transitive summaries'' to deal with tail calls.
 %
-We insert an $\rt$ frame at every function call.
+We create an $\rt$ continuation at every function call.
 %
 This view contends with tail calls, but we can identify tail calls easily --- any call with an $\rt$ as its continuation is a tail call.
 %
@@ -688,13 +721,13 @@ The new semantic spaces are then
 
 Figure \ref{fig:shift-reset-table0} has what one might naturally write using just this information.
 %
-Unfortunately, since $\rt$ frames contain a store, and continuations can now appear in the store, this introduces a circularity that could cause the analysis to never terminate.
+Unfortunately, since $\rt$ continuations contain a store, and continuations can now appear in the store, this introduces a circularity that could cause the analysis to never terminate.
 %
 For example, a loop that continually captures continuations would introduce unboundedly many continuation values due to the ever-growing store.
 %
 This means the store is not finite height, and there may be no fixed point.
 
-\paragraph{Possible fixes to non-termination:} The simplest fix to the circularity would be to strip stores out of the context of the $\rt$ frame in a captured continuation, and additionally consider contexts with a stripped store an abstraction of the same context with any store.
+\paragraph{Possible fixes to non-termination:} The simplest fix to the circularity would be to strip stores out of the context of the $\rt$ in a captured continuation, and additionally consider contexts with a stripped store an abstraction of the same context with any store.
 %
 This is a fairly brutal approximation of a captured continuation, so an alternative is to make this tunable with our precision-tuning friend, $\alloc$.
 %
@@ -785,7 +818,7 @@ The rules that change are presented in figure \ref{fig:shift-reset-table1}.
 
 The meta-functions mentioned in the fixed semantics all deal with the addition of $\maddr$ to contexts.
 %
-If the context in an $\rt$ frame is approximate, we must return to all the continuations known for all the contexts it approximates:
+If the context in an $\rt$ continuation is approximate, we must return to all the continuations known for all the contexts it approximates:
 \begin{align*}
   \returns(\mktab, ((\mexpr,\menv), \mstore)) &= \mktab((\mexpr,\menv), \mstore) \\
   \returns(\mktab, ((\mexpr,\menv), \maddr)) &=
@@ -799,7 +832,7 @@ At return boundaries, the memo table must add the result to all the represented 
   \memoize(\mktab, ((\mexpr,\menv), \maddr), \mathit{v\sigma}) &=
   \bigsqcup\limits_{\mstore' \in \mktab(\maddr)}\snglm{((\mexpr,\menv), \mstore')}{\mathit{v\sigma}}
 \end{align*}
-At capture time, we strip the store in the $\rt$ frame if there is one, and replace it with an address:
+At capture time, we strip the store in the $\rt$ continuation if there is one, and replace it with an address:
 
 \newcommand{\replacectx}{\mathit{replace}\mstore}
 \newcommand{\addstore}{\mathit{add}\mstore}
