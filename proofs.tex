@@ -1,0 +1,91 @@
+\section{In depth proofs}
+Proof of \autoref{lem:irrelevance}
+\begin{proof}
+  By induction on $\mtrace$. Base cases trivially hold, and induction step follows from cases on $\mstate \stepto \mstate'$ and definition of $\replacetail$.
+\end{proof}
+
+\noindent{}Proof of \autoref{lem:tab-inv}
+\begin{proof}
+  By cases on $\stepto$.
+  \begin{byCases}
+% variable lookup
+    \case{\tpl{(\svar\mvar, \menv), \mstore, \mkont, \mktab, \mmemo}
+          \stepto
+          \tpl{\mval,\mstore,\mkont, \mktab, \mmemo} \text{ if }\mval \in \mstore(\menv(\mvar))}{
+     Same continuation and tables, so holds by $\inv(\mstate)$.}
+% application
+    \case{\tpl{(\sapp{\mexpri0}{\mexpri1}, \menv), \mstore, \mkont, \mktab, \mmemo}
+          \stepto
+          \tpl{(\mexpri0, \menv), \mstore, \kcons{\kar{\mexpri1,\menv}}{\mkont}, \mktab, \mmemo}}{
+    Let $\mctx, \mkont^\circ, \mkont'$ be arbitrary.
+    Let $\mkont^*$ be the witness for $\mstate$.
+    The next witness is $\kcons{\kar{\mexpri1,\menv}}{\mkont^*}$, by definition of $\mathit{unroll}$.}
+% argument evaluation
+    \case{\tpl{\mval, \mstore, \kcons{\kar{\mexpr,\menv}}{\mkont}, \mktab, \mmemo}
+          \stepto
+          \tpl{(\mexpr, \menv), \mstore, \kcons{\kfn{\mval}}{\mkont}, \mktab, \mmemo}}{
+    Let $\mctx, \mkont^\circ, \mkont'$ be arbitrary.
+    Let $\kcons{\kar{\mexpr,\menv}}{\mkont^*}$ be the witness for $\mstate$.
+    The next witness is $\kcons{\kfn{\mval}}{\mkont^*}$, by definition of $\mathit{unroll}$.}
+% function call
+    \case{\tpl{\mval,\mstore,\kcons{\kfn{\vclo{\slam{\mvar}{\mexpr}}{\menv}}}{\mkont},\mktab,\mmemo}
+          \stepto
+          \tpl{\mpoint, \mstore', \krt{\mpoint, \mstore'}, \mktab', \mmemo}}{
+     where
+     $\begin{array}{l}
+       \mpoint = (\mexpr, \extm{\menv}{\mvar}{\maddr}) \\
+       \mstore' = \joinone{\mstore}{\maddr}{\mval} \\
+       \mktab' = \joinone{\mktab}{(\mpoint, \mstore')}{\mkont}
+     \end{array}$ \\
+
+    Let $\mctx, \mkont^\circ, \mkont'$ be arbitrary.
+    Let $\kcons{\kfn{\mval}}{\mkont^*}$ be the witness for $\mstate$.
+    The next witness is $\mkont^*$, by definition of $\mathit{unroll}$.}
+% memo-lookup
+    \case{\tpl{\mval,\mstore,\kcons{\kfn{\vclo{\slam{\mvar}{\mexpr}}{\menv}}}{\mkont},\mktab,\mmemo}
+          \stepto
+          \tpl{\mval_\mathit{result}, \mstore'', \mkont, \mktab', \mmemo}
+          \text{ if } (\mval_\mathit{result},\mstore'') \in \mmemo(\mpoint,\mstore')}{
+        same where clause as previous case.
+     
+    Let $\mctx, \mkont^\circ, \mkont'$ be arbitrary.
+    By definition of $\inv$, and since $\tpl{\mpoint',\mstore',\mkont'} \stepto^* \tpl{\mval_{\mathit{result}}, \mstore'', \mkont'}$.
+    For the memo entry to exist, there must have been at least one previous continuation in $\mktab(\mpoint',\mstore')$.
+    We use $\inv$ with this continuation, combined with stack irrelevance to produce the trace involving $\mkont'$.
+    }
+% return
+    \case{\tpl{\mval, \mstore, \krt{\mpoint,\mstore'}, \mktab, \mmemo}
+          \stepto
+          \tpl{\mval, \mstore, \mkont, \mktab, \joinone{\mmemo}{(\mpoint, \mstore')}{(\mval,\mstore)}}
+          \text{ if } \mkont \in \mktab(\mpoint, \mstore')}{
+    Let $\mctx, \mkont^\circ, \mkont'$ be arbitrary.
+    $\mkont'$ is an acceptable witness for the first property.
+    The path we construct to $\mstate'$ is sufficient for the second property.}
+  \end{byCases}
+\end{proof}
+
+\noindent{}Proof of \autoref{thm:global}.
+\begin{proof}
+%% TODO
+  The invariants of the memo and k-tables are independent of the states that carry them, so lifting them to a global position does not affect their information.
+\end{proof}
+
+\noindent{}Proof of \autoref{thm:refinement}.
+\begin{proof}
+  todo
+\end{proof}
+
+\noindent{}Proof of \autoref{thm:cfa2}.
+\begin{proof}
+  todo
+\end{proof}
+
+\noindent{}Proof of \autoref{thm:concrete-sr}.
+\begin{proof}
+  todo
+\end{proof}
+
+\noindent{}Proof of \autoref{thm:sound-sr}
+\begin{proof}
+  tood
+\end{proof}

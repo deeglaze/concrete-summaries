@@ -1,8 +1,10 @@
 \documentclass[article]{llncs}
 
 %\pagestyle{plain}
-\usepackage{amsmath,stmaryrd,listings}
+\usepackage{amsmath,stmaryrd,listings,mathpartir,amssymb}
 \usepackage[usenames,dvipsnames]{color}
+
+\usepackage{pfsteps} % for appendix
 
 \newcommand{\Scribtexttt}[1]{{\texttt{#1}}}
 \newcommand{\SColorize}[2]{\color{#1}{#2}}
@@ -46,4 +48,5 @@
 \bibliographystyle{splncsnat}
 \bibliography{bibliography}
 
+\appendix{\input{proofs}}
 \end{document}

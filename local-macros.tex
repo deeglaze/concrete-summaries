@@ -27,6 +27,7 @@
 \newcommand{\mframe}{\xi}
 \newcommand{\mkframe}{\phi}
 \newcommand{\mlab}{\ell}
+\newcommand{\mtrace}{\pi}
 
 \newcommand{\callcc}{\rackett{call/cc}}
 \newcommand{\callcomp}{\rackett{call/comp}}
@@ -72,6 +73,15 @@
 \newcommand{\returns}{\mathit{returns}}
 \newcommand{\memoize}{\mathit{memoize}}
 \newcommand{\approximate}{\mathit{approximate}}
+\newcommand{\touches}{{\mathcal T}}
+\newcommand{\touchesf}{{\mathcal T}_{\mkframe}}
+\newcommand{\reaches}{{\mathcal R}}
+\newcommand{\konts}{\mathit{konts}}
+
+\newcommand{\inv}{\mathit{inv}}
+\newcommand{\unroll}[2]{\mathit{unroll}_{#1}(#2)}
+\newcommand{\hastail}{\mathit{hastail}}
+\newcommand{\replacetail}{\mathit{replacetail}}
 
 % Constructors
 \newcommand{\svar}[2][{}]{#2^{#1}}
@@ -84,6 +94,7 @@
 \newcommand{\vcomp}[1]{\mathbf{comp}(#1)}
 \newcommand{\vclo}[2]{(#1, #2)}
 \newcommand{\kar}[2][{}]{\mathbf{ar}#1(#2)}
+\newcommand{\kpush}[1]{\mathbf{push}(#1)}
 \newcommand{\klet}[1]{\mathbf{lt}(#1)}
 \newcommand{\kfn}[2][{}]{\mathbf{fn}#1(#2)}
 \newcommand{\rt}{\mathbf{rt}}
@@ -102,6 +113,7 @@
 \newcommand{\mkapp}[2]{#1\circ #2}
 
 % Notations
+\newcommand{\lfp}{\mathbf{lfp}}
 \newcommand{\tpl}[1]{\langle #1 \rangle}
 \newcommand{\vect}[1]{\langle #1 \rangle}
 \newcommand{\runpost}[1]{\langle #1 \rangle_{\mathit{post}}}
@@ -112,11 +124,14 @@
 \newcommand{\sa}[1]{\widehat{#1}}
 
 \newcommand{\many}[1]{\overline{#1}}
+\newcommand{\kcons}[2]{#1{\tt :} #2}
 
 \newcommand{\snglm}[2]{[#1 \mapsto \set{#2}]}
 \newcommand{\extm}[3]{#1[#2 \mapsto #3]}
 \newcommand{\joinm}[3]{#1\sqcup[#2 \mapsto #3]}
 \newcommand{\joinone}[3]{#1\sqcup[#2 \mapsto \set{#3}]}
+
+\newcommand{\append}[2]{#1 {\tt ++} #2}
 
 %% Relations
 \newcommand{\stepto}{\longmapsto}
