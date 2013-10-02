@@ -366,13 +366,13 @@ Our interpretation of $\stepto$ is in a fixed-point computation, so circularitie
 
 \begin{mathpar}
   \inferrule{ }{\kmt \in \unroll{\mktab}{\kmt, G}} \quad
-  \inferrule{\mkont \in \unroll{\mktab}{\mkont', \bot}}{\mkframe:\mkont \in \unroll{\mktab}{\mkframe:\mkont', G}} \\
-  \inferrule{G \neq \mctx \\
+  \inferrule{\mkont \in \unroll{\mktab}{\mkont', G}}{\mkframe:\mkont \in \unroll{\mktab}{\mkframe:\mkont', G}} \\
+  \inferrule{\mctx \notin G  \\
              \mkont^\circ \in \mktab(\mctx) \\
-             \mkont \in \unroll{\mktab}{\mkont^\circ, \mctx}}
+             \mkont \in \unroll{\mktab}{\mkont^\circ, \set{\mctx}\cup G}}
             {\mkont \in \unroll{\mktab}{\krt{\mctx}, G}}  
 \end{mathpar}
-Consider later uses of $\mathit{unroll}$ to implicitly give $\bot$ for $G$.
+Consider later uses of $\mathit{unroll}$ to implicitly give $\emptyset$ for $G$.
 
 \begin{lemma}[Stack irrelevance]\label{lem:irrelevance}
   $\hastail(\mtrace,\mkont)$ implies $\replacetail(\mtrace,\mkont,\mkont')$ is a valid trace.
@@ -404,6 +404,12 @@ The different tables we have encode information about execution history that we 
   &\qquad \wedge \forall (\mval, \mstore') \in \mmemo(\mctx).
             \tpl{\mpoint', \mstore', \mkont'} \stepto^* \tpl{\mval,\mstore', \mkont'}
 \end{align*}
+
+The first is that the memo table only contains information about previously seen contexts; we need this to infer that there was at least one call leading to the memoized context such that we can use stack irrelevance to justify skipping to the memoized result.
+%
+The second (the existential clause) states that all the calling contexts in the continuation table reach some unrolling of the current state.
+%
+The final invariant states that the memo table is correct: all calling contexts reach the memoized result, with well-bracketing.
 
 \begin{lemma}[Table invariants]\label{lem:tab-inv}
   If $\inv(\mstate)$ and $\mstate \stepto \mstate'$ then $\inv(\mstate')$.
@@ -438,6 +444,65 @@ Entries in $\mktab$ might be circular, so we compute the continuation frames in 
   \touchesf(\kar{\mexpr,\menv}) &= \mathit{rng}(\menv|_{\mathit{fv}(\mexpr)}) \\
   \touchesf(\kfn{(\slam{\mvar}{\mexpr},\menv)}) &= \mathit{rng}(\menv|_{\mathit{fv}(\slam{\mvar}{\mexpr})})
 \end{align*}
+
+An implementation of the same functionality would use a mutable set to track which contexts have been traversed to build up a set of addresses:
+% This code is typeset below by Scribble
+% \begin{lstlisting}[mathescape]
+% (define (touch-kont $\mkont$ $\mktab$)
+%   (define seen (mutable-seteq))
+%   (let loop ([$\mkont$ $\mkont$])
+%     (match $\mkont$
+%       [(mt) $\emptyset$]
+%       [(cons $\mkframe$ $\mkont$) ($\cup$ $\touchesf(\mkframe)$ (loop $\mkont$))]
+%       [(rt $\mctx$)
+%        (cond
+%          [(set-member? seen $\mctx$) $\emptyset$]
+%          [else
+%           (set-add! seen $\mctx$)
+%           (for/union ([$\mkont$ (in-set $\mktab(\mctx)$)]) (loop $\mkont$))])])))           
+% \end{lstlisting}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Begin scary Scribble output
+\newcommand{\SCodePreSkip}{\vskip\abovedisplayskip}
+\newcommand{\SCodePostSkip}{\vskip\belowdisplayskip}
+\newenvironment{SCodeFlow}{\SCodePreSkip\begin{list}{}{\topsep=0pt\partopsep=0pt%
+\listparindent=0pt\itemindent=0pt\labelwidth=0pt\leftmargin=2ex\rightmargin=2ex%
+\itemsep=0pt\parsep=0pt}\item}{\end{list}\SCodePostSkip}
+\newenvironment{SingleColumn}{\begin{list}{}{\topsep=0pt\partopsep=0pt%
+\listparindent=0pt\itemindent=0pt\labelwidth=0pt\leftmargin=0pt\rightmargin=0pt%
+\itemsep=0pt\parsep=0pt}\item}{\end{list}}
+\newenvironment{RktBlk}{}{}
+\definecolor{IdentifierColor}{rgb}{0.15,0.15,0.50}
+\definecolor{ParenColor}{rgb}{0.52,0.24,0.14}
+\newcommand{\RktSym}[1]{\inColor{IdentifierColor}{#1}}
+\newcommand{\RktPn}[1]{\inColor{ParenColor}{#1}}
+
+\begin{SCodeFlow}\begin{RktBlk}\begin{SingleColumn}\RktPn{(}\RktSym{define}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{touch{-}kont}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\mkont$}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\mktab$}\RktPn{)}
+
+\mbox{\hphantom{\Scribtexttt{xx}}}\RktPn{(}\RktSym{define}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{seen}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{mutable{-}seteq}\RktPn{)}\RktPn{)}
+
+\mbox{\hphantom{\Scribtexttt{xx}}}\RktPn{(}\RktSym{let}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{loop}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktPn{[}\RktSym{$\mkont$}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\mkont$}\RktPn{]}\RktPn{)}
+
+\mbox{\hphantom{\Scribtexttt{xxxx}}}\RktPn{(}\RktSym{match}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\mkont$}
+
+\mbox{\hphantom{\Scribtexttt{xxxxxx}}}\RktPn{[}\RktPn{(}\RktSym{mt}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\emptyset$}\RktPn{]}
+
+\mbox{\hphantom{\Scribtexttt{xxxxxx}}}\RktPn{[}\RktPn{(}\RktSym{cons}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\mkframe$}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\mkont$}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\cup$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{touches{-}frame}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\mkframe$}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{loop}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\mkont$}\RktPn{)}\RktPn{)}\RktPn{]}
+
+\mbox{\hphantom{\Scribtexttt{xxxxxx}}}\RktPn{[}\RktPn{(}\RktSym{rt}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{ctx}\RktPn{)}
+
+\mbox{\hphantom{\Scribtexttt{xxxxxxx}}}\RktPn{(}\RktSym{cond}
+
+\mbox{\hphantom{\Scribtexttt{xxxxxxxx}}}\RktPn{[}\RktPn{(}\RktSym{set{-}member{\hbox{\texttt{?}}}}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{seen}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{ctx}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\emptyset$}\RktPn{]}
+
+\mbox{\hphantom{\Scribtexttt{xxxxxxxx}}}\RktPn{[}\RktSym{else}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{set{-}add{\hbox{\texttt{!}}}}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{seen}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{ctx}\RktPn{)}
+
+\mbox{\hphantom{\Scribtexttt{xxxxxxxxxxxxxx}}}\RktPn{(}\RktSym{for/union}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktPn{[}\RktSym{$\mkont$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{in{-}set}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{dict{-}ref}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\mktab$}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{ctx}\RktPn{)}\RktPn{)}\RktPn{]}\RktPn{)}
+
+\mbox{\hphantom{\Scribtexttt{xxxxxxxxxxxxxxxx}}}\RktPn{(}\RktSym{loop}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\mkont$}\RktPn{)}\RktPn{)}\RktPn{]}\RktPn{)}\RktPn{]}\RktPn{)}\RktPn{)}\RktPn{)}\end{SingleColumn}\end{RktBlk}\end{SCodeFlow}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% End of scary Scribble output
 
 Garbage collection ($\Gamma$) amounts to restricting the heap to just the reachable addresses, so a garbage-collecting semantics introduces the following reduction rule:
 \begin{align*}
