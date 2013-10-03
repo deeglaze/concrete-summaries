@@ -1,3 +1,4 @@
+
 \section{Introduction}
 
 Programs in higher-order languages heavily use function calls and method dispatch as part of their control flow.
@@ -261,20 +262,32 @@ We use a meta-function $\wn$, ``wide to narrow'', to shift between the two repre
 
 %% FIXME: remove stores from memo-table since they will always be unchanged
 %% TODO: Show that store widening and store/memo/KTab widening have a bisimulation.
+\setlength{\abovedisplayskip}{0pt}
+\setlength{\belowdisplayskip}{4pt}
+\setlength{\abovedisplayshortskip}{0pt}
+\setlength{\belowdisplayshortskip}{8pt}
 \begin{align*}
   \mastate \in \sa{State} &= (\Expr \times \Env) \times \Kont \\
   \System &= \wp(\sa{State} \times \Store) \times \wp(\sa{State}) \times \Store \times \KTab \times \Memo \\
   {\mathcal F} &: \sa{\State} \to \System \to \System \\
   {\mathcal F}(\mstate_0)(S, F, \mstore, \mktab, \mmemo) &= (\set{(\mstate_0,\bot)} \cup S \cup S', F', \mstore', \mktab', \mmemo') \\
   \text{where } I &= \setbuild{\mstate'}{\mastate \in F, \wn(\mastate,\mstore,\mktab,\mmemo) \stepto \mstate'} \\
-                \mstore' &= \bigsqcup\setbuild{\mstore'}{\wn(\_, \mstore',\_,\_) \in I} \\
-                \mktab' &=  \bigsqcup\setbuild{\mktab'}{\wn(\_, \_, \mktab', \_) \in I} \\
-                \mmemo' &=  \bigsqcup\setbuild{\mmemo'}{\wn(\_, \_, \_, \mmemo') \in I} \\
-                S' &= \setbuild{(\mastate',\mstore')}{\wn(\mastate', \_, \_, \_) \in I} \\
-                F' &= \setbuild{\mastate'}{(\mastate',\_) \in S' \setminus S} \\
                 \wn(\tpl{(\mexpr,\menv),\mkont},\mstore,\mktab,\mmemo)
                    &= \tpl{(\mexpr,\menv),\mstore,\mkont,\mktab,\mmemo}
 \end{align*}
+\begin{minipage}{.55\linewidth}
+  \begin{align*}
+    \mstore' &= \bigsqcup\setbuild{\mstore'}{\wn(\_, \mstore',\_,\_) \in I} \\
+    \mktab' &=  \bigsqcup\setbuild{\mktab'}{\wn(\_, \_, \mktab', \_) \in I} \\
+    \mmemo' &= \bigsqcup\setbuild{\mmemo'}{\wn(\_, \_, \_, \mmemo') \in I}
+  \end{align*}
+\end{minipage}
+\begin{minipage}{.40\linewidth}
+  \begin{align*}
+    S' &= \setbuild{(\mastate',\mstore')}{\wn(\mastate', \_, \_, \_) \in I} \\
+    F' &= \setbuild{\mastate'}{(\mastate',\_) \in S' \setminus S} \\
+  \end{align*}
+\end{minipage}
 
 A $\System$ embodies the states seen and at which store, $S$, the frontier set of states yet to analyze, $F$, the shared store for the frontier, $\mstore$, the continuation table $\mktab$ and the memo table $\mmemo$.
 %
@@ -287,12 +300,20 @@ The next frontier contains only states resulting from stepping the previous fron
 Systematic techniques for a performant implementation can be found in \citet{ianjohnson:oaam:icfp2013}.
 
 \paragraph{Example:} Let's consider a monovariant allocation strategy (the address for each binding is the variable name itself) to run the following example:
-\begin{lstlisting}[mathescape]
-  (let* ([id ($\lambda$ (x) x)]
-         [y (id 0)]
-         [z (id 1)])
-    ($\le$ y z))
-\end{lstlisting}
+% \begin{lstlisting}[mathescape]
+%   (let* ([id ($\lambda$ (x) x)]
+%          [y (id 0)]
+%          [z (id 1)])
+%     ($\le$ y z))
+% \end{lstlisting}
+\begin{SCodeFlow}\begin{RktBlk}\begin{SingleColumn}\RktPn{(}\RktSym{let*}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktPn{[}\RktSym{id}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\lambda$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{x}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{x}\RktPn{)}\RktPn{]}
+
+\mbox{\hphantom{\Scribtexttt{xxxxxxx}}}\RktPn{[}\RktSym{y}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{id}\mbox{\hphantom{\Scribtexttt{x}}}\RktVal{0}\RktPn{)}\RktPn{]}
+
+\mbox{\hphantom{\Scribtexttt{xxxxxxx}}}\RktPn{[}\RktSym{z}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{id}\mbox{\hphantom{\Scribtexttt{x}}}\RktVal{1}\RktPn{)}\RktPn{]}\RktPn{)}
+
+\mbox{\hphantom{\Scribtexttt{xx}}}\RktPn{(}\RktSym{$\leq$}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{y}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{z}\RktPn{)}\RktPn{)}\end{SingleColumn}\end{RktBlk}\end{SCodeFlow}
+
 Suppose we extend our semantics to allow numbers, numeric primitives and \texttt{let}.
 %
 The continuation frame for a \texttt{let} contains the identifier to bind to the resulting value, along with the body of the \texttt{let} with its environment.
@@ -468,20 +489,6 @@ An implementation of the same functionality would use a mutable set to track whi
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Begin scary Scribble output
-\newcommand{\SCodePreSkip}{\vskip\abovedisplayskip}
-\newcommand{\SCodePostSkip}{\vskip\belowdisplayskip}
-\newenvironment{SCodeFlow}{\SCodePreSkip\begin{list}{}{\topsep=0pt\partopsep=0pt%
-\listparindent=0pt\itemindent=0pt\labelwidth=0pt\leftmargin=2ex\rightmargin=2ex%
-\itemsep=0pt\parsep=0pt}\item}{\end{list}\SCodePostSkip}
-\newenvironment{SingleColumn}{\begin{list}{}{\topsep=0pt\partopsep=0pt%
-\listparindent=0pt\itemindent=0pt\labelwidth=0pt\leftmargin=0pt\rightmargin=0pt%
-\itemsep=0pt\parsep=0pt}\item}{\end{list}}
-\newenvironment{RktBlk}{}{}
-\definecolor{IdentifierColor}{rgb}{0.15,0.15,0.50}
-\definecolor{ParenColor}{rgb}{0.52,0.24,0.14}
-\newcommand{\RktSym}[1]{\inColor{IdentifierColor}{#1}}
-\newcommand{\RktPn}[1]{\inColor{ParenColor}{#1}}
-
 \begin{SCodeFlow}\begin{RktBlk}\begin{SingleColumn}\RktPn{(}\RktSym{define}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{touch{-}kont}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\mkont$}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\mktab$}\RktPn{)}
 
 \mbox{\hphantom{\Scribtexttt{xx}}}\RktPn{(}\RktSym{define}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{seen}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{mutable{-}seteq}\RktPn{)}\RktPn{)}
@@ -539,7 +546,7 @@ This semantics of course enjoys the soundness properties that GC does not introd
   If $\mstate \stepto \mstate'$ and $\alpha(\Gamma(\mstate)) \sqsubseteq \mastate$ then there is a $\mastate'$ such that $\mastate \astepto \mastate'$ and $\alpha(\Gamma(\mstate')) \sqsubseteq \mastate'$.
 \end{theorem}
 %
-Unconstrained allocation functions
+\textbf{TODO: wrap up}
 
 \section{Deriving CFA2}
 \label{sec:cfa2}
@@ -960,17 +967,13 @@ Consider the following program and its CPS transform for comparison:
 %        [g ($\lambda$ (z) (reset (id (f z))))])
 %   (<= (g 0) (g 1)))
 % \end{lstlisting}
-\newcommand{\Stttextless}{{\fontencoding{T1}\selectfont<}}
-\definecolor{ValueColor}{rgb}{0.13,0.55,0.13}
-\newcommand{\RktVal}[1]{\inColor{ValueColor}{#1}}
-
 \begin{SCodeFlow}\begin{RktBlk}\begin{SingleColumn}\RktPn{(}\RktSym{let*}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktPn{[}\RktSym{id}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\lambda$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{x}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{x}\RktPn{)}\RktPn{]}
 
 \mbox{\hphantom{\Scribtexttt{xxxxxxx}}}\RktPn{[}\RktSym{f}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\lambda$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{y}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{shift}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{k}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{k}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{k}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{y}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{]}
 
 \mbox{\hphantom{\Scribtexttt{xxxxxxx}}}\RktPn{[}\RktSym{g}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\lambda$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{z}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{reset}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{id}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{f}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{z}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{]}\RktPn{)}
 
-\mbox{\hphantom{\Scribtexttt{xx}}}\RktPn{(}\RktSym{{\Stttextless}=}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{g}\mbox{\hphantom{\Scribtexttt{x}}}\RktVal{0}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{g}\mbox{\hphantom{\Scribtexttt{x}}}\RktVal{1}\RktPn{)}\RktPn{)}\RktPn{)}\end{SingleColumn}\end{RktBlk}\end{SCodeFlow}
+\mbox{\hphantom{\Scribtexttt{xx}}}\RktPn{(}\RktSym{$\le$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{g}\mbox{\hphantom{\Scribtexttt{x}}}\RktVal{0}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{g}\mbox{\hphantom{\Scribtexttt{x}}}\RktVal{1}\RktPn{)}\RktPn{)}\RktPn{)}\end{SingleColumn}\end{RktBlk}\end{SCodeFlow}
 
 % \begin{lstlisting}[mathescape]
 % (let* ([id ($\lambda$ (x k) (k x))]
@@ -984,7 +987,7 @@ Consider the following program and its CPS transform for comparison:
 
 \mbox{\hphantom{\Scribtexttt{xxxxxxx}}}\RktPn{[}\RktSym{g}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\lambda$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{z}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{h}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{h}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{f}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{z}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\lambda$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{fv}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{id}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{fv}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\lambda$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{i}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{i}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{]}\RktPn{)}
 
-\mbox{\hphantom{\Scribtexttt{xx}}}\RktPn{(}\RktSym{g}\mbox{\hphantom{\Scribtexttt{x}}}\RktVal{0}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\lambda$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{g0v}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{g}\mbox{\hphantom{\Scribtexttt{x}}}\RktVal{1}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\lambda$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{g1v}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{{\Stttextless}=}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{g0v}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{g1v}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{)}\end{SingleColumn}\end{RktBlk}\end{SCodeFlow}
+\mbox{\hphantom{\Scribtexttt{xx}}}\RktPn{(}\RktSym{g}\mbox{\hphantom{\Scribtexttt{x}}}\RktVal{0}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\lambda$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{g0v}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{g}\mbox{\hphantom{\Scribtexttt{x}}}\RktVal{1}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\lambda$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{g1v}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\le$}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{g0v}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{g1v}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{)}\end{SingleColumn}\end{RktBlk}\end{SCodeFlow}
 
 PDCFA with a monovariant allocation strategy will predict the CPS'd version returns true or false.
 %
@@ -1025,7 +1028,7 @@ The logic itself is an exciting new frontier for expressing program correctness 
 %%
 The trend of deriving static analyses from abstract machines does not stop at flow analyses.
 %
-The model-checking community showed how to check temporal logic queries for collapsible pushdown automata (CPDA), or equivalently, higher-order recursion schemes, by deriving the checking algorithm from the Krivine machine~\citep{ianjohnson:Salvati:2011:KMH:2027223.027239}.
+The model-checking community showed how to check temporal logic queries for collapsible pushdown automata (CPDA), or equivalently, higher-order recursion schemes, by deriving the checking algorithm from the Krivine machine~\citep{ianjohnson:Salvati:2011:KMH:2027223.2027239}.
 %
 The expressiveness of CPDAs outweighs that of PDAs, but it is unclear how to adapt higher-order recursion schemes to model arbitrary programming language features.
 %
