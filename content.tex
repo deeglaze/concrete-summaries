@@ -30,7 +30,7 @@ The framework we present in this paper is applicable in the concrete such that a
 %%
 
 %%
-This paper gives a common, simple framework to derive both CFA2 and PDCFA using a recipe to apply pushdown analysis techniques to arbitrary semantics in a manner similar to AAM.
+This paper gives a common, simple framework to derive CFA2, PDCFA and its garbage-collecting extension using a recipe to apply pushdown analysis techniques to arbitrary semantics in a manner similar to AAM.
 %
 To exercise the recipe further, we give a novel analysis for delimited, composable control. \\
 
@@ -944,7 +944,7 @@ We prove this with the invariant that the continuation and meta-continuation hav
 \end{conjecture}
 
 %% TODO: complete
-\paragraph{Comparison to CFA2 CPS'd to remove {\tt shift} and {\tt reset}:}{
+\paragraph{Comparison to PDCFA CPS'd to remove {\tt shift} and {\tt reset}:}{
   One might ask what this different model buys us over using a CPS transform to compile away {\tt shift} and {\tt reset} forms.
 %
 The short answer is that we get better precision for capture and invocation of continuations.
@@ -954,17 +954,23 @@ In pushdown analysis, we track function return points with entire calling contex
 In our summarizing analysis of delimited composable control, we get the same added precision for {\tt reset}, {\tt shift}, and continuation invocation points.
 %
 Consider the following program and its CPS transform for comparison:
-\begin{lstlisting}
-???
+\begin{lstlisting}[mathescape]
+(let* ([id ($\lambda$ (x) x)]
+       [f ($\lambda$ (y) (shift k (k (k y))))]
+       [g ($\lambda$ (z) (reset (id (f z))))])
+  (<= (g 0) (g 1)))
 \end{lstlisting}
 
-\begin{lstlisting}
-???
+\begin{lstlisting}[mathescape]
+(let* ([id ($\lambda$ (x k) (k x))]
+       [f ($\lambda$ (y j) (j (j y)))]
+       [g ($\lambda$ (z h) (h (f z ($\lambda$ (fv) (id fv ($\lambda$ (i) i))))))])
+  (g 0 ($\lambda$ (g0v) (g 1 ($\lambda$ (g1v) (<= g0v g1v))))))
 \end{lstlisting}
 
-PDCFA with a monovariant allocation strategy will predict the CPS'd version returns ???.
+PDCFA with a monovariant allocation strategy will predict the CPS'd version returns true or false.
 %
-Our specialized analysis for delimited control, also with a monovariant allocation strategy, will predict the non-CPS'd version returns ???.}
+Our specialized analysis for delimited control, also with a monovariant allocation strategy, will predict the non-CPS'd version returns true.}
 
 \section{Related Work}
 
