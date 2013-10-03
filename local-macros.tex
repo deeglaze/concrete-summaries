@@ -79,6 +79,8 @@
 \newcommand{\konts}{\mathit{konts}}
 
 \newcommand{\inv}{\mathit{inv}}
+\newcommand{\reachable}{\mathit{reach}}
+\newcommand{\memo}{\mathit{memo}}
 \newcommand{\unroll}[2]{\mathit{unroll}_{#1}(#2)}
 \newcommand{\hastail}{\mathit{hastail}}
 \newcommand{\replacetail}{\mathit{replacetail}}
@@ -89,7 +91,7 @@
 \newcommand{\slam}[3][{}]{\lambda#1 #2. #3}
 \newcommand{\sprim}[1]{#1}
 \newcommand{\sreset}[1]{(\texttt{reset}\ #1)}
-\newcommand{\sshift}[2]{(\texttt{shift} (#1) #2)}
+\newcommand{\sshift}[2]{(\texttt{shift}\ #1. #2)}
 \newcommand{\vcont}[1]{\mathbf{cont}(#1)}
 \newcommand{\vcomp}[1]{\mathbf{comp}(#1)}
 \newcommand{\vclo}[2]{(#1, #2)}
@@ -135,3 +137,4 @@
 
 %% Relations
 \newcommand{\stepto}{\longmapsto}
+\newcommand{\astepto}{\mathrel{\widehat{\longmapsto}}}

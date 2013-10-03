@@ -121,7 +121,7 @@ The semantic spaces for the machine follow.
 The $\Addr$ space is what controls the precision of the model.
 %
 For a concrete semantics, we require the allocation meta-function $\alloc :
-\State \to \Addr$ to return fresh addresses ($\maddr \notin \dom(\mstore)$), but any choice of address is sound.
+\State \to \Addr$ to return fresh addresses ($\alloc(\mstate) \notin \dom(\mstate.\mstore)$), but any choice of address is sound~\citep{dvanhorn:Might2009Posteriori}.
 %
 If $\alloc$ only uses addresses from a finite subset of $\Addr$, then the state space without continuations is finite, and the space of contination frames is finite (thus the pushdown system interpretation is apt).
 %
@@ -253,7 +253,7 @@ Instead of following an entire path through a call to return a value, we simply 
   \label{fig:summary-semantics}
 \end{figure}
 
-To turn this semantics into PDCFA's algorithm for constructing a Dyck state graph, given the appropriate $\alloc$, we apply a widening operator to make $\mstore$, $\mkont$, and $\mmemo$ shared amongst all states (meaning states then become represented without these compontents), in what is then called a $\System$.
+To turn this semantics into PDCFA's algorithm for constructing a Dyck state graph, given the appropriate $\alloc$, we apply a widening operator to make $\mstore$, $\mkont$, and $\mmemo$ shared amongst all states (meaning states then become represented without these components), in what is then called a $\System$.
 %
 Since these components are shared, they are always the least upper bound of any respective component that the semantics produces (the intermediate set $I$) in order to stay sound.
 %
@@ -264,8 +264,8 @@ We use a meta-function $\wn$, ``wide to narrow'', to shift between the two repre
 \begin{align*}
   \mastate \in \sa{State} &= (\Expr \times \Env) \times \Kont \\
   \System &= \wp(\sa{State} \times \Store) \times \wp(\sa{State}) \times \Store \times \KTab \times \Memo \\
-  {\mathcal F} &: \System \to \System \\
-  {\mathcal F}(S, F, \mstore, \mktab, \mmemo) &= (S \cup S', F', \mstore', \mktab', \mmemo') \\
+  {\mathcal F} &: \sa{\State} \to \System \to \System \\
+  {\mathcal F}(\mstate_0)(S, F, \mstore, \mktab, \mmemo) &= (\set{(\mstate_0,\bot)} \cup S \cup S', F', \mstore', \mktab', \mmemo') \\
   \text{where } I &= \setbuild{\mstate'}{\mastate \in F, \wn(\mastate,\mstore,\mktab,\mmemo) \stepto \mstate'} \\
                 \mstore' &= \bigsqcup\setbuild{\mstore'}{\wn(\_, \mstore',\_,\_) \in I} \\
                 \mktab' &=  \bigsqcup\setbuild{\mktab'}{\wn(\_, \_, \mktab', \_) \in I} \\
@@ -396,20 +396,24 @@ The different tables we have encode information about execution history that we 
 \begin{align*}
   \inv(\tpl{\mpoint, \mstore, \mkont, \mktab, \mmemo}) &=
           \dom(\mmemo) \subseteq \dom(\mktab) \\
-  &\wedge \forall \mctx\equiv(\mpoint',\mstore') \in \dom(\mktab),
-                  \mkont^\circ \in \mktab(\mctx),
-                  \mkont' \in \unroll{\mktab}{\mkont^\circ}. \\
-  &\qquad \exists \mkont^* \in \unroll{\mktab}{\mkont}.
-            \tpl{\mpoint', \mstore', \mkont'} \stepto^* \tpl{\mpoint, \mstore, \mkont^*} \\
-  &\qquad \wedge \forall (\mval, \mstore') \in \mmemo(\mctx).
-            \tpl{\mpoint', \mstore', \mkont'} \stepto^* \tpl{\mval,\mstore', \mkont'}
+  &\wedge \forall (\mpoint',\mstore') \in \dom(\mktab),
+                  \mkont^\circ \in \mktab(\mpoint',\mstore'),
+                  \mkont' \in \unroll{\mktab}{\mkont^\circ}. \\   
+  &\qquad \phi_{\reachable} \wedge \phi_{\memo} \\
+  \text{where } \phi_{\reachable} &=
+  \exists \mkont^* \in \unroll{\mktab}{\mkont}.
+    \tpl{\mpoint', \mstore', \mkont'} \stepto^* \tpl{\mpoint, \mstore, \mkont^*} \\
+  \phi_{\memo} &=
+ \forall (\mval, \mstore'') \in \mmemo(\mpoint',\mstore'). \\
+  &\qquad \exists \mtrace\equiv\tpl{\mpoint', \mstore', \mkont'} \stepto^* \tpl{\mval,\mstore'', \mkont'}.
+     \hastail(\mtrace,\mkont') \\
 \end{align*}
 
 The first is that the memo table only contains information about previously seen contexts; we need this to infer that there was at least one call leading to the memoized context such that we can use stack irrelevance to justify skipping to the memoized result.
 %
-The second (the existential clause) states that all the calling contexts in the continuation table reach some unrolling of the current state.
+The second, $\phi_{\reachable}$, states that all the calling contexts in the continuation table reach some unrolling of the current state.
 %
-The final invariant states that the memo table is correct: all calling contexts reach the memoized result, with well-bracketing.
+The final invariant, $\phi_{\memo}$, states that the memo table is correct: all calling contexts reach the memoized result, with the calling context's continuation in the tail (to justify using stack-irrelevance).
 
 \begin{lemma}[Table invariants]\label{lem:tab-inv}
   If $\inv(\mstate)$ and $\mstate \stepto \mstate'$ then $\inv(\mstate')$.
@@ -521,7 +525,19 @@ The ``reaches'' metafunction ($\reaches$) is a transitive closure of ``touches''
                             {\maddr \rightsquigarrow_\mstore b}
 \end{align*}
 
-This semantics of course enjoys the soundness properties that GC does not introduce dangling pointers, and (in the concrete) any two reduction sequences of the same length lead to states equal up to GC.
+This semantics of course enjoys the soundness properties that GC does not introduce dangling pointers (\autoref{thm:gc-pointers}), equal length traces are equal up to GC (in the concrete) (\autoref{thm:gc-concrete}), and abstractions are sound with respect to collected states (\autoref{thm:gc-sound}).
+%
+\begin{theorem}\label{thm:gc-pointers}
+  All addresses in $\Gamma(\mstate)$ are in the domain of $\Gamma(\mstate).\mstore$.
+\end{theorem}
+
+\begin{theorem}\label{thm:gc-concrete}
+  If $\mstate \stepto^n \mstate'$ and $\mstate \stepto^n \mstate''$ then $\Gamma(\mstate') = \Gamma(\mstate'')$.
+\end{theorem}
+
+\begin{theorem}\label{thm:gc-sound}
+  If $\mstate \stepto \mstate'$ and $\alpha(\Gamma(\mstate)) \sqsubseteq \mastate$ then there is a $\mastate'$ such that $\mastate \astepto \mastate'$ and $\alpha(\Gamma(\mstate')) \sqsubseteq \mastate'$.
+\end{theorem}
 %
 Unconstrained allocation functions
 
@@ -848,11 +864,10 @@ The new indirection possibility changes $\Context$ to also include $\maddr$ wher
 The rules that change are presented in figure \ref{fig:shift-reset-table1}.
 
 \begin{align*}
-  \mctx \in \Context &::= ((\mexpr,\menv),\mstore) \mid (\vcomp{\mkont},\mval,\mstore) \mid \msctx \\
   \msctx \in \SContext &::= ((\mexpr,\menv),\maddr) \\
+  \mctx \in \Context &::= \msctx \mid \ldots \\
   \mskont \in \SKont &= \krt{\msctx} \mid \ldots \\
   \mval \in \Value &= \vclo{\slam{\mvar}{\mexpr}}{\menv} \mid \vcomp{\mskont} \\
-  \mmkont \in \MKont &::= \kmt \mid \kprompt{\mctx} \\
   \mktab \in \KTab &= (\Context \to \mathit{KTabRange}) \\
                    &\cup (\Addr \to \wp(\Store))
 \end{align*}
@@ -890,7 +905,7 @@ If the context in an $\rt$ continuation is approximate, we must return to all th
     \bigcup\setbuild{\mktab((\mexpr,\menv),\mstore)}{\mstore \in \mktab(\maddr)}
 \end{align*}
 
-At return boundaries, the memo table must add the result to all the represented contexts:=
+At return boundaries, the memo table must add the result to all the represented contexts:
 \begin{align*}
   \memoize(\mktab, ((\mexpr,\menv), \mstore'), \mathit{v\sigma}) &=
   [((\mexpr,\menv), \mstore') \mapsto \set{{\mathit{v\sigma}}}] \\
@@ -959,7 +974,7 @@ The version of CFA2 that handles \rackett{call/cc} does not handle composable co
 %
 They also had no way to tune the precision of their first class continuation approximation.
 %
-Since \rackett{call/cc} can be simulated with shift/reset, this work supercedes theirs.
+Since \rackett{call/cc} can be simulated with shift/reset\footnote{\RktPn{(}\RktSym{define}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{call/cc}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{f}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{shift}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{k}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{k}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{f}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\lambda$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{x}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{shift}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{c}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{k}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{x}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{)}}, this work supercedes theirs (the space complexity difference imposed by the simulation is non-issue in the abstract).
 %
 The extended version of PDCFA that does garbage collection~\citep{dvanhorn:Earl2012Introspective} also fits into our model;
 the addresses that the stack keeps alive can be accumulated by ``reading through'' the continuation table, building up the set of addresses in each portion of the stack that we come across.

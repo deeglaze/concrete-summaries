@@ -1,16 +1,15 @@
-Pushdown analysis is better than finite-state analysis in precision and
-performance. Why then have we not seen total widespread adoption of these
-techniques? For one, the known techniques are technically burdened and
-difficult to understand or extend. Control structure of the programming language
-gets pulled into the model of computation, which makes extensions to
-non-pushdown control structures, such as \rackett{call/cc} or \rackett{shift} and
-\rackett{reset}, non-trivial.
+Pushdown analysis improves upon finite-state analysis in precision and performance since it can rule out spurious paths caused by improperly matched calls and returns.
+%
+Despite this, we have not seen total widespread adoption of these techniques for analyzing higher-order languages.
+%
+A possible explanation is that the known techniques are technically burdened and difficult to understand or extend.
+%
+Control structure of the programming language gets pulled into the model of computation, which makes extensions to non-pushdown control structures, such as first-class control operators, non-trivial.
+%%
 
-We show a derivational approach to abstract interpretation that yields
-transparently sound static analyses that can precisely match calls and
-returns when applied to well-known abstract machines. We show that
-adding memoization and segmenting the continuation into bounded pieces
-leads to machines that abstract to static analyses for context-free
-reachability by simply bounding the stores. This technique allows us
-to derive existing, more technically involved analyses, and a novel
-pushdown analysis for delimited, composable control.
+%%
+We show a derivational approach to abstract interpretation that yields transparently sound static analyses that can precisely match calls and returns when applied to well-known abstract machines.
+%
+We show that the abstraction techniques in the literature have an intuitive operational meaning, even in the concrete setting, that build off well-known programming techniques such as memoization.
+%
+This approach allows us to derive the existing, more technically involved analyses, and a novel pushdown analysis for delimited, composable control.
