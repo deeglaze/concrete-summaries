@@ -777,13 +777,13 @@ We use a private store to represent the chains of values, in order to not affect
   \mkframe \in \Frame &::= \kwcmk{\mexpr, \mexpr, \menv} \alt
                            \kwcmv{\mval, \mexpr, \menv} \alt
                            \kcmsls{\mexpr,\menv} \alt
-                           \kcmslk{\mval} \alt \ldots \\ 
-  \mkont \in \Kont &::= \kmt^\mmarks \alt \krt{\mctx} \alt \kcons{\mkframe^\mwmarks}{\mkont} \\
+                           \kcmslk{\mval} \alt \kwcm{\mmarks} \alt \ldots \\
+  \mkont \in \Kont &::= \kmt^\bot \alt \krt{\mctx}^\mmarks \alt \kcons{\mkframe^\mmarks}{\mkont} \\
   \mmarks \in \Marks &= \Value \to \wp(\Value) \\
-  \mwmarks \in \QualifiedMarks &::= \scopy{\mmarks} \alt \sext{\mmarks} \\
   \mmarkset \in \Markset &= \Marks \times \Store \\
   \mval \in \Value &::= \texttt{nil} \alt \cons{\maddr}{\maddr} \alt \smarkset{\mmarks} \alt \ldots
 \end{align*}
+
 %% TODO: distinguish between copied and extended marks so that domarkset only builds
 %% a list of mark extensions
 \begin{figure}
@@ -792,14 +792,14 @@ We use a private store to represent the chains of values, in order to not affect
   \begin{tabular}{r|l}
     \hline
 % wcm eval key
-    $\tpl{(\swcm{\mexpr_k}{\mexpr_v}{\mexpr}, \menv), \mstore, \mkont, \mktab, \mmemo}$
+    $\tpl{(\swcm{\mexpr_k}{\mexpr_v}{\mexpr}, \menv), \mstore, \mkont^\mmarks, \mktab, \mmemo}$
     &
-    $\tpl{(\mexpr_k, \menv), \mstore, \kcons{\kwcmk{\mexpr_v,\mexpr,\menv}}{\mkont}, \mktab, \mmemo}$
+    $\tpl{(\mexpr_k, \menv), \mstore, \kcons{\kwcmk{\mexpr_v,\mexpr,\menv}^\mmarks}{\mkont}, \mktab, \mmemo}$
     \\
 % wcm eval value
-    $\tpl{\mval_k, \mstore, \kcons{\kwcmk{\mexpr_v,\mexpr,\menv}}{\mkont}, \mktab, \mmemo}$
+    $\tpl{\mval_k, \mstore, \kcons{\kwcmk{\mexpr_v,\mexpr,\menv}}{\mkont^\mmarks}, \mktab, \mmemo}$
     &
-    $\tpl{(\mexpr_v, \menv), \mstore, \kcons{\kwcmv{\mval_k,\mexpr,\menv}}{\mkont}, \mktab, \mmemo}$
+    $\tpl{(\mexpr_v, \menv), \mstore, \kcons{\kwcmv{\mval_k,\mexpr,\menv}^\mmarks}{\mkont}, \mktab, \mmemo}$
     \\    
 % wcm all done.
     $\tpl{\mval_v, \mstore, \kcons{\kwcmv{\mval_k, \mexpr, \menv}}{\mkont}, \mktab, \mmemo}$
@@ -807,10 +807,15 @@ We use a private store to represent the chains of values, in order to not affect
     $\tpl{\mexpr,\menv,\mstore,\mkont',\mktab', \mmemo}$ \\
     where & $(\mkont',\mktab') = \domark(\mkont,\mktab,\mval_k,\mval_v)$
     \\
+% Pop marks
+   $\tpl{\mval,\mstore,\kcons{\kwcm{\mmarks}^{\mmarks'}}{\mkont}, \mktab, \mmemo}$
+   &
+   $\tpl{\mval,\mstore,\mkont,\mktab,\mmemo}$
+   \\
 % function call
-    $\tpl{\mval,\mstore,\kcons{\kfn{\vclo{\slam{\mvar}{\mexpr}}{\menv}}}{\mkont}}$
+    $\tpl{\mval,\mstore,\kcons{\kfn{\vclo{\slam{\mvar}{\mexpr}}{\menv}}^\mmarks}{\mkont}}$
     &
-    $\tpl{(\mexpr, \menv'), \mstore', \krt{\mctx},\mktab',\mmemo}$
+    $\tpl{(\mexpr, \menv'), \mstore', \krt{\mctx}^\mmarks,\mktab',\mmemo}$
     \\ where & $\menv' = \extm{\menv}{\mvar}{\maddr}$ \\
     & $\mstore' = \joinone{\mstore}{\maddr}{\mval}$ \\
     & $\mctx = ((\mexpr,\menv'),\mstore', \domarkset(\mstate))$ \\
@@ -823,14 +828,14 @@ We use a private store to represent the chains of values, in order to not affect
     \\ where & $(\mmarks,\mstore') = \domarkset(\mstate)$
     \\
 % cms->list mark set
-    $\tpl{(\scmsl{\mexpr_\mmarks}{\mexpr_k}, \menv), \mstore, \mkont, \mktab, \mmemo}$
+    $\tpl{(\scmsl{\mexpr_\mmarks}{\mexpr_k}, \menv), \mstore, \mkont^\mmarks, \mktab, \mmemo}$
     &
-    $\tpl{(\mexpr_\mmarks, \menv), \mstore, \kcons{\kcmsls{\mexpr_k,\menv}}{\mkont}, \mktab, \mmemo}$
+    $\tpl{(\mexpr_\mmarks, \menv), \mstore, \kcons{\kcmsls{\mexpr_k,\menv}^\mmarks}{\mkont}, \mktab, \mmemo}$
     \\
 % cms->list key
-    $\tpl{\mval, \mstore, \kcons{\kcmsls{\mexpr_k,\menv}}{\mkont}, \mktab, \mmemo}$
+    $\tpl{\mval, \mstore, \kcons{\kcmsls{\mexpr_k,\menv}}{\mkont^\mmarks}, \mktab, \mmemo}$
     &
-    $\tpl{(\mexpr_k, \menv), \mstore, \kcons{\kcmslk{\mval}}{\mkont}, \mktab, \mmemo}$
+    $\tpl{(\mexpr_k, \menv), \mstore, \kcons{\kcmslk{\mval}^\mmarks}{\mkont}, \mktab, \mmemo}$
     \\
 % cms->list done
     $\tpl{\mval_k, \mstore, \kcons{\kcmslk{\mmarks}}{\mkont}, \mktab, \mmemo}$
@@ -861,20 +866,29 @@ Marking a return continuation means we need to crawl through the table, which ag
 \\[2pt]
   \rewritectx((\mexpr,\menv),\mstore,(\mmarks, \mstore')) &= ((\mexpr,\menv),\mstore,(\mmarks\sqcup_{!{}}[\mval_k \mapsto \mval_v], \mstore'))
 \\[2pt]
-  \domarkstep(\krt{\mctx}) &= (\krt{\rewritectx(\mctx)}, \mctx) \\
-  \domarkstep(\kcons{\mkframe^\mmarks}{\mkont}) &= (\kcons{\mkframe^{\mmarks \sqcup_{!{}} [\mval_k \mapsto \mval_v]}}{\mkont}, \bot) \\
-  \domarkstep(\kmt^\mmarks) &= (\kmt^{\mmarks \sqcup_{!{}} [\mval_k \mapsto \mval_v]}, \bot)
+  \domarkstep(\krt{\mctx}^\mmarks) &= (\krt{\rewritectx(\mctx)}^{\mmarks \sqcup_{!{}} [\mval_k \mapsto \mval_v]}, \mctx) \\
+  \domarkstep(\kcons{\kwcm{\mmarks}^{\mmarks'}}{\mkont}) &= (\kcons{\kwcm{\mmarks \sqcup_{!{}} [\mval_k \mapsto \mval_v]}^{\mmarks' \sqcup_{!{}} [\mval_k \mapsto \mval_v]}}{\mkont}, \bot) \\
+  \domarkstep(\mkont^\mmarks) &= (\kcons{\kwcm{[\mval_k \mapsto \mval_v]}^{\mmarks \sqcup_{!{}} [\mval_k \mapsto \mval_v]}}{\mkont}, \bot)
 \end{align*}
 
 Second, the $\domarkset$ metafunction builds a map of keys to lists, and builds a private store for the list constructions.
 %
-For this, we extend $\alloc$'s specification to allow a second argument, the private store, and produce a pair of addresses.
+For this, we extend $\alloc$'s specification to allow more arguments --- the private store, and a set of keys that need cons cells allocated for them --- and produce a map from keys to pairs of addresses.
 %
 %% FIXME: need to crawl through qualified continuations for all extensions to build a list for each found key.
 %% Has another implicit equality check
+\newcommand{\markaux}{\mathit{marks}}
 \begin{align*}
-  \domarkset(\mstate\equiv\tpl{\mpoint,\mstore,\mkont,\mktab,\mmemo}) &=
-    (\maddr_a, \maddr_d) = \alloc(\mstate,\mstore')
+  \domarkset(\mstate\equiv\tpl{\mpoint,\mstore,\mkont,\mktab,\mmemo}) &= \markaux(\mkont,\emptyset) \\
+  \markaux(\kmt^\bot, G) &= (\bot, \bot) \\
+  \markaux(\krt{\mctx}^\mmarks, G) &= (\bot, \bot) \text{ if } \mctx \in G \\ %% FIXME: unsound
+  \markaux(\krt{\mctx}^\mmarks, G) &= \bigsqcup\limits_{\mkont\in \mktab(\mctx)}{\markaux(\mkont,G \cup \set{\mctx})} \text{ otherwise} \\
+  \markaux(\kcons{\kwcm{\mmarks}^{\mmarks'}}{\mkont}, G) &= (\mmarks''[\mval_k \mapsto \set{\cons{a}{d}} : \mval_k \in \dom(\mmarks), (a, d) = A(\mval_k)], \\
+    &\phantom{= (}
+      \mstore\sqcup[a \mapsto \mmarks(\mval_k) : \mval_k \in \dom(\mmarks), (a,\_) = A(\mval_k)] \\
+    &\phantom{= (\mstore}\sqcup[d \mapsto \mmarks''(\mval_k) : \mval_k \in \dom(\mmarks), (\_,d) = A(\mval_k)]
+   \\ \text{where } (\mmarks'', \mstore) &= \markaux(\mkont, G)
+   \\ A &= \alloc(\mstate, \mstore, \dom(\mmarks))
 \end{align*}
 }
 
