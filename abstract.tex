@@ -1,15 +1,9 @@
-Pushdown analysis improves upon finite-state analysis in precision and performance since it can rule out spurious paths caused by improperly matched calls and returns.
+Pushdown analysis improves upon finite-state analysis in precision and performance by not exploring spurious paths caused by improperly matched calls and returns.
 %
-Despite this, we have not seen total widespread adoption of these techniques for analyzing higher-order languages.
+Prior literature on pushdown higher-order flow analysis depends on complicated machinery that is difficult to understand, extend, and prove correct.
 %
-A possible explanation is that the known techniques are technically burdened and difficult to understand or extend.
+The machinery has no concrete counterpart --- there is little to no operational intuition as to why it works.
 %
-Control structure of the programming language gets pulled into the model of computation, which makes extensions to non-pushdown control structures, such as first-class control operators, non-trivial.
-%%
-
-%%
-We show a derivational approach to abstract interpretation that yields transparently sound static analyses that can precisely match calls and returns when applied to well-known abstract machines.
+We show that these pushdown analyses have a similar core that can be explained with well-known techniques such as memoization and Abstracting Abstract Machines (AAM).
 %
-We show that the abstraction techniques in the literature have an intuitive operational meaning, even in the concrete setting, that build off well-known programming techniques such as memoization.
-%
-This approach allows us to derive the existing, more technically involved analyses, and a novel pushdown analysis for delimited, composable control.
+We use this interpretation to derive a novel pushdown analysis for delimited, composable control.
