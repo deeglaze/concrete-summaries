@@ -3,7 +3,7 @@
 
 Programs in higher-order languages heavily use function calls and method dispatch as part of their control flow.
 %
-Until recently, flow analyses for higher-order languages could not handle return flow precisely \citep{ianjohnson:vardoulakis-lmcs11, ianjohnson:earl2010pdcfa}, which leads to several spurious paths (and thus false positives) due to the pervasiveness of function/method calls and subsequent returns.
+Until recently, flow analyses for higher-order languages could not handle return flow precisely \citep{ianjohnson:vardoulakis-lmcs11, dvanhorn:Earl2010Pushdown}, which leads to several spurious paths (and thus false positives) due to the pervasiveness of function/method calls and subsequent returns.
 %
 These works, called CFA2 and PDCFA respectively, use pushdown automata as their approximation's target model of computation.
 %
@@ -18,6 +18,8 @@ CFA2 and PDCFA have difficult details to easily apply to an off-the-shelf semant
 There is a systematic process for transforming off-the-shelf programming language semantics into a form amenable to \emph{regular} analysis that has been widely applied with great success to production programming languages~\citet{dvanhorn:VanHorn2010Abstracting} (a technique called abstracting abstract machines, or AAM).
 %
 A contribution of this paper is a systematic process to construct \emph{pushdown} analyses of programming languages, due to the precision (and often performance) benefits.
+%
+
 %%
 
 %%
@@ -68,15 +70,20 @@ There are common underpinnings of PDCFA and CFA2 that can be embodied as concret
 \item{breaking the recursive structure of continuations by indirecting them through a table with appropriately precise keys, and}
 \item{memoization.}
 \end{enumerate}
-Once the machine semantics is in this form, simple point-wise abstraction leads to the summarization algorithms that we see in the literature.
 
-The remaining sections of the paper are
-\begin{itemize}
-\item{\autoref{sec:pdcfa}: we derive a cousin of PDCFA}
-\item{\autoref{sec:gc}: we show how abstract garbage collection ``falls out'' of this approach.}
-\item{\autoref{sec:cfa2}: we make additions to the PDCFA semantics to get a direct-style CFA2 without first-class control}
-\item{\autoref{sec:sr}: we give a novel analysis of delimited and composable first-class control.}
-\end{itemize}
+%%
+
+Once the machine semantics is in this form, simple point-wise abstraction leads to the summarization algorithms that we see in the literature.
+%
+In \autoref{sec:pdcfa} we derive a cousin of PDCFA.
+%
+The following section shows how to extend PDCFA with abstract garbage collection. % \autoref{sec:gc}: we show how abstract garbage collection ``falls out'' of this approach.
+%
+Then in \autoref{sec:cfa2} we show the fundamental difference between PDCFA and CFA2 without first-class control. % : we make additions to the PDCFA semantics to get a direct-style CFA2 without first-class control}
+%
+\ifwcm{We show in \autoref{sec:wcm} that semantics with stack-inspection (beyond GC) also fit within this interpretation.}
+%
+Finally, we show in \autoref{sec:sr} that even though first-class control operators don't fit in the pushdown model, we can gracefully loosen the abstraction to analyze delimited, composable first-class control.
 
 \section{Deriving PDCFA}
 \label{sec:pdcfa}
@@ -99,17 +106,24 @@ We skip the detour to pushdown systems altogether and show an operational unders
 %%
 
 %%
-We start by deriving PDCFA from an operational semantics for the untyped lambda calculus (figure \ref{fig:base-semantics}).
+We start by deriving PDCFA from an operational semantics for the untyped lambda calculus (\autoref{fig:base-semantics}).
 %
 The semantic spaces for the machine follow.
 
+{
+\setlength{\abovedisplayskip}{0pt}
+\setlength{\belowdisplayskip}{4pt}
+\setlength{\abovedisplayshortskip}{0pt}
+\setlength{\belowdisplayshortskip}{8pt}
+\begin{align*}
+  \mexpr \in \Expr = \svar{\mvar} \alt \sapp{\mexpr}{\mexpr} \alt \slam{\mvar}{\mexpr}
+\end{align*}
 \begin{minipage}[b]{.55\linewidth}
   \begin{align*}
-  \mexpr \in \Expr &= \svar{\mvar} \mid \sapp{\mexpr}{\mexpr} \mid \slam{\mvar}{\mexpr} \\
   \mstate \in \State &= (\Expr \times \Env) \times \Store \times \Kont \\
   \mval \in \Value &::= \vclo{\slam{\mvar}{\mexpr}}{\menv} \\
-  \mkont \in \Kont &::= \kmt \mid \kcons{\mkframe}{\mkont} \\
-  \mkframe \in \Frame &::= \kar{\mexpr,\menv} \mid \kfn{\mval}
+  \mkont \in \Kont &::= \kmt \alt \kcons{\mkframe}{\mkont} \\
+  \mkframe \in \Frame &::= \kar{\mexpr,\menv} \alt \kfn{\mval}
   \end{align*}\hrule height 0pt\end{minipage}
 \begin{minipage}[b]{.40\linewidth}
   \begin{align*}
@@ -118,7 +132,10 @@ The semantic spaces for the machine follow.
   \mvar \in \Var &\text{ an infinite set} \\
   \maddr \in \Addr &\text{ an infinite set}
   \end{align*}\hrule height 0pt\end{minipage}
+}
+%%
 
+%%
 The $\Addr$ space is what controls the precision of the model.
 %
 For a concrete semantics, we require the allocation meta-function $\alloc :
@@ -185,7 +202,7 @@ The semantic spaces for the machine are modified thusly:
 
 \begin{align*}
   \mstate \in \State &= (\Expr \times \Env) \times \Store \times \Kont \times \KTab \times \Memo \\
-  \mkont \in \Kont &::= \kmt \mid \krt{(\mexpr,\menv),\mstore} \mid \kcons{\mkframe}{\mkont} \\
+  \mkont \in \Kont &::= \kmt \alt \krt{(\mexpr,\menv),\mstore} \alt \kcons{\mkframe}{\mkont} \\
   \mktab \in \KTab &= (\Expr \times \Env)\times \Store \to \wp(\Kont) \\
   \mmemo \in \Memo &= (\Expr \times \Env)\times \Store \to \wp(\Value \times \Store)
 \end{align*}
@@ -256,39 +273,46 @@ Instead of following an entire path through a call to return a value, we simply 
 
 To turn this semantics into PDCFA's algorithm for constructing a Dyck state graph, given the appropriate $\alloc$, we apply a widening operator to make $\mstore$, $\mkont$, and $\mmemo$ shared amongst all states (meaning states then become represented without these components), in what is then called a $\System$.
 %
+We show only the memo and continuation table widening, since store widening would require rewriting newly-created contexts to use the global store following the step.
+%
+This rewriting is unnecessary with the store-counting per-wide-step technique presented in \citet{ianjohnson:oaam:icfp2013}.
+%
 Since these components are shared, they are always the least upper bound of any respective component that the semantics produces (the intermediate set $I$) in order to stay sound.
 %
 We use a meta-function $\wn$, ``wide to narrow'', to shift between the two representations of states.
 
 %% FIXME: remove stores from memo-table since they will always be unchanged
 %% TODO: Show that store widening and store/memo/KTab widening have a bisimulation.
+{
 \setlength{\abovedisplayskip}{0pt}
 \setlength{\belowdisplayskip}{4pt}
 \setlength{\abovedisplayshortskip}{0pt}
 \setlength{\belowdisplayshortskip}{8pt}
 \begin{align*}
-  \mastate \in \sa{State} &= (\Expr \times \Env) \times \Kont \\
-  \System &= \wp(\sa{State} \times \Store) \times \wp(\sa{State}) \times \Store \times \KTab \times \Memo \\
+  \mastate \in \sa{State} &= (\Expr \times \Env) \times \Store \times \Kont \\
+  \System &= \wp(\sa{State}) \times \wp(\sa{State}) \times \KTab \times \Memo \\
   {\mathcal F} &: \sa{\State} \to \System \to \System \\
-  {\mathcal F}(\mstate_0)(S, F, \mstore, \mktab, \mmemo) &= (\set{(\mstate_0,\bot)} \cup S \cup S', F', \mstore', \mktab', \mmemo') \\
-  \text{where } I &= \setbuild{\mstate'}{\mastate \in F, \wn(\mastate,\mstore,\mktab,\mmemo) \stepto \mstate'} \\
-                \wn(\tpl{(\mexpr,\menv),\mkont},\mstore,\mktab,\mmemo)
+  {\mathcal F}(\mstate_0)(S, F, \mktab, \mmemo) &= (S \cup S', F' \cup (\set{\mstate_0} \setminus S), \mktab', \mmemo') \\
+  \text{where } I &= \setbuild{\mstate'}{\mastate \in F, \wn(\mastate,\mktab,\mmemo) \stepto \mstate'} \\
+                \wn(\tpl{(\mexpr,\menv),\mstore,\mkont},\mktab,\mmemo)
                    &= \tpl{(\mexpr,\menv),\mstore,\mkont,\mktab,\mmemo}
 \end{align*}
 \begin{minipage}{.55\linewidth}
   \begin{align*}
-    \mstore' &= \bigsqcup\setbuild{\mstore'}{\wn(\_, \mstore',\_,\_) \in I} \\
     \mktab' &=  \bigsqcup\setbuild{\mktab'}{\wn(\_, \_, \mktab', \_) \in I} \\
     \mmemo' &= \bigsqcup\setbuild{\mmemo'}{\wn(\_, \_, \_, \mmemo') \in I}
   \end{align*}
 \end{minipage}
 \begin{minipage}{.40\linewidth}
   \begin{align*}
-    S' &= \setbuild{(\mastate',\mstore')}{\wn(\mastate', \_, \_, \_) \in I} \\
-    F' &= \setbuild{\mastate'}{(\mastate',\_) \in S' \setminus S} \\
+    S' &= \setbuild{\mastate'}{\wn(\mastate', \_, \_, \_) \in I} \\
+    F' &= S' \setminus S
   \end{align*}
 \end{minipage}
+}
+%%
 
+%%
 A $\System$ embodies the states seen and at which store, $S$, the frontier set of states yet to analyze, $F$, the shared store for the frontier, $\mstore$, the continuation table $\mktab$ and the memo table $\mmemo$.
 %
 The memo table need only map to values, since the global store will always subsume the store that would otherwise be mapped.
@@ -448,7 +472,7 @@ The final invariant, $\phi_{\memo}$, states that the memo table is correct: all 
 
 Abstract garbage collection~\citep{dvanhorn:Might:2006:GammaCFA} is a powerful technique for regaining precision in an abstract interpretation.
 %
-The followup to PDCFA~\citet{dvanhorn:Earl2012Introspective} that allows inspecting the stack in order to perform sound GC introduces an entirely new class of automata for this one purpose.
+The followup to PDCFA~\citep{dvanhorn:Earl2012Introspective} that allows inspecting the stack in order to perform sound GC introduces an entirely new class of automata for this one purpose.
 %
 In our view with tabular semantics, the GC story mimics the simplicity of GC in the regular setting, without the detour into automata theory.
 %
@@ -458,17 +482,21 @@ Address reachability is in terms of a base ``touches'' function, $\touches$, tha
 %
 Entries in $\mktab$ might be circular, so we compute the continuation frames in a fixed-point before computing touched addresses:
 \begin{align*}
-  \konts(\mkont_0, \mktab)(K) &= \Phi(\mkont_0) \cup K \cup \bigcup\limits_{\krt{\mctx} \in K,\, \mkont' \in \mktab(\mctx)}{\Phi(\mkont')}
-\\
-  \touches(\mkont, \mktab) &= \bigcup\limits_{\mkframe \in \lfp(\konts(\mkont, \mktab))}{\touchesf(\mkframe)}
-\\[2pt]
-  \Phi(\kcons{\mkframe}{\mkont}) &= \set{\mkframe} \cup \Phi(\mkont) \\
-  \Phi(\krt{\mctx}) &= \set{\krt{\mctx}} \\
-  \Phi(\kmt) &= \emptyset 
+  \touchesk{\mkont}(\mktab) &= \setbuild{\maddr}{\mkont \rightsquigarrow_\mktab^* \maddr}
 \\[2pt]
   \touchesf(\kar{\mexpr,\menv}) &= \mathit{rng}(\menv|_{\mathit{fv}(\mexpr)}) \\
-  \touchesf(\kfn{(\slam{\mvar}{\mexpr},\menv)}) &= \mathit{rng}(\menv|_{\mathit{fv}(\slam{\mvar}{\mexpr})})
+  \touchesf(\kfn{\mval}) &= \touches(\mval)
 \end{align*}
+\begin{mathpar}
+  \inferrule{ }{\kcons{\mkframe}{\mkont} \rightsquigarrow_\mktab \mkont}
+  \quad
+  \inferrule{\maddr \in \touchesf(\mkframe)}{\kcons{\mkframe}{\mkont} \rightsquigarrow_\mktab \maddr}
+  \quad
+  \inferrule{\mkont \rightsquigarrow_\mktab (\mkont' \text{ or } \maddr)}{\kcons{\mkframe}{\mkont} \rightsquigarrow_\mktab (\mkont' \text{ or } \maddr)}
+  \quad
+  \inferrule{\mkont \in \mktab(\mctx)}{\krt{\mctx} \rightsquigarrow_\mktab \mkont}
+\end{mathpar}
+
 
 An implementation of the same functionality would use a mutable set to track which contexts have been traversed to build up a set of addresses:
 % This code is typeset below by Scribble
@@ -519,12 +547,12 @@ Garbage collection ($\Gamma$) amounts to restricting the heap to just the reacha
 \begin{align*}
   \mstate &\stepto \Gamma(\mstate) \\
   \Gamma(\tpl{(\mexpr,\menv),\mstore,\mkont, \mktab, \mmemo}) &= \tpl{(\mexpr,\menv),\mstore|_{\reaches(\mathit{root}, \mstore)}, \mkont, \mktab, \mmemo} \\
+  \text{where } \mathit{root} &= \touchesk{\mkont}(\mktab) \cup \mathit{rng}(\menv|_{\mathit{fv}(\mexpr)})
 \end{align*}
 %
 The ``reaches'' metafunction ($\reaches$) is a transitive closure of ``touches'' as it weaves through the store, starting from some root set of addresses:
 
 \begin{align*}
-  \text{where } \mathit{root} &= \touches(\mkont,\mktab) \cup \mathit{rng}(\menv|_{\mathit{fv}(\mexpr)}) \\
   \reaches(\mathit{root}, \mstore) &= \setbuild{b}{\maddr \in \mathit{root}, \maddr \rightsquigarrow_\mstore^* b} \\
    &
                \inferrule{\mval \in \mstore(\maddr) \\
@@ -590,13 +618,13 @@ The first of these is an addition to the stack-less context.
     $\tpl{\mval,\mstore,\mframe,\kcons{\kfn{\vclo{\slam{\mvar}{\mexpr}}{\menv}}}{\mkont}}$
     &
     $\tpl{(\mexpr, \extm{\menv}{\mvar}{\maddr}), \mstore', \mframe', \kcons{\kpush{\mframe}}{\mkont}}$
-    \\ where & $(\mstore',\mframe') = \bind(\mstore,\maddr,\mvar,\mval)$
+    \\ & where $(\mstore',\mframe') = \bind(\mstore,\maddr,\mvar,\mval)$
     \\
     $\tpl{\mval,\mstore,\mframe,\kcons{\kpush{\mframe'}}{\mkont}}$
     &
     $\tpl{\mval,\mstore,\mframe',\mkont}$
   \end{tabular}
-  \caption{The CES$\xi$K machine}
+  \caption{The CES$\xi$K machine significant rules}
   \label{fig:frame-semantics}
 \end{figure}
 
@@ -725,6 +753,131 @@ With this proposition, we can prove that the CES$\xi$K machine that always alloc
 \end{theorem}
 This proof has the same structure as that of PDCFA.
 
+\ifwcm{
+\section{Stack inspection with continuation marks}
+\label{sec:wcm}
+
+We saw in \autoref{sec:gc} that a semantics can inspect the continuation table to compute a property of the ``whole stack,'' which is outside the model of pushdown systems.
+%
+Here we show that Clements and Felleisen's WCM machine (a generalization of the CM machine) is directly analyzable in this setting, though we give up some precision in order to account for all calling contexts instead of the single one a function is currently in.
+%
+The machine can extend the marks of the continuation, reify the current set of marks, and query the set for all the values given to a particular mark key.
+%
+The mark set of the continuation is then part of the ``context'' for function calls, since functions can inspect the marks.
+%
+Mark sets can have unbounded length chains of values for each mark key, so we use $\alloc$ to tune the precision of context comparisons.
+%
+The effect is that we reify the current mark set for each function call to keep as part of the context (one can devise caching strategies for better performance).
+%
+We use a private store to represent the chains of values, in order to not affect the precision of reifications that happen within the analyzed program.
+%
+\begin{align*}
+  \mexpr \in \Expr &::= \swcm{\mexpr}{\mexpr}{\mexpr} \alt \sccms \alt \scmsl{\mexpr}{\mexpr} \alt \ldots \\
+  \mctx \in \Context &::= ((\mexpr, \menv), \mstore, \mmarkset) \\
+  \mkframe \in \Frame &::= \kwcmk{\mexpr, \mexpr, \menv} \alt
+                           \kwcmv{\mval, \mexpr, \menv} \alt
+                           \kcmsls{\mexpr,\menv} \alt
+                           \kcmslk{\mval} \alt \ldots \\ 
+  \mkont \in \Kont &::= \kmt^\mmarks \alt \krt{\mctx} \alt \kcons{\mkframe^\mwmarks}{\mkont} \\
+  \mmarks \in \Marks &= \Value \to \wp(\Value) \\
+  \mwmarks \in \QualifiedMarks &::= \scopy{\mmarks} \alt \sext{\mmarks} \\
+  \mmarkset \in \Markset &= \Marks \times \Store \\
+  \mval \in \Value &::= \texttt{nil} \alt \cons{\maddr}{\maddr} \alt \smarkset{\mmarks} \alt \ldots
+\end{align*}
+%% TODO: distinguish between copied and extended marks so that domarkset only builds
+%% a list of mark extensions
+\begin{figure}
+  \centering
+  $\mstate \stepto \mstate' \text{ where } \maddr = \alloc(\mstate)$ \\
+  \begin{tabular}{r|l}
+    \hline
+% wcm eval key
+    $\tpl{(\swcm{\mexpr_k}{\mexpr_v}{\mexpr}, \menv), \mstore, \mkont, \mktab, \mmemo}$
+    &
+    $\tpl{(\mexpr_k, \menv), \mstore, \kcons{\kwcmk{\mexpr_v,\mexpr,\menv}}{\mkont}, \mktab, \mmemo}$
+    \\
+% wcm eval value
+    $\tpl{\mval_k, \mstore, \kcons{\kwcmk{\mexpr_v,\mexpr,\menv}}{\mkont}, \mktab, \mmemo}$
+    &
+    $\tpl{(\mexpr_v, \menv), \mstore, \kcons{\kwcmv{\mval_k,\mexpr,\menv}}{\mkont}, \mktab, \mmemo}$
+    \\    
+% wcm all done.
+    $\tpl{\mval_v, \mstore, \kcons{\kwcmv{\mval_k, \mexpr, \menv}}{\mkont}, \mktab, \mmemo}$
+    &
+    $\tpl{\mexpr,\menv,\mstore,\mkont',\mktab', \mmemo}$ \\
+    where & $(\mkont',\mktab') = \domark(\mkont,\mktab,\mval_k,\mval_v)$
+    \\
+% function call
+    $\tpl{\mval,\mstore,\kcons{\kfn{\vclo{\slam{\mvar}{\mexpr}}{\menv}}}{\mkont}}$
+    &
+    $\tpl{(\mexpr, \menv'), \mstore', \krt{\mctx},\mktab',\mmemo}$
+    \\ where & $\menv' = \extm{\menv}{\mvar}{\maddr}$ \\
+    & $\mstore' = \joinone{\mstore}{\maddr}{\mval}$ \\
+    & $\mctx = ((\mexpr,\menv'),\mstore', \domarkset(\mstate))$ \\
+    & $\mktab' = \joinone{\mktab}{\mctx}{\mkont}$
+    \\
+% Current continuation marks
+    $\tpl{(\sccms,\menv),\mstore,\mkont,\mktab,\mmemo}$
+    &
+    $\tpl{\smarkset{\mmarks},\mstore\sqcup\mstore',\mkont,\mktab,\mmemo}$
+    \\ where & $(\mmarks,\mstore') = \domarkset(\mstate)$
+    \\
+% cms->list mark set
+    $\tpl{(\scmsl{\mexpr_\mmarks}{\mexpr_k}, \menv), \mstore, \mkont, \mktab, \mmemo}$
+    &
+    $\tpl{(\mexpr_\mmarks, \menv), \mstore, \kcons{\kcmsls{\mexpr_k,\menv}}{\mkont}, \mktab, \mmemo}$
+    \\
+% cms->list key
+    $\tpl{\mval, \mstore, \kcons{\kcmsls{\mexpr_k,\menv}}{\mkont}, \mktab, \mmemo}$
+    &
+    $\tpl{(\mexpr_k, \menv), \mstore, \kcons{\kcmslk{\mval}}{\mkont}, \mktab, \mmemo}$
+    \\
+% cms->list done
+    $\tpl{\mval_k, \mstore, \kcons{\kcmslk{\mmarks}}{\mkont}, \mktab, \mmemo}$
+    &
+    $\tpl{\mval, \mstore, \mktab, \mmemo}$ if $\mval \in \mmarks(\mval_k)$
+  \end{tabular}  
+  \caption{The Tabular WCM machine (list rules not shown)}
+  \label{fig:wcm}
+\end{figure}
+
+The two metafunctions, $\domark$ and $\domarkset$ are what do the heavy-lifting of adding marks to a continuation and reifying the mark set into a map of keys to lists.
+%
+Adding a mark to a continuation has an implicit equality check; if $\mval_k = \mval_k'$ concretely, then {\tt wcm} should do a strong update on $\mmarks$, but otherwise it should join since they could be two different values.
+%
+Concrete equality analysis is outside the scope of this paper, but doable (\eg, with abstract counting~\citep{dvanhorn:Might:2006:GammaCFA}), so we elide the details and call this strong-update-or-join operation $\sqcup_{!{}}$.
+%
+Marking a return continuation means we need to crawl through the table, which again can be circular, so we compute the least fixed point of ${\mathcal M}$ to get an extended table holding the marked continuations.
+%
+\newcommand{\rewritectx}{\mathit{rw}}
+\newcommand{\domarkstep}{\mathit{mark}_0}
+\begin{align*}
+  \domark(\mkont, \mktab, \mval_k, \mval_v) &= (\mkont', \mktab) \text{ if } (\mkont',\bot) = \domarkstep(\mkont) \\
+  \domark(\mkont, \mktab, \mval_k, \mval_v) &= (\mkont', \mathbf{snd}(\lfp({\mathcal M}(\mctx)))) \text{ if } (\mkont',\mctx) = \domarkstep(\mkont) \\
+  \text{where } {\mathcal M}(\mctx_0)(C, \mktab) &= (C \cup C' \cup \set{\mctx_0}, \mktab \sqcup \mktab') \\
+    I &= \setbuild{(\rewritectx(\mctx), \setbuild{\domarkstep(\mkont')}{\mkont' \in \mktab(\mctx)})}{\mctx \in C} \\
+    C' &= \setbuild{\mctx}{(\_, S) \in I, (\_, \mctx) \in S} \\
+    \mktab' &= \bigsqcup\setbuild{[\mctx \mapsto \setbuild{\mkont}{(\mctx, S) \in I, (\mkont, \_) \in S}]}{(\mctx,\_) \in I}
+\\[2pt]
+  \rewritectx((\mexpr,\menv),\mstore,(\mmarks, \mstore')) &= ((\mexpr,\menv),\mstore,(\mmarks\sqcup_{!{}}[\mval_k \mapsto \mval_v], \mstore'))
+\\[2pt]
+  \domarkstep(\krt{\mctx}) &= (\krt{\rewritectx(\mctx)}, \mctx) \\
+  \domarkstep(\kcons{\mkframe^\mmarks}{\mkont}) &= (\kcons{\mkframe^{\mmarks \sqcup_{!{}} [\mval_k \mapsto \mval_v]}}{\mkont}, \bot) \\
+  \domarkstep(\kmt^\mmarks) &= (\kmt^{\mmarks \sqcup_{!{}} [\mval_k \mapsto \mval_v]}, \bot)
+\end{align*}
+
+Second, the $\domarkset$ metafunction builds a map of keys to lists, and builds a private store for the list constructions.
+%
+For this, we extend $\alloc$'s specification to allow a second argument, the private store, and produce a pair of addresses.
+%
+%% FIXME: need to crawl through qualified continuations for all extensions to build a list for each found key.
+%% Has another implicit equality check
+\begin{align*}
+  \domarkset(\mstate\equiv\tpl{\mpoint,\mstore,\mkont,\mktab,\mmemo}) &=
+    (\maddr_a, \maddr_d) = \alloc(\mstate,\mstore')
+\end{align*}
+}
+
 \section{Analysis of delimited, composable control}
 \label{sec:sr}
 
@@ -757,9 +910,9 @@ The changed semantic spaces for the shift/reset semantics are as follows:
 
 \begin{align*}
   \mstate \in \State &::= \tpl{\mpoint, \mstore, \mkont, \mmkont} \\
-  \mpoint \in \Point &::= (\mexpr, \menv) \mid \mval \\
-  \mval \in \Value &::= \vclo{\slam{\mvar}{\mexpr}}{\menv} \mid \vcomp{\mkont} \\
-  \mmkont \in \MKont &::= \kmt \mid \mkapp{\mkont}{\mmkont}
+  \mpoint \in \Point &::= (\mexpr, \menv) \alt \mval \\
+  \mval \in \Value &::= \vclo{\slam{\mvar}{\mexpr}}{\menv} \alt \vcomp{\mkont} \\
+  \mmkont \in \MKont &::= \kmt \alt \mkapp{\mkont}{\mmkont}
 \end{align*}
 
 \begin{figure}
@@ -799,11 +952,11 @@ Memoization also gets a new context to consider, calling a continuation, because
 The new semantic spaces are then
 
 \begin{align*}
-  \mctx \in \Context &::= ((\mexpr,\menv),\mstore) \mid (\vcomp{\mkont},\mval,\mstore) \\
-  \mkont \in \Kont &= \kmt \mid \krt{\mctx} \mid \kcons{\mkframe}{\mkont} \\
-  \mmkont \in \MKont &::= \kmt \mid \kprompt{\mctx} \\
-  \mathit{KTabRange} &= \wp(\Kont \times \MKont) \cup \wp(\Kont) \\
-  \mktab \in \KTab &= \Context \to \mathit{KTabRange} \\
+  \mctx \in \Context &::= ((\mexpr,\menv),\mstore) \alt (\vcomp{\mkont},\mval,\mstore) \\
+  \mkont \in \Kont &= \kmt \alt \krt{\mctx} \alt \kcons{\mkframe}{\mkont} \\
+  \mmkont \in \MKont &::= \kmt \alt \kprompt{\mctx} \\
+  \mathit{KRange} &= \wp(\Kont \times \MKont) \cup \wp(\Kont) \\
+  \mktab \in \KTab &= \Context \to \mathit{KRange} \\
   \mmemo \in \Memo &= \Context \to \wp(\Value \times \Store)
 \end{align*}
 
@@ -870,14 +1023,27 @@ The new indirection possibility changes $\Context$ to also include $\maddr$ wher
 %
 The rules that change are presented in figure \ref{fig:shift-reset-table1}.
 
-\begin{align*}
-  \msctx \in \SContext &::= ((\mexpr,\menv),\maddr) \\
-  \mctx \in \Context &::= \msctx \mid \ldots \\
-  \mskont \in \SKont &= \krt{\msctx} \mid \ldots \\
-  \mval \in \Value &= \vclo{\slam{\mvar}{\mexpr}}{\menv} \mid \vcomp{\mskont} \\
-  \mktab \in \KTab &= (\Context \to \mathit{KTabRange}) \\
-                   &\cup (\Addr \to \wp(\Store))
-\end{align*}
+{
+\setlength{\abovedisplayskip}{0pt}
+\setlength{\belowdisplayskip}{4pt}
+\setlength{\abovedisplayshortskip}{0pt}
+\setlength{\belowdisplayshortskip}{8pt}
+\begin{minipage}{0.45\linewidth}
+  \begin{align*}
+    \msctx \in \SContext &::= ((\mexpr,\menv),\maddr) \\
+    \mctx \in \Context &::= \msctx \alt \ldots \\
+    \mskont \in \SKont &= \krt{\msctx} \alt \ldots
+  \end{align*}
+\end{minipage}
+\begin{minipage}{0.50\linewidth}
+  \begin{align*}
+    \mval \in \Value &= \vclo{\slam{\mvar}{\mexpr}}{\menv} \alt \vcomp{\mskont} \\
+    \mktab \in \KTab &= (\Context \to \mathit{KRange}) \\
+    &\cup (\Addr \to \wp(\Store))
+  \end{align*}
+\end{minipage}
+
+}
 
 \begin{figure*}
   \centering
@@ -995,7 +1161,7 @@ Our specialized analysis for delimited control, also with a monovariant allocati
 
 \section{Related Work}
 
-The immediately related work is that of PDCFA \citep{ianjohnson:earl2010pdcfa}, CFA2~\citep{ianjohnson:vardoulakis-lmcs11, ianjohnson:Vardoulakis2011Pushdown}, and AAM ~\citep{dvanhorn:VanHorn2010Abstracting}, the first two of which we recreated in full detail.
+The immediately related work is that of PDCFA \citep{dvanhorn:Earl2010Pushdown}, CFA2~\citep{ianjohnson:vardoulakis-lmcs11, ianjohnson:Vardoulakis2011Pushdown}, and AAM ~\citep{dvanhorn:VanHorn2010Abstracting}, the first two of which we recreated in full detail.
 %
 The version of CFA2 that handles \rackett{call/cc} does not handle composable control, and is dependent on a restricted CPS representation.
 %
