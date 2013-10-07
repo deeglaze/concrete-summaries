@@ -3,7 +3,7 @@
 
 Programs in higher-order languages heavily use function calls and method dispatch as part of their control flow.
 %
-Until recently, flow analyses for higher-order languages could not handle return flow precisely \citep{ianjohnson:vardoulakis-lmcs11, dvanhorn:Earl2010Pushdown}, which leads to several spurious paths (and thus false positives) due to the pervasiveness of function/method calls and subsequent returns.
+Until recently, flow analyses for higher-order languages could not handle return flow precisely \citep{ianjohnson:vardoulakis-lmcs11, dvanhorn:Earl2010Pushdown}, which leads to several spurious paths (and thus false positives) due to the pervasiveness of function or method calls and subsequent returns.
 %
 These works, called CFA2 and PDCFA respectively, use pushdown automata as their approximation's target model of computation.
 %
@@ -59,7 +59,7 @@ This paper seeks to do just that with an operational view of what summarization 
 %
 In other words, we give a concrete semantics to the tricks that the analyses in the literature use in the abstract, and maintain the original meaning of the language.
 %
-We also give intuitive analogies to well-established ideas/techniques so that the working semanticist can write a pushdown analysis for her language.
+We also give intuitive analogies to well-established ideas and techniques so that the working semanticist can write a pushdown analysis for her language.
 %
 In order to demonstrate the applicability of this viewpoint, we show a new analysis for a language with composable control.
 %
@@ -279,15 +279,15 @@ We have promising preliminary results in this direction that don't require a pre
   \label{fig:summary-semantics}
 \end{figure}
 
-To turn this semantics into PDCFA's algorithm for constructing a Dyck state graph, given the appropriate $\alloc$, we apply a widening operator to make $\mstore$, $\mkont$, and $\mmemo$ shared amongst all states (meaning states then become represented without these components), in what is then called a $\System$.
-%
+To turn this semantics into PDCFA's algorithm for constructing a Dyck state graph, given the appropriate $\alloc$, we apply a widening operator to make $\mstore$, $\mkont$, and $\mmemo$ shared amongst all states (meaning states then become represented without these components), in what is then called a $\System$. We use a meta-function $\wn$, ``wide to narrow,'' to shift between the two representations of states.
+%%
+
+%%
 We show only the memo and continuation table widening, since store widening would require rewriting newly-created contexts to use the global store following the step.
 %
 This rewriting is unnecessary with the store-counting per-wide-step technique presented in \citet{ianjohnson:oaam:icfp2013}, or the less precise timestamp approximation from \citet{dvanhorn:Shivers:1991:CFA}.
 %
 Since these components are shared, they are always the least upper bound of any respective component that the semantics produces (the intermediate set $I$) in order to stay sound.
-%
-We use a meta-function $\wn$, ``wide to narrow'', to shift between the two representations of states.
 
 %% FIXME: remove stores from memo-table since they will always be unchanged
 %% TODO: Show that store widening and store/memo/KTab widening have a bisimulation.
@@ -529,7 +529,7 @@ In order to prove this, we need a lemma that allows us to plug in any continuati
 
 Finally, we can show that even if the tables are shared amongst all states, they are precise enough to not interfere with the results.
 \begin{theorem}[Equivalence with global tables]\label{thm:global}
-  Tabular semantics has a bisimulation with memo/k-table-widened semantics.
+  Tabular semantics has a bisimulation with memo-and-k-table-widened semantics.
 \end{theorem}
 
 \section{Deriving GC from the introspective pushdown model}\label{sec:gc}
@@ -1187,14 +1187,12 @@ At capture time, we strip the store in the $\rt$ continuation if there is one, a
 \end{align*}
 
 The result of this viewpoint is a sound, precise, and computable semantics for a ``pushdown approach'' to analyzing delimited, composable control.
-%
-To handle non-composable control, we can simply remove the prompts and keep $\approximate$.
 
 \begin{theorem}\label{thm:concrete-sr}
   Tabular semantics has a bisimulation with standard semantics given fresh allocation.
 \end{theorem}
 
-We prove this with the invariant that the continuation and meta-continuation have unique, well-founded unrollings in addition to the table invariants from \autoref{sec:pdcfa}, since entries in $\mktab$ are always fresh.
+We prove this with the invariant that the continuation and meta-continuation have unique unrollings in addition to the table invariants from \autoref{sec:pdcfa}, since entries in $\mktab$ are always fresh.
 
 \begin{theorem}\label{thm:sound-sr}
   Tabular semantics simulates standard semantics with abstract allocation.
@@ -1251,7 +1249,7 @@ The version of CFA2 that handles \rackett{call/cc} does not handle composable co
 %
 They also had no way to tune the precision of their first class continuation approximation.
 %
-Since \rackett{call/cc} can be simulated with shift/reset\footnote{\RktPn{(}\RktSym{define}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{call/cc}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{f}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{shift}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{k}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{k}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{f}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\lambda$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{x}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{shift}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{c}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{k}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{x}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{)}}, this work supercedes theirs (the space complexity difference imposed by the simulation is non-issue in the abstract).
+Our semantics adapts to \rackett{call/cc} by removing the meta-continuation operations, and thus this work supercedes theirs.
 %
 The extended version of PDCFA that does garbage collection~\citep{dvanhorn:Earl2012Introspective} also fits into our model;
 the addresses that the stack keeps alive can be accumulated by ``reading through'' the continuation table, building up the set of addresses in each portion of the stack that we come across.
@@ -1262,7 +1260,7 @@ Pushdown models have existed in the first-order static analysis literature ~\cit
 %
 The higher-order setting imposes additional challenges that make their methods difficult to adapt.
 %
-The most important constraint is that we can't know all call-sites of a function/method before the analysis begins, which their methods heavily rely on.
+The most important constraint is that we can't know all call-sites of a function or method before the analysis begins, which their methods heavily rely on.
 %%
 
 %%
