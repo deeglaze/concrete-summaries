@@ -96,11 +96,11 @@ If the state space without the stack is finite (and it can be made finite with a
 %
 They thus recast the problem in terms of pushdown systems.
 %
-The whole of their machinery is then computing the pushdown system on-the-fly, only considering states reachable from the root (initial) state.
+The whole of their machinery is then computing the pushdown system on-the-fly, only considering states reachable from the initial state.
 %
 They call the main data-structure for this a Dyck state graph.
 %
-To match nodes that push frames with later nodes following the pop of that frame, they additionally compute an $\epsilon$-closure graph, which keeps edges between nodes that have a net-zero stack change path between them.
+They additionally compute an $\epsilon$-closure graph to match nodes that push frames with later nodes following the pop of that frame, which keeps edges between nodes that have a net-zero stack change path between them.
 %
 We skip the detour to pushdown systems altogether and show an operational understanding of the resulting analysis.
 %%
@@ -141,7 +141,7 @@ The $\Addr$ space is what controls the precision of the model.
 For a concrete semantics, we require the allocation meta-function $\alloc :
 \State \to \Addr$ to return fresh addresses ($\alloc(\mstate) \notin \dom(\mstate.\mstore)$), but any choice of address is sound~\citep{dvanhorn:Might2009Posteriori}.
 %
-If $\alloc$ only uses addresses from a finite subset of $\Addr$, then the state space without continuations is finite, and the space of contination frames is finite (thus the pushdown system interpretation is apt).
+If $\alloc$ only uses addresses from a finite subset of $\Addr$, then the state space without continuations is finite, and the space of contination frames is finite --- thus the pushdown system interpretation is apt.
 %
 This meta-function along with the commitment to having no recursive data-structures is the key to the AAM technique.
 %
@@ -174,7 +174,7 @@ We borrow this technique on top of our own.
     &
     $\tpl{(\mexpr, \extm{\menv}{\mvar}{\maddr}), \joinone{\mstore}{\maddr}{\mval}, \mkont}$
   \end{tabular}
-  \caption{The CESK machine}
+  \caption{The CESK machine with allocation tuning}
   \label{fig:base-semantics}
 \end{figure}
 
@@ -218,6 +218,14 @@ In our model, we only ``push'' when we call a function, and we only ``pop'' when
 There is an analogy to something more operational: summary edges embody memoization (see the last rule in figure \ref{fig:summary-semantics}).
 %
 Instead of following an entire path through a call to return a value, we simply jump from the call to the return with the result of the call, with the resulting context changes---in this case only the store (the second case of rule 4).
+%%
+
+%%
+Memoization with respect to the entire store is safe, if not a little wasteful; there are portions of the store that can change and be irrelevant to the result of a function call.
+%
+There are techniques to ignore differences in the heap when they are irrelevant, dubbed ``sparseness analysis'' that have been successful for large-scale first-order analysis~\citep{ianjohnson:DBLP:conf/pldi/OhHLLY12}, but they rely on a pre-analysis that knows the control-flow graph.
+%
+We have promising preliminary results in this direction that don't require a pre-analysis, but we leave further investigation of sparse techniques to future work.
 
 \begin{figure}
   \centering
@@ -275,7 +283,7 @@ To turn this semantics into PDCFA's algorithm for constructing a Dyck state grap
 %
 We show only the memo and continuation table widening, since store widening would require rewriting newly-created contexts to use the global store following the step.
 %
-This rewriting is unnecessary with the store-counting per-wide-step technique presented in \citet{ianjohnson:oaam:icfp2013}.
+This rewriting is unnecessary with the store-counting per-wide-step technique presented in \citet{ianjohnson:oaam:icfp2013}, or the less precise timestamp approximation from \citet{dvanhorn:Shivers:1991:CFA}.
 %
 Since these components are shared, they are always the least upper bound of any respective component that the semantics produces (the intermediate set $I$) in order to stay sound.
 %
@@ -313,30 +321,37 @@ We use a meta-function $\wn$, ``wide to narrow'', to shift between the two repre
 %%
 
 %%
-A $\System$ embodies the states seen and at which store, $S$, the frontier set of states yet to analyze, $F$, the shared store for the frontier, $\mstore$, the continuation table $\mktab$ and the memo table $\mmemo$.
+A $\System$ embodies the states seen and at which store, $S$, the frontier set of states yet to analyze, $F$, the continuation table $\mktab$ and the memo table $\mmemo$.
+% Note: Only if widened store.{
 %
-The memo table need only map to values, since the global store will always subsume the store that would otherwise be mapped.
+%The memo table need only map to values, since the global store will always subsume the store that would otherwise be mapped.
 %
-All the states in the frontier are stepped with the current store, after which the next store is the least upper bound of all the resulting stores.
+%All the states in the frontier are stepped with the current store, after which the next store is the least upper bound of all the resulting stores.
 %
-The next frontier contains only states resulting from stepping the previous frontier that we haven't seen at this next store.
+%The next frontier contains only states resulting from stepping the previous frontier that we haven't seen at this next store.}
 %
 Systematic techniques for a performant implementation can be found in \citet{ianjohnson:oaam:icfp2013}.
 
-\paragraph{Example:} Let's consider a monovariant allocation strategy (the address for each binding is the variable name itself) to run the following example:
-% \begin{lstlisting}[mathescape]
-%   (let* ([id ($\lambda$ (x) x)]
-%          [y (id 0)]
-%          [z (id 1)])
-%     ($\le$ y z))
-% \end{lstlisting}
-\begin{SCodeFlow}\begin{RktBlk}\begin{SingleColumn}\RktPn{(}\RktSym{let*}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktPn{[}\RktSym{id}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\lambda$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{x}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{x}\RktPn{)}\RktPn{]}
+\paragraph{Example:} Let's consider a monovariant allocation strategy (the address for each binding is the variable name itself, so $\menv$ is always the identity function $\iota$) to run the following example:
 
-\mbox{\hphantom{\Scribtexttt{xxxxxxx}}}\RktPn{[}\RktSym{y}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{id}\mbox{\hphantom{\Scribtexttt{x}}}\RktVal{0}\RktPn{)}\RktPn{]}
+\begin{center}
+  \includegraphics[scale=0.5]{example0}
+\end{center}
+  % \item{\texttt{(id 0)} steps to \texttt{x} at $\krt{((\texttt{x}, [\texttt{x}\mapsto\texttt{x}]), \mstore_0)}$ with $\mstore_1 =
+%     \mstore_0[\texttt{x} \mapsto \set{0}]$ and
+%     (let $\mctx_1 = ((\texttt{x},[\texttt{x}\mapsto\texttt{x}]),\mstore_1)$,
+%          $\mkont_1 = \klet{\texttt{y}, \texttt{(let ([z (id 1)]) ($\le$ y z))}, [\texttt{id}\mapsto{\texttt{id}}]}$)
+%     $\mktab_1 = [\mctx_0 \mapsto \set{\mkont_0}]$}
+% \item{\texttt{0} at $\krt{\mctx_1}$ steps to $0$ at $\mkont_1$ and $\mmemo_1 = [\mctx_1 \mapsto \set{0}]$}
+% \item{\texttt{0} at $\mkont_1$ steps to \texttt{(let ([z (id 1)]) ($\le$ y z))} and $\mstore_2 = \mstore_1[\texttt{y} \mapsto \set{0}]$}
+% \item{\texttt{(let ([z (id 1)]) ($\le$ y z))} steps to \texttt{(id 1)} at \\
+%       $\klet{\texttt{z}, \texttt{($\le$ y z)}, [\texttt{id} \mapsto \texttt{id}, \texttt{y} \mapsto \texttt{y}]}$
+%       (call this $\mkont_2$).}
+% \item{\texttt{(id 1)} steps to $x$ with $\mstore_3 = \mstore_2[\texttt{x} \mapsto \set{0,1}]$ and
+%       (let $\mctx_3 = ((\texttt{x},[\texttt{x}\mapsto\texttt{x}]),\mstore_3)$) $\mktab_3 =\mktab_1[\mctx_3 \mapsto \set{\mkont_2}]$.}
+% \item{\texttt{0} or \texttt{1} at $\krt{\mctx_3}$ steps to \texttt{0} or \texttt{1} at $\mkont_2$ and $\mmemo_3 = \mmemo_1[\mctx_3 \mapsto \set{0,1}]$.}
+% \item{\texttt{z} gets bound to $\set{0,1}$, and \texttt{($\le$ y z)} evaluates to true.}
 
-\mbox{\hphantom{\Scribtexttt{xxxxxxx}}}\RktPn{[}\RktSym{z}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{id}\mbox{\hphantom{\Scribtexttt{x}}}\RktVal{1}\RktPn{)}\RktPn{]}\RktPn{)}
-
-\mbox{\hphantom{\Scribtexttt{xx}}}\RktPn{(}\RktSym{$\leq$}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{y}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{z}\RktPn{)}\RktPn{)}\end{SingleColumn}\end{RktBlk}\end{SCodeFlow}
 
 Suppose we extend our semantics to allow numbers, numeric primitives and \texttt{let}.
 %
@@ -348,37 +363,60 @@ Call the constructor of this frame $\mathbf{lt}$.
 %%
 We should expect that a pushdown analysis would predict this evaluates to true, and there are no loops in the program.
 %
-0CFA ~\citep{ianjohnson:Shivers:1991:CFA} claims there is a loop from the second call of \texttt{id} to the first, and thusly predicts this program evaluates to true or false.
+0CFA~\citep{dvanhorn:Shivers:1991:CFA} claims there is a loop from the second call of \texttt{id} to the first, and thusly predicts this program evaluates to true or false.
 %
 PDCFA claims there is no loop, and depending on the implementation, that the result is true or false (paper), or just true (implemented)
 \footnote{This is because the paper steps every seen state with the current store every iteration, but the implementation only steps states that need stepping.}.
 %
-Let's take a look at the evaluation after binding \texttt{id} ($\mstore_0 = [\texttt{id} \mapsto \set{\vclo{\slam{\texttt{x}}{\texttt{x}}}{\bot}}]$):
+Let's take a look at the evaluation after binding \texttt{id}:
 
-%% FIXME stores in memo-table
-\begin{enumerate}
-\item{\texttt{(id 0)} steps to \texttt{x} at $\krt{((\texttt{x}, [\texttt{x}\mapsto\texttt{x}]), \mstore_0)}$ with $\mstore_1 =
-    \mstore_0[\texttt{x} \mapsto \set{0}]$ and
-    (let $\mctx_1 = ((\texttt{x},[\texttt{x}\mapsto\texttt{x}]),\mstore_1)$,
-         $\mkont_1 = \klet{\texttt{y}, \texttt{(let ([z (id 1)]) ($\le$ y z))}, [\texttt{id}\mapsto{\texttt{id}}]}$)
-    $\mktab_1 = [\mctx_0 \mapsto \set{\mkont_0}]$}
-\item{\texttt{0} at $\krt{\mctx_1}$ steps to $0$ at $\mkont_1$ and $\mmemo_1 = [\mctx_1 \mapsto \set{0}]$}
-\item{\texttt{0} at $\mkont_1$ steps to \texttt{(let ([z (id 1)]) ($\le$ y z))} and $\mstore_2 = \mstore_1[\texttt{y} \mapsto \set{0}]$}
-\item{\texttt{(let ([z (id 1)]) ($\le$ y z))} steps to \texttt{(id 1)} at \\
-      $\klet{\texttt{z}, \texttt{($\le$ y z)}, [\texttt{id} \mapsto \texttt{id}, \texttt{y} \mapsto \texttt{y}]}$
-      (call this $\mkont_2$).}
-\item{\texttt{(id 1)} steps to $x$ with $\mstore_3 = \mstore_2[\texttt{x} \mapsto \set{0,1}]$ and
-      (let $\mctx_3 = ((\texttt{x},[\texttt{x}\mapsto\texttt{x}]),\mstore_3)$) $\mktab_3 =\mktab_1[\mctx_3 \mapsto \set{\mkont_2}]$.}
-\item{\texttt{0} or \texttt{1} at $\krt{\mctx_3}$ steps to \texttt{0} or \texttt{1} at $\mkont_2$ and $\mmemo_3 = \mmemo_1[\mctx_3 \mapsto \set{0,1}]$.}
-\item{\texttt{z} gets bound to $\set{0,1}$, and \texttt{($\le$ y z)} evaluates to true.}
-\end{enumerate}
+\begin{center}
+  $\begin{array}{l}\includegraphics[scale=0.4195]{example1}\end{array}$
+  $\Rightarrow$
+  $\begin{array}{l}\includegraphics[scale=0.4195]{example2}\end{array}$
+  $\Rightarrow$
+  $\begin{array}{l}\includegraphics[scale=0.4195]{example3}\end{array}$
+\end{center}
+
+{\small
+\begin{tabular}{|l|c|c|c|c|c|}
+\hline
+\# & $\mstore$ & $\mctx$ & $\mkont$ & $\mktab$ & $\mmemo$ \\
+\hline
+0 & $[{\tt id} \mapsto \set{(\slam{\mvar}{\mvar},\bot)}]$ & $(({\tt x}, \iota), \mstore_1)$ & $\mkont_0$ & $[\mctx_0 \mapsto \set{\mkont_0}]$ & $[\mctx_0 \mapsto \set{0}]$ \\
+1 & $\mstore_0[{\tt \mvar} \mapsto \set{0}]$ & $(({\tt x}, \iota), \mstore_3)$ & $\krt{\mctx_0}$ & $\mktab_0[\mctx_1 \mapsto \set{\mkont_2}]$ & $\mmemo_0[\mctx_1 \mapsto \set{0,1}]$ \\
+2 & $\mstore_1[{\tt y} \mapsto \set{0}]$ & - & $\mathbf{lt}({\tt z}, {\tt (}\le\ {\tt y}\ {\tt z)})$ & - & - \\
+3 & $\mstore_2[{\tt x} \mapsto \set{0,1}]$ & - & $\krt{\mctx_1}$ & - & - \\
+4 & $\mstore_3[{\tt z} \mapsto \set{0,1}]$ & - & $\kmt$ & - & - \\
+\hline
+\end{tabular}}
+Where $\mkont_0 = \mathbf{lt}({\tt y}, {\tt (let\ ([z\ (id\ 1)])\ (}\le\ {\tt y}\ {\tt z))}, \iota)$
+
+
+% %% FIXME stores in memo-table
+% \begin{enumerate}
+% \item{\texttt{(id 0)} steps to \texttt{x} at $\krt{((\texttt{x}, [\texttt{x}\mapsto\texttt{x}]), \mstore_0)}$ with $\mstore_1 =
+%     \mstore_0[\texttt{x} \mapsto \set{0}]$ and
+%     (let $\mctx_1 = ((\texttt{x},[\texttt{x}\mapsto\texttt{x}]),\mstore_1)$,
+%          $\mkont_1 = \klet{\texttt{y}, \texttt{(let ([z (id 1)]) ($\le$ y z))}, [\texttt{id}\mapsto{\texttt{id}}]}$)
+%     $\mktab_1 = [\mctx_0 \mapsto \set{\mkont_0}]$}
+% \item{\texttt{0} at $\krt{\mctx_1}$ steps to $0$ at $\mkont_1$ and $\mmemo_1 = [\mctx_1 \mapsto \set{0}]$}
+% \item{\texttt{0} at $\mkont_1$ steps to \texttt{(let ([z (id 1)]) ($\le$ y z))} and $\mstore_2 = \mstore_1[\texttt{y} \mapsto \set{0}]$}
+% \item{\texttt{(let ([z (id 1)]) ($\le$ y z))} steps to \texttt{(id 1)} at \\
+%       $\klet{\texttt{z}, \texttt{($\le$ y z)}, [\texttt{id} \mapsto \texttt{id}, \texttt{y} \mapsto \texttt{y}]}$
+%       (call this $\mkont_2$).}
+% \item{\texttt{(id 1)} steps to $x$ with $\mstore_3 = \mstore_2[\texttt{x} \mapsto \set{0,1}]$ and
+%       (let $\mctx_3 = ((\texttt{x},[\texttt{x}\mapsto\texttt{x}]),\mstore_3)$) $\mktab_3 =\mktab_1[\mctx_3 \mapsto \set{\mkont_2}]$.}
+% \item{\texttt{0} or \texttt{1} at $\krt{\mctx_3}$ steps to \texttt{0} or \texttt{1} at $\mkont_2$ and $\mmemo_3 = \mmemo_1[\mctx_3 \mapsto \set{0,1}]$.}
+% \item{\texttt{z} gets bound to $\set{0,1}$, and \texttt{($\le$ y z)} evaluates to true.}
+% \end{enumerate}
 
 We maintained enough context to distinguish the return points of \texttt{id} to not rebind \texttt{y} to 1.
 %
 When determining control flow through the expression, we consult $\mmemo$ to continue past function calls, so there is no confusion about a back edge from the second call to \texttt{id}.
 %
 
-\begin{theorem}
+\begin{theorem}\label{thm:pdcfa-tabular}
   Tabular semantics has a bisimulation with the standard semantics with comparable allocation strategies.
 \end{theorem}
 
@@ -411,7 +449,7 @@ Our interpretation of $\stepto$ is in a fixed-point computation, so circularitie
 
 \begin{mathpar}
   \inferrule{ }{\kmt \in \unroll{\mktab}{\kmt, G}} \quad
-  \inferrule{\mkont \in \unroll{\mktab}{\mkont', G}}{\mkframe:\mkont \in \unroll{\mktab}{\mkframe:\mkont', G}} \\
+  \inferrule{\mkont \in \unroll{\mktab}{\mkont', \emptyset}}{\mkframe:\mkont \in \unroll{\mktab}{\mkframe:\mkont', G}} \\
   \inferrule{\mctx \notin G  \\
              \mkont^\circ \in \mktab(\mctx) \\
              \mkont \in \unroll{\mktab}{\mkont^\circ, \set{\mctx}\cup G}}
@@ -574,7 +612,7 @@ This semantics of course enjoys the soundness properties that GC does not introd
   If $\mstate \stepto \mstate'$ and $\alpha(\Gamma(\mstate)) \sqsubseteq \mastate$ then there is a $\mastate'$ such that $\mastate \astepto \mastate'$ and $\alpha(\Gamma(\mstate')) \sqsubseteq \mastate'$.
 \end{theorem}
 %
-\textbf{TODO: wrap up}
+%TODO: wrap up
 
 \section{Deriving CFA2}
 \label{sec:cfa2}
@@ -974,7 +1012,7 @@ The new semantic spaces are then
   \mmemo \in \Memo &= \Context \to \wp(\Value \times \Store)
 \end{align*}
 
-Figure \ref{fig:shift-reset-table0} has what one might naturally write using just this information.
+\autoref{fig:shift-reset-table0} has what one might naturally write using just this information.
 %
 Unfortunately, since $\rt$ continuations contain a store, and continuations can now appear in the store, this introduces a circularity that could cause the analysis to never terminate.
 %
@@ -1120,15 +1158,15 @@ The result of this viewpoint is a sound, precise, and computable semantics for a
 %
 To handle non-composable control, we can simply remove the prompts and keep $\approximate$.
 
-\begin{conjecture}\label{thm:concrete-sr}
+\begin{theorem}\label{thm:concrete-sr}
   Tabular semantics has a bisimulation with standard semantics given fresh allocation.
-\end{conjecture}
+\end{theorem}
 
-We prove this with the invariant that the continuation and meta-continuation have unique, well-founded unrollings in addition to the table invariants from \autoref{sec:pdcfa}.
+We prove this with the invariant that the continuation and meta-continuation have unique, well-founded unrollings in addition to the table invariants from \autoref{sec:pdcfa}, since entries in $\mktab$ are always fresh.
 
-\begin{conjecture}\label{thm:sound-sr}
+\begin{theorem}\label{thm:sound-sr}
   Tabular semantics simulates standard semantics with abstract allocation.
-\end{conjecture}
+\end{theorem}
 
 %% TODO: complete
 \paragraph{Comparison to PDCFA CPS'd to remove {\tt shift} and {\tt reset}:}{
@@ -1237,6 +1275,8 @@ Our goal in the future is to show that this technique is even more widely applic
 We conjecture that the same recipe will apply to the most intricate control operators in production languages such as in \citet{ianjohnson:Flatt:2007:ADC:1291151.1291178}.
 %
 The control structures there are difficult to model even with AAM's techniques due to the ability to capture and compose continuations with arbitrarily many prompts, but once we can tackle AAM, there should be a straightforward route to extending it with the pushdown techniques of this paper.
+%
+We have an unproven prototype of the stack inspection capabilities provided by the {\tt with-continuation-mark}, {\tt current-continuation-marks} and {\tt continuation-mark-set->list} primitives, where a ``context'' then also includes what is the (approximated) result of {\tt current-continuation-marks}, since functions can inspect only this amount of the stack.
 %%
 
 %%
