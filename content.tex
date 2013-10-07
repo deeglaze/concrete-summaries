@@ -371,28 +371,51 @@ PDCFA claims there is no loop, and depending on the implementation, that the res
 Let's take a look at the evaluation after binding \texttt{id}:
 
 \begin{center}
-  $\begin{array}{l}\includegraphics[scale=0.4195]{example1}\end{array}$
-  $\Rightarrow$
-  $\begin{array}{l}\includegraphics[scale=0.4195]{example2}\end{array}$
-  $\Rightarrow$
-  $\begin{array}{l}\includegraphics[scale=0.4195]{example3}\end{array}$
+  \begin{minipage}{0.55\linewidth}
+    \begin{center}
+      $\begin{array}{l}\includegraphics[scale=0.65]{example1}\end{array}$ \\
+      $\Downarrow$ \\
+      $\begin{array}{l}\includegraphics[scale=0.65]{example2}\end{array}$ \\
+      $\Downarrow$ \\
+      $\begin{array}{l}\includegraphics[scale=0.65]{example3}\end{array}$
+    \end{center}
+  \end{minipage}
+  \begin{minipage}{0.43\linewidth}
+    \begin{center} {\small
+        \begin{tabular}{|l|c|c|}
+          \hline
+          \# & $\mstore$ & $\mkont$ \\
+          \hline
+          0 & $[{\tt id} \mapsto \set{(\slam{\mvar}{\mvar},\bot)}]$ & $\mkont_0$ \\
+          1 & $\mstore_0[{\tt \mvar} \mapsto \set{0}]$ & $\krt{\mctx_0}$ \\
+          2 & $\mstore_1[{\tt y} \mapsto \set{0}]$ & $\mathbf{lt}({\tt z}, {\tt (}\le\ {\tt y}\ {\tt z)})$ \\
+          3 & $\mstore_2[{\tt x} \mapsto \set{0,1}]$ & $\krt{\mctx_1}$ \\
+          4 & $\mstore_3[{\tt z} \mapsto \set{0,1}]$ & $\kmt$ \\
+          \hline
+        \end{tabular}} \\[10pt]
+      {\small
+        \begin{tabular}{|l|c|}
+          \hline
+          \# & $\mctx$ \\
+          \hline
+          0  & $(({\tt x}, \iota), \mstore_1)$ \\
+          1  & $(({\tt x}, \iota), \mstore_3)$ \\
+          \hline
+        \end{tabular}}
+      \\[10pt]
+      {\small
+        \begin{tabular}{|l|c|c|c|}
+          \hline
+          \# & $\mktab$ & $\mmemo$ \\
+          \hline
+          0  & $[\mctx_0 \mapsto \set{\mkont_0}]$ & $[\mctx_0 \mapsto \set{0}]$ \\
+          1  & $\mktab_0[\mctx_1 \mapsto \set{\mkont_2}]$ & $\mmemo_0[\mctx_1 \mapsto \set{0,1}]$ \\
+          \hline
+        \end{tabular}}    
+    \end{center}
+  \end{minipage}
 \end{center}
-
-{\small
-\begin{tabular}{|l|c|c|c|c|c|}
-\hline
-\# & $\mstore$ & $\mctx$ & $\mkont$ & $\mktab$ & $\mmemo$ \\
-\hline
-0 & $[{\tt id} \mapsto \set{(\slam{\mvar}{\mvar},\bot)}]$ & $(({\tt x}, \iota), \mstore_1)$ & $\mkont_0$ & $[\mctx_0 \mapsto \set{\mkont_0}]$ & $[\mctx_0 \mapsto \set{0}]$ \\
-1 & $\mstore_0[{\tt \mvar} \mapsto \set{0}]$ & $(({\tt x}, \iota), \mstore_3)$ & $\krt{\mctx_0}$ & $\mktab_0[\mctx_1 \mapsto \set{\mkont_2}]$ & $\mmemo_0[\mctx_1 \mapsto \set{0,1}]$ \\
-2 & $\mstore_1[{\tt y} \mapsto \set{0}]$ & - & $\mathbf{lt}({\tt z}, {\tt (}\le\ {\tt y}\ {\tt z)})$ & - & - \\
-3 & $\mstore_2[{\tt x} \mapsto \set{0,1}]$ & - & $\krt{\mctx_1}$ & - & - \\
-4 & $\mstore_3[{\tt z} \mapsto \set{0,1}]$ & - & $\kmt$ & - & - \\
-\hline
-\end{tabular}}
 Where $\mkont_0 = \mathbf{lt}({\tt y}, {\tt (let\ ([z\ (id\ 1)])\ (}\le\ {\tt y}\ {\tt z))}, \iota)$
-
-
 % %% FIXME stores in memo-table
 % \begin{enumerate}
 % \item{\texttt{(id 0)} steps to \texttt{x} at $\krt{((\texttt{x}, [\texttt{x}\mapsto\texttt{x}]), \mstore_0)}$ with $\mstore_1 =
@@ -439,7 +462,7 @@ The $\mathit{unroll}$ function interprets what are all the valid continuations t
             {\mkont \in \unroll{\mktab}{\krt{\mctx}}}
 \end{mathpar}
 
-The astute reader may find this definition is dubious, since there is a possibility for unguarded corecursion here.
+The astute reader may find this definition dubious, since there is a possibility for unguarded corecursion here.
 %
 Interpreting a function with ill-founded recursion can lead to a table such that $\krt{\mctx} \in \mktab(\mctx)$.
 %
@@ -455,7 +478,36 @@ Our interpretation of $\stepto$ is in a fixed-point computation, so circularitie
              \mkont \in \unroll{\mktab}{\mkont^\circ, \set{\mctx}\cup G}}
             {\mkont \in \unroll{\mktab}{\krt{\mctx}, G}}  
 \end{mathpar}
-Consider later uses of $\mathit{unroll}$ to implicitly give $\emptyset$ for $G$.
+
+%%
+The different tables we have encode information about execution history that we prove is invariant.
+\begin{align*}
+  \inv(\tpl{\mpoint, \mstore, \mkont, \mktab, \mmemo}) &=
+          \dom(\mmemo) \subseteq \dom(\mktab) \\
+  &\wedge \forall (\mpoint',\mstore') \in \dom(\mktab),
+                  \mkont^\circ \in \mktab(\mpoint',\mstore'),
+                  \mkont' \in \unroll{\mktab}{\mkont^\circ, \emptyset}. \\   
+  &\qquad \phi_{\reachable} \wedge \phi_{\memo} \\
+  \text{where } \phi_{\reachable} &=
+  \exists \mkont^* \in \unroll{\mktab}{\mkont,\emptyset}.
+    \tpl{\mpoint', \mstore', \mkont'} \stepto^* \tpl{\mpoint, \mstore, \mkont^*} \\
+  \phi_{\memo} &=
+ \forall (\mval, \mstore'') \in \mmemo(\mpoint',\mstore'). \\
+  &\qquad \exists \mtrace\equiv\tpl{\mpoint', \mstore', \mkont'} \stepto^* \tpl{\mval,\mstore'', \mkont'}.
+     \hastail(\mtrace,\mkont') \\
+\end{align*}
+
+The first is that the memo table only contains information about previously seen contexts; we need this to infer that there was at least one call leading to the memoized context such that we can use stack irrelevance to justify skipping to the memoized result.
+%
+The second, $\phi_{\reachable}$, states that all the calling contexts in the continuation table reach some unrolling of the current state.
+%
+The final invariant, $\phi_{\memo}$, states that the memo table is correct: all calling contexts reach the memoized result, with the calling context's continuation in the tail (to justify using stack-irrelevance).
+
+\begin{lemma}[Table invariants]\label{lem:tab-inv}
+  If $\inv(\mstate)$ and $\mstate \stepto \mstate'$ then $\inv(\mstate')$.
+\end{lemma}
+
+In order to prove this, we need a lemma that allows us to plug in any continuation for memoized results.
 
 \begin{lemma}[Stack irrelevance]\label{lem:irrelevance}
   $\hastail(\mtrace,\mkont)$ implies $\replacetail(\mtrace,\mkont,\mkont')$ is a valid trace.
@@ -475,33 +527,7 @@ Consider later uses of $\mathit{unroll}$ to implicitly give $\emptyset$ for $G$.
   \replacetail(\mtrace\mstate,\mkont,\mkont') &= \replacetail(\mtrace,\mkont,\mkont')\replacetail(\mstate,\mkont,\mkont') \\
 \end{align*}
 
-The different tables we have encode information about execution history that we prove is invariant.
-\begin{align*}
-  \inv(\tpl{\mpoint, \mstore, \mkont, \mktab, \mmemo}) &=
-          \dom(\mmemo) \subseteq \dom(\mktab) \\
-  &\wedge \forall (\mpoint',\mstore') \in \dom(\mktab),
-                  \mkont^\circ \in \mktab(\mpoint',\mstore'),
-                  \mkont' \in \unroll{\mktab}{\mkont^\circ}. \\   
-  &\qquad \phi_{\reachable} \wedge \phi_{\memo} \\
-  \text{where } \phi_{\reachable} &=
-  \exists \mkont^* \in \unroll{\mktab}{\mkont}.
-    \tpl{\mpoint', \mstore', \mkont'} \stepto^* \tpl{\mpoint, \mstore, \mkont^*} \\
-  \phi_{\memo} &=
- \forall (\mval, \mstore'') \in \mmemo(\mpoint',\mstore'). \\
-  &\qquad \exists \mtrace\equiv\tpl{\mpoint', \mstore', \mkont'} \stepto^* \tpl{\mval,\mstore'', \mkont'}.
-     \hastail(\mtrace,\mkont') \\
-\end{align*}
-
-The first is that the memo table only contains information about previously seen contexts; we need this to infer that there was at least one call leading to the memoized context such that we can use stack irrelevance to justify skipping to the memoized result.
-%
-The second, $\phi_{\reachable}$, states that all the calling contexts in the continuation table reach some unrolling of the current state.
-%
-The final invariant, $\phi_{\memo}$, states that the memo table is correct: all calling contexts reach the memoized result, with the calling context's continuation in the tail (to justify using stack-irrelevance).
-
-\begin{lemma}[Table invariants]\label{lem:tab-inv}
-  If $\inv(\mstate)$ and $\mstate \stepto \mstate'$ then $\inv(\mstate')$.
-\end{lemma}
-
+Finally, we can show that even if the tables are shared amongst all states, they are precise enough to not interfere with the results.
 \begin{theorem}[Equivalence with global tables]\label{thm:global}
   Tabular semantics has a bisimulation with memo/k-table-widened semantics.
 \end{theorem}
@@ -600,6 +626,12 @@ The ``reaches'' metafunction ($\reaches$) is a transitive closure of ``touches''
 
 This semantics of course enjoys the soundness properties that GC does not introduce dangling pointers (\autoref{thm:gc-pointers}), equal length traces are equal up to GC (in the concrete) (\autoref{thm:gc-concrete}), and abstractions are sound with respect to collected states (\autoref{thm:gc-sound}).
 %
+Technically since this semantics inspects the touched addresses of the continuation, the set of touched addresses should be considered part of the ``context'' in the $\mathbf{rt}$ continuations.
+%
+This extra context can be overlooked, since that means the computed touched addresses will be an overapproximation of what is already sound.
+%
+More touched addresses means a less effective GC, but this is an acceptable tradeoff for a possibly smaller state space.
+%
 \begin{theorem}\label{thm:gc-pointers}
   All addresses in $\Gamma(\mstate)$ are in the domain of $\Gamma(\mstate).\mstore$.
 \end{theorem}
@@ -691,7 +723,7 @@ In AAM, a variable reference non-deterministically steps to all possible values 
 %
 Here we want to say that once \texttt{x} is considered to stand for value $v$, then all subsequent references of \texttt{x} should be $v$.
 %
-If they aren't, it looks as if \texttt{x} was rebound; it hasn't, and thus it is a ``fake rebinding.''
+If they are not all considered $v$, it looks as if \texttt{x} was rebound; it hasn't, and thus it is a ``fake rebinding.''
 %
 CFA2 does not step to all values on variable reference, but instead carries all its values around in superposition until they need to be observed at, say, a function call.
 %
@@ -1258,7 +1290,7 @@ As the programming world continues to embrace behavioral values, it becomes more
 %
 CFA2 and PDCFA paved the way, and in large part inspired this work.
 %
-It is our view that systematic approaches to applying the techniques are pivotal to scaling them to ``real languages.''
+It is our view that systematic approaches to applying the techniques are pivotal to scaling them to production programming languages.
 %
 We believe that the recipe that this paper set forth is a step in that direction.
 %
@@ -1276,7 +1308,7 @@ We conjecture that the same recipe will apply to the most intricate control oper
 %
 The control structures there are difficult to model even with AAM's techniques due to the ability to capture and compose continuations with arbitrarily many prompts, but once we can tackle AAM, there should be a straightforward route to extending it with the pushdown techniques of this paper.
 %
-We have an unproven prototype of the stack inspection capabilities provided by the {\tt with-continuation-mark}, {\tt current-continuation-marks} and {\tt continuation-mark-set->list} primitives, where a ``context'' then also includes what is the (approximated) result of {\tt current-continuation-marks}, since functions can inspect only this amount of the stack.
+We have an unproven prototype of the stack inspection capabilities provided by the {\tt with-continuation-mark}, {\tt current-continuation-marks} and {\tt continuation-mark-set->list} primitives, where a ``context'' then also includes what is the result of {\tt current-continuation-marks}, since functions can inspect only this amount of the stack.
 %%
 
 %%
