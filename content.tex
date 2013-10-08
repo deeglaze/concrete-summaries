@@ -37,7 +37,7 @@ This paper gives a common, simple framework to derive CFA2, PDCFA and its garbag
 %
 To exercise the recipe further, we give a novel analysis for delimited, composable control. \\
 
-\section{What to expect}
+\section{The essence of summarization}
 
 CFA2 uses a technique called ``summarization'' from Sharir and Pnueli \citep[Chapter 7]{local:muchnick:jones:flow-analysis:1981}, which is synonymous with the $\epsilon$-closure graph that PDCFA constructs.
 %
@@ -49,7 +49,7 @@ This was shown for the \rackett{call-with-current-continuation} (a.k.a. \rackett
 %
 This impressive work illuminated the fact that we can harness the enhanced technology of pushdown analyses in non-pushdown models of computation.
 %
-Doing this sacrifices call/return matching in the general case, but in practice the precision is much better than the alternative regular model that, say, AAM would provide.
+Doing this sacrifices call/return matching in the general case, but in practice the precision is much better than the alternative regular model that, say, 0-CFA would provide.
 %%
 
 %%
@@ -65,14 +65,23 @@ In order to demonstrate the applicability of this viewpoint, we show a new analy
 %
 All of the semantics modeled in this paper are implemented in full detail in PLT Redex~\citep{ianjohnson:Felleisen:2009:SEP:1795772} and available online\footnote{\url{http://github.com/ianj/concrete-summaries}}.
 
-There are common underpinnings of PDCFA and CFA2 that can be embodied as concrete machinery in the programming language semantics: 
+There are common underpinnings of PDCFA and CFA2 that can be embodied as concrete ``summarization'' machinery in the programming language semantics: 
 \begin{enumerate}
-\item{breaking the recursive structure of continuations by indirecting them through a table with appropriately precise keys, and}
-\item{memoization.}
+\item{bound continuations with with delimiters that specify the exact context in which any continuation replacement would lead to the same result, and}
+\item{memoize at these delimiters}
 \end{enumerate}
 
 %%
+The first of these two might seem unfamiliar, but it is just identifying what is needed for sound memoization, and we delimit the continuations in order to mark where to memoize results.
+%
+In the case of a CESK machine, where the store is relevant to the evaluation of functions, a context is just the CES portion since stacks don't matter.
+%
+For stack inspecting analyses, a context is CES plus the inspected portion of K.
+%
+As soon as we have a value that such a context evaluates to, all subsequent visits to that context can jump straight to the memoized result(s).
+%%
 
+%%
 Once the machine semantics is in this form, simple point-wise abstraction leads to the summarization algorithms that we see in the literature.
 %
 In \autoref{sec:pdcfa} we derive a cousin of PDCFA.
@@ -300,7 +309,7 @@ Since these components are shared, they are always the least upper bound of any 
   \mastate \in \sa{State} &= (\Expr \times \Env) \times \Store \times \Kont \\
   \System &= \wp(\sa{State}) \times \wp(\sa{State}) \times \KTab \times \Memo \\
   {\mathcal F} &: \sa{\State} \to \System \to \System \\
-  {\mathcal F}(\mstate_0)(S, F, \mktab, \mmemo) &= (S \cup S', F' \cup (\set{\mstate_0} \setminus S), \mktab', \mmemo') \\
+  {\mathcal F}(\mastate_0)(S, F, \mktab, \mmemo) &= (S \cup S', F', \mktab', \mmemo') \\
   \text{where } I &= \setbuild{\mstate'}{\mastate \in F, \wn(\mastate,\mktab,\mmemo) \stepto \mstate'} \\
                 \wn(\tpl{(\mexpr,\menv),\mstore,\mkont},\mktab,\mmemo)
                    &= \tpl{(\mexpr,\menv),\mstore,\mkont,\mktab,\mmemo}
@@ -313,7 +322,7 @@ Since these components are shared, they are always the least upper bound of any 
 \end{minipage}
 \begin{minipage}{.40\linewidth}
   \begin{align*}
-    S' &= \setbuild{\mastate'}{\wn(\mastate', \_, \_, \_) \in I} \\
+    S' &= \setbuild{\mastate'}{\wn(\mastate', \_, \_, \_) \in I} \cup \set{\mastate_0}\\
     F' &= S' \setminus S
   \end{align*}
 \end{minipage}
@@ -329,6 +338,8 @@ A $\System$ embodies the states seen and at which store, $S$, the frontier set o
 %All the states in the frontier are stepped with the current store, after which the next store is the least upper bound of all the resulting stores.
 %
 %The next frontier contains only states resulting from stepping the previous frontier that we haven't seen at this next store.}
+%
+The least fixed-point of ${\mathcal F}(\tpl{(\mexpr,\bot),\bot,\kmt})$ is the analysis of closed expression $\mexpr$.
 %
 Systematic techniques for a performant implementation can be found in \citet{ianjohnson:oaam:icfp2013}.
 
@@ -368,20 +379,26 @@ We should expect that a pushdown analysis would predict this evaluates to true, 
 PDCFA claims there is no loop, and depending on the implementation, that the result is true or false (paper), or just true (implemented)
 \footnote{This is because the paper steps every seen state with the current store every iteration, but the implementation only steps states that need stepping.}.
 %
-Let's take a look at the evaluation after binding \texttt{id}:
+The example evaluation is in \autoref{fig:ex-eval}.
+%
+We maintain enough context to distinguish the return points of \texttt{id} to not rebind \texttt{y} to 1.
+%
+When determining control flow through the expression, we consult $\mmemo$ to continue past function calls, so there is no confusion about a back edge from the second call to \texttt{id}.
+%
 
-\begin{center}
-  \begin{minipage}{0.55\linewidth}
-    \begin{center}
-      $\begin{array}{l}\includegraphics[scale=0.65]{example1}\end{array}$ \\
-      $\Downarrow$ \\
-      $\begin{array}{l}\includegraphics[scale=0.65]{example2}\end{array}$ \\
-      $\Downarrow$ \\
-      $\begin{array}{l}\includegraphics[scale=0.65]{example3}\end{array}$
-    \end{center}
-  \end{minipage}
-  \begin{minipage}{0.43\linewidth}
-    \begin{center} {\small
+\begin{figure}
+  \centering
+    \begin{minipage}{0.55\linewidth}
+      \begin{center}
+        $\begin{array}{l}\includegraphics[scale=0.65]{example1}\end{array}$ \\
+        $\Downarrow$ \\
+        $\begin{array}{l}\includegraphics[scale=0.65]{example2}\end{array}$ \\
+        $\Downarrow$ \\
+        $\begin{array}{l}\includegraphics[scale=0.65]{example3}\end{array}$
+      \end{center}
+    \end{minipage}
+    \begin{minipage}{0.43\linewidth}
+      \begin{center} {\small
         \begin{tabular}{|l|c|c|}
           \hline
           \# & $\mstore$ & $\mkont$ \\
@@ -414,8 +431,10 @@ Let's take a look at the evaluation after binding \texttt{id}:
         \end{tabular}}    
     \end{center}
   \end{minipage}
-\end{center}
 Where $\mkont_0 = \mathbf{lt}({\tt y}, {\tt (let\ ([z\ (id\ 1)])\ (}\le\ {\tt y}\ {\tt z))}, \iota)$
+\caption{Example analysis evaluation}
+\label{fig:ex-eval}
+\end{figure}
 % %% FIXME stores in memo-table
 % \begin{enumerate}
 % \item{\texttt{(id 0)} steps to \texttt{x} at $\krt{((\texttt{x}, [\texttt{x}\mapsto\texttt{x}]), \mstore_0)}$ with $\mstore_1 =
@@ -434,11 +453,6 @@ Where $\mkont_0 = \mathbf{lt}({\tt y}, {\tt (let\ ([z\ (id\ 1)])\ (}\le\ {\tt y}
 % \item{\texttt{z} gets bound to $\set{0,1}$, and \texttt{($\le$ y z)} evaluates to true.}
 % \end{enumerate}
 
-We maintained enough context to distinguish the return points of \texttt{id} to not rebind \texttt{y} to 1.
-%
-When determining control flow through the expression, we consult $\mmemo$ to continue past function calls, so there is no confusion about a back edge from the second call to \texttt{id}.
-%
-
 \begin{theorem}\label{thm:pdcfa-tabular}
   Tabular semantics has a bisimulation with the standard semantics with comparable allocation strategies.
 \end{theorem}
@@ -455,22 +469,6 @@ More formally, $\alloc$ and $\alloc^*$ are comparable if this implication holds:
 
 The $\mathit{unroll}$ function interprets what are all the valid continuations that $\mktab$ encodes for a given continuation that contains $\krt{\mctx}$, defined as the greatest fixed point of the following rules:
 \begin{mathpar}
-  \inferrule{ }{\kmt \in \unroll{\mktab}{\kmt}} \quad
-  \inferrule{\mkont \in \unroll{\mktab}{\mkont'}}{\mkframe:\mkont \in \unroll{\mktab}{\mkframe:\mkont'}} \quad
-  \inferrule{\mkont^\circ \in \mktab(\mctx) \\
-             \mkont \in \unroll{\mktab}{\mkont^\circ}}
-            {\mkont \in \unroll{\mktab}{\krt{\mctx}}}
-\end{mathpar}
-
-The astute reader may find this definition dubious, since there is a possibility for unguarded corecursion here.
-%
-Interpreting a function with ill-founded recursion can lead to a table such that $\krt{\mctx} \in \mktab(\mctx)$.
-%
-The abstractions that we impose on our data might also cause this situation, even though the concrete execution might always terminate.
-%
-Our interpretation of $\stepto$ is in a fixed-point computation, so circularities are not a problem for termination, but we augment the definition here to guard against circularities in our proofs:
-
-\begin{mathpar}
   \inferrule{ }{\kmt \in \unroll{\mktab}{\kmt, G}} \quad
   \inferrule{\mkont \in \unroll{\mktab}{\mkont', \emptyset}}{\mkframe:\mkont \in \unroll{\mktab}{\mkframe:\mkont', G}} \\
   \inferrule{\mctx \notin G  \\
@@ -479,30 +477,42 @@ Our interpretation of $\stepto$ is in a fixed-point computation, so circularitie
             {\mkont \in \unroll{\mktab}{\krt{\mctx}, G}}  
 \end{mathpar}
 
-%%
-The different tables we have encode information about execution history that we prove is invariant.
-\begin{align*}
-  \inv(\tpl{\mpoint, \mstore, \mkont, \mktab, \mmemo}) &=
-          \dom(\mmemo) \subseteq \dom(\mktab) \\
-  &\wedge \forall (\mpoint',\mstore') \in \dom(\mktab),
-                  \mkont^\circ \in \mktab(\mpoint',\mstore'),
-                  \mkont' \in \unroll{\mktab}{\mkont^\circ, \emptyset}. \\   
-  &\qquad \phi_{\reachable} \wedge \phi_{\memo} \\
-  \text{where } \phi_{\reachable} &=
-  \exists \mkont^* \in \unroll{\mktab}{\mkont,\emptyset}.
-    \tpl{\mpoint', \mstore', \mkont'} \stepto^* \tpl{\mpoint, \mstore, \mkont^*} \\
-  \phi_{\memo} &=
- \forall (\mval, \mstore'') \in \mmemo(\mpoint',\mstore'). \\
-  &\qquad \exists \mtrace\equiv\tpl{\mpoint', \mstore', \mkont'} \stepto^* \tpl{\mval,\mstore'', \mkont'}.
-     \hastail(\mtrace,\mkont') \\
-\end{align*}
+We add $G$ to protect against unguarded corecursion in order for the definition to be well-defined.
+%
+Interpreting a function with ill-founded recursion can lead to a table such that $\krt{\mctx} \in \mktab(\mctx)$.
+%
+The abstractions that we impose on our data might also cause this situation, even though the concrete execution might always terminate.
 
+%%
+The different tables we have encode information about execution history that we prove is invariant (\autoref{fig:inv}).
+%
 The first is that the memo table only contains information about previously seen contexts; we need this to infer that there was at least one call leading to the memoized context such that we can use stack irrelevance to justify skipping to the memoized result.
 %
 The second, $\phi_{\reachable}$, states that all the calling contexts in the continuation table reach some unrolling of the current state.
 %
 The final invariant, $\phi_{\memo}$, states that the memo table is correct: all calling contexts reach the memoized result, with the calling context's continuation in the tail (to justify using stack-irrelevance).
 
+\begin{figure}
+  \centering
+  \begin{align*}
+    \inv(\tpl{\mpoint, \mstore, \mkont, \mktab, \mmemo}) &=
+    \dom(\mmemo) \subseteq \dom(\mktab) \\
+    &\wedge \forall (\mpoint',\mstore') \in \dom(\mktab), \mkont^\circ
+    \in \mktab(\mpoint',\mstore'),
+    \mkont' \in \unroll{\mktab}{\mkont^\circ, \emptyset}. \\
+    &\qquad \phi_{\reachable} \wedge \phi_{\memo} \\
+    \text{where } \phi_{\reachable} &= \exists \mkont^* \in
+    \unroll{\mktab}{\mkont,\emptyset}.
+    \tpl{\mpoint', \mstore', \mkont'} \stepto^* \tpl{\mpoint, \mstore, \mkont^*} \\
+    \phi_{\memo} &=
+    \forall (\mval, \mstore'') \in \mmemo(\mpoint',\mstore'). \\
+    &\qquad \exists \mtrace\equiv\tpl{\mpoint', \mstore', \mkont'}
+    \stepto^* \tpl{\mval,\mstore'', \mkont'}.
+    \hastail(\mtrace,\mkont') \\
+  \end{align*}
+  \caption{Table invariants}
+\label{fig:inv}
+\end{figure}
 \begin{lemma}[Table invariants]\label{lem:tab-inv}
   If $\inv(\mstate)$ and $\mstate \stepto \mstate'$ then $\inv(\mstate')$.
 \end{lemma}
@@ -556,7 +566,10 @@ Entries in $\mktab$ might be circular, so we compute the continuation frames in 
   \quad
   \inferrule{\maddr \in \touchesf(\mkframe)}{\kcons{\mkframe}{\mkont} \rightsquigarrow_\mktab \maddr}
   \quad
-  \inferrule{\mkont \rightsquigarrow_\mktab (\mkont' \text{ or } \maddr)}{\kcons{\mkframe}{\mkont} \rightsquigarrow_\mktab (\mkont' \text{ or } \maddr)}
+  \inferrule{\mkont \rightsquigarrow_\mktab \mkont'}{\kcons{\mkframe}{\mkont} \rightsquigarrow_\mktab \mkont'}
+  \quad
+  \inferrule{\mkont \rightsquigarrow_\mktab \maddr}{\kcons{\mkframe}{\mkont} \rightsquigarrow_\mktab \maddr}
+%  \inferrule{\mkont \rightsquigarrow_\mktab (\mkont' \text{ or } \maddr)}{\kcons{\mkframe}{\mkont} \rightsquigarrow_\mktab (\mkont' \text{ or } \maddr)}
   \quad
   \inferrule{\mkont \in \mktab(\mctx)}{\krt{\mctx} \rightsquigarrow_\mktab \mkont}
 \end{mathpar}
@@ -581,17 +594,17 @@ An implementation of the same functionality would use a mutable set to track whi
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Begin scary Scribble output
-\begin{SCodeFlow}\begin{RktBlk}\begin{SingleColumn}\RktPn{(}\RktSym{define}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{touch{-}kont}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\mkont$}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\mktab$}\RktPn{)}
+\begin{SCodeFlow}\begin{RktBlk}\begin{SingleColumn}\RktPn{(}\RktSym{define}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{touch{-}kont}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\kappa$}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\Xi$}\RktPn{)}
 
 \mbox{\hphantom{\Scribtexttt{xx}}}\RktPn{(}\RktSym{define}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{seen}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{mutable{-}seteq}\RktPn{)}\RktPn{)}
 
-\mbox{\hphantom{\Scribtexttt{xx}}}\RktPn{(}\RktSym{let}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{loop}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktPn{[}\RktSym{$\mkont$}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\mkont$}\RktPn{]}\RktPn{)}
+\mbox{\hphantom{\Scribtexttt{xx}}}\RktPn{(}\RktSym{define}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{fix{-}touch}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\kappa$}\RktPn{)}
 
-\mbox{\hphantom{\Scribtexttt{xxxx}}}\RktPn{(}\RktSym{match}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\mkont$}
+\mbox{\hphantom{\Scribtexttt{xxxx}}}\RktPn{(}\RktSym{match}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\kappa$}
 
 \mbox{\hphantom{\Scribtexttt{xxxxxx}}}\RktPn{[}\RktPn{(}\RktSym{mt}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\emptyset$}\RktPn{]}
 
-\mbox{\hphantom{\Scribtexttt{xxxxxx}}}\RktPn{[}\RktPn{(}\RktSym{cons}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\mkframe$}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\mkont$}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\cup$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{touches{-}frame}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\mkframe$}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{loop}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\mkont$}\RktPn{)}\RktPn{)}\RktPn{]}
+\mbox{\hphantom{\Scribtexttt{xxxxxx}}}\RktPn{[}\RktPn{(}\RktSym{cons}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\phi$}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\kappa$}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\cup$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{touches{-}frame}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\phi$}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{fix{-}touch}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\kappa$}\RktPn{)}\RktPn{)}\RktPn{]}
 
 \mbox{\hphantom{\Scribtexttt{xxxxxx}}}\RktPn{[}\RktPn{(}\RktSym{rt}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{ctx}\RktPn{)}
 
@@ -601,9 +614,9 @@ An implementation of the same functionality would use a mutable set to track whi
 
 \mbox{\hphantom{\Scribtexttt{xxxxxxxx}}}\RktPn{[}\RktSym{else}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{set{-}add{\hbox{\texttt{!}}}}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{seen}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{ctx}\RktPn{)}
 
-\mbox{\hphantom{\Scribtexttt{xxxxxxxxxxxxxx}}}\RktPn{(}\RktSym{for/union}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktPn{[}\RktSym{$\mkont$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{in{-}set}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{dict{-}ref}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\mktab$}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{ctx}\RktPn{)}\RktPn{)}\RktPn{]}\RktPn{)}
+\mbox{\hphantom{\Scribtexttt{xxxxxxxxxxxxxx}}}\RktPn{(}\RktSym{union{-}map}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{fix{-}touch}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{ref}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\Xi$}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{ctx}\RktPn{)}\RktPn{)}\RktPn{]}\RktPn{)}\RktPn{]}\RktPn{)}\RktPn{)}
 
-\mbox{\hphantom{\Scribtexttt{xxxxxxxxxxxxxxxx}}}\RktPn{(}\RktSym{loop}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\mkont$}\RktPn{)}\RktPn{)}\RktPn{]}\RktPn{)}\RktPn{]}\RktPn{)}\RktPn{)}\RktPn{)}\end{SingleColumn}\end{RktBlk}\end{SCodeFlow}
+\mbox{\hphantom{\Scribtexttt{xx}}}\RktPn{(}\RktSym{fix{-}touch}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\kappa$}\RktPn{)}\RktPn{)}\end{SingleColumn}\end{RktBlk}\end{SCodeFlow}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% End of scary Scribble output
 
@@ -632,20 +645,28 @@ This extra context can be overlooked, since that means the computed touched addr
 %
 More touched addresses means a less effective GC, but this is an acceptable tradeoff for a possibly smaller state space.
 %
-\begin{theorem}\label{thm:gc-pointers}
+\begin{theorem}[No dangling pointers]\label{thm:gc-pointers}
   All addresses in $\Gamma(\mstate)$ are in the domain of $\Gamma(\mstate).\mstore$.
 \end{theorem}
 
-\begin{theorem}\label{thm:gc-concrete}
+\begin{theorem}[Garbage is irrelevant]\label{thm:gc-concrete}
   If $\mstate \stepto^n \mstate'$ and $\mstate \stepto^n \mstate''$ then $\Gamma(\mstate') = \Gamma(\mstate'')$.
 \end{theorem}
 
-\begin{theorem}\label{thm:gc-sound}
+\begin{theorem}[Abstract GC is sound for garbage-free states]\label{thm:gc-sound}
   If $\mstate \stepto \mstate'$ and $\alpha(\Gamma(\mstate)) \sqsubseteq \mastate$ then there is a $\mastate'$ such that $\mastate \astepto \mastate'$ and $\alpha(\Gamma(\mstate')) \sqsubseteq \mastate'$.
 \end{theorem}
-%
-%TODO: wrap up
 
+This final theorem is not in the original work on abstract GC; they prove soundness with respect to a concrete semantics that performs GC after every step.
+%
+The moral correctness of the abstraction is that it never under-approximates \emph{relevant} portions of the state space --- in this case, the reachable subset of the store.
+%
+The definitions of $\alpha$, $\astepto$ and $\sqsubseteq$ are the simple pointwise abstractions of addresses through states and the reduction relation, and finally a lifted subset relation between states and their components, respectively.
+%
+Both $\alpha$ and $\sqsubseteq$ are parameterized on the choice of $\Addr$, for which the following soundness criterion should hold:
+\begin{mathpar}
+  \inferrule*[right={[Sound allocation]}]{\alpha(\mstate) \sqsubseteq \mastate}{\alpha(\alloc(\mstate)) \sqsubseteq \widehat{\alloc}(\mastate)}
+\end{mathpar}
 \section{Deriving CFA2}
 \label{sec:cfa2}
 
@@ -1169,7 +1190,7 @@ At return boundaries, the memo table must add the result to all the represented 
   \memoize(\mktab, ((\mexpr,\menv), \maddr), \mathit{v\sigma}) &=
   \bigsqcup\limits_{\mstore' \in \mktab(\maddr)}\snglm{((\mexpr,\menv), \mstore')}{\mathit{v\sigma}}
 \end{align*}
-At capture time, we strip the store in the $\rt$ continuation if there is one, and replace it with an address:
+At capture time, we strip the store in the $\rt$ continuation if there is one, and replace it with an address to make the context storeable:
 
 \newcommand{\replacectx}{\mathit{replace}\mstore}
 \newcommand{\addstore}{\mathit{add}\mstore}
@@ -1200,9 +1221,7 @@ We prove this with the invariant that the continuation and meta-continuation hav
 
 %% TODO: complete
 \paragraph{Comparison to PDCFA CPS'd to remove {\tt shift} and {\tt reset}:}{
-  One might ask what this different model buys us over using a CPS transform to compile away {\tt shift} and {\tt reset} forms.
-%
-The short answer is that we get better precision for capture and invocation of continuations.
+We lose precision if we use a CPS transform to compile away {\tt shift} and {\tt reset} forms, because variables are treated less precisely than continuations.
 %
 In pushdown analysis, we track function return points with entire calling contexts rather than the $k$-CFA way of allocating the continuation in the heap at some lower-precision address, like a variable.
 %
@@ -1243,16 +1262,20 @@ Our specialized analysis for delimited control, also with a monovariant allocati
 
 \section{Related Work}
 
-The immediately related work is that of PDCFA \citep{dvanhorn:Earl2010Pushdown}, CFA2~\citep{ianjohnson:vardoulakis-lmcs11, ianjohnson:Vardoulakis2011Pushdown}, and AAM ~\citep{dvanhorn:VanHorn2010Abstracting}, the first two of which we recreated in full detail.
+The immediately related work is that of PDCFA \citep{dvanhorn:Earl2010Pushdown, dvanhorn:Earl2012Introspective}, CFA2~\citep{ianjohnson:vardoulakis-lmcs11, ianjohnson:Vardoulakis2011Pushdown}, and AAM ~\citep{dvanhorn:VanHorn2010Abstracting}, the first two of which we recreated in full detail.
 %
-The version of CFA2 that handles \rackett{call/cc} does not handle composable control, and is dependent on a restricted CPS representation.
-%
-They also had no way to tune the precision of their first class continuation approximation.
+The version of CFA2 that handles \rackett{call/cc} does not handle composable control, is dependent on a restricted CPS representation, and has untunable precision for first-class continuations.
 %
 Our semantics adapts to \rackett{call/cc} by removing the meta-continuation operations, and thus this work supercedes theirs.
 %
-The extended version of PDCFA that does garbage collection~\citep{dvanhorn:Earl2012Introspective} also fits into our model;
+The extended version of PDCFA that inspects the stack to do garbage collection~\citep{dvanhorn:Earl2012Introspective} also fits into our model;
 the addresses that the stack keeps alive can be accumulated by ``reading through'' the continuation table, building up the set of addresses in each portion of the stack that we come across.
+%%
+
+%%
+Stack inspecting flow analyses also exist, but operate on pre-constructed regular control-flow graphs~\citep{ianjohnson:bartoletti2004stack}, so the CFGs cannot be trimmed due to the extra information at construction time, leading to less precision.
+%
+Backward analyses for stack inspection also exist, with the same prerequisite~\citep{ianjohnson:DBLP:journals/sigplan/Chang06}.
 %%
 
 %%
@@ -1261,16 +1284,6 @@ Pushdown models have existed in the first-order static analysis literature ~\cit
 The higher-order setting imposes additional challenges that make their methods difficult to adapt.
 %
 The most important constraint is that we can't know all call-sites of a function or method before the analysis begins, which their methods heavily rely on.
-%%
-
-%%
-A new temporal logic that itself understands well-bracketing of call and returns for stating and validating propositions, NWTL ~\citep{ianjohnson:alur:nwtl:2007}, applies to visibly pushdown systems, which can precisely model programming languages that only have well-bracketed call and returns.
-%
-The propositional form of the logic has decidable satisfiability checking, and control-flow queries are shallow propositions to pose in the logic.
-%
-However, the satisfiability problem is \textsc{2Exptime}-hard and the algorithm is not given in the on-the-fly form that a higher-order language would need to effectively answer control-flow queries without already knowing the answers.
-%
-The logic itself is an exciting new frontier for expressing program correctness properties, and a higher-order version would be a welcome addition to the functional programmer's tool belt.
 %%
 
 %%
@@ -1310,7 +1323,7 @@ We have an unproven prototype of the stack inspection capabilities provided by t
 %%
 
 %%
-There is also the question of clients of these analyses.
+There is also the question of novel clients of these analyses.
 %
 Most obviously we would want to know where we can implement first-class control more efficiently.
 %

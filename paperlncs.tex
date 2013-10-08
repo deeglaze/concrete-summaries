@@ -1,7 +1,9 @@
 \documentclass[article]{llncs}
 
-%\pagestyle{plain}
+% preprint only
+\pagestyle{plain}
 \usepackage{amsmath,stmaryrd,listings,mathpartir,amssymb,graphicx}
+
 \usepackage[usenames,dvipsnames]{color}
 
 \usepackage{pfsteps} % for appendix
@@ -14,7 +16,8 @@
 \input{local-macros}
 \usepackage[numbers,sectionbib]{natbib}
 \usepackage[english]{babel}
-\usepackage[hidelinks]{hyperref}
+% pdfpagescrop for preprint only
+\usepackage[hidelinks,pdfpagescrop={92 62 523 728}]{hyperref}
 \usepackage{cleveref}
 \usepackage{placeins}
 
