@@ -241,13 +241,6 @@ There is an analogy to something more operational: summary edges embody memoizat
 Instead of following an entire path through a call to return a value, we simply jump from the call to the return with the result of the call, with the resulting context changes---in this case only the store (the second case of rule 4).
 %%
 
-%%
-Memoization with respect to the entire store is safe, if not a little wasteful; there are portions of the store that can change and be irrelevant to the result of a function call.
-%
-There are techniques to ignore differences in the heap when they are irrelevant, dubbed ``sparseness analysis'' that have been successful for large-scale first-order analysis~\citep{ianjohnson:DBLP:conf/pldi/OhHLLY12}, but they rely on a pre-analysis that knows the control-flow graph.
-%
-We have promising preliminary results in this direction that don't require a pre-analysis, but we leave further investigation of sparse techniques to future work.
-
 \begin{figure}
   \centering
   $\mstate \stepto \mstate' \text{ where } \maddr = \alloc(\mstate)$ \\
@@ -311,8 +304,6 @@ This rewriting is unnecessary with the store-counting per-wide-step technique pr
 %
 Since these components are shared, they are always the least upper bound of any respective component that the semantics produces (the intermediate set $I$) in order to stay sound.
 
-%% FIXME: remove stores from memo-table since they will always be unchanged
-%% TODO: Show that store widening and store/memo/KTab widening have a bisimulation.
 {
 \setlength{\abovedisplayskip}{0pt}
 \setlength{\belowdisplayskip}{4pt}
@@ -999,7 +990,7 @@ For this, we extend $\alloc$'s specification to allow more arguments --- the pri
 \section{Analysis of delimited, composable control}
 \label{sec:sr}
 
-%% TODO (thanks to ccshan): Discuss difference between CPS for shift/reset and this approach,
+%% (thanks to ccshan): Discuss difference between CPS for shift/reset and this approach,
 %% Discuss how this does not generalize to first class prompts due to append versus cons.
 
 There is contention among programming language researchers whether \rackett{call/cc} should be a language primitive, since it captures the entire stack, leading to space leaks \citep{ianjohnson:kiselyov:against-callcc}.
@@ -1178,29 +1169,19 @@ The rules that change significantly are presented in figure \ref{fig:shift-reset
    $\tpl{\mval, \mstore, \mkont, \mmkont, \mmktab, \mktab, \mmemo'}$
    if $\mkont \in \returns(\mmktab, \mktab, \mctx)$
    \\
-   where & $\mmemo' = \mmemo \sqcup \memoize(\mmktab, \mctx, (\mval, \mstore, \mmktab))$
+   where & $\mmemo' = \mmemo \sqcup \memoize(\mmktab, \mktab, \mctx, (\mval, \mstore, \mmktab))$
   \end{tabular}
   \caption{Fixed table-based semantics for shift/reset}
   \label{fig:shift-reset-table1}
 \end{figure*}
 
-The meta-functions mentioned in the fixed semantics all deal with the addition of $\maddr$ to contexts.
+The meta-functions mentioned in the fixed semantics deal with the addition of $\maddr$ to contexts.
 %
-If the context in an $\rt$ continuation is approximate, we must return to all the continuations known for all the contexts it approximates:
-\begin{align*}
-  \returns(\mmktab, \mktab, ((\mexpr,\menv), \mstore)) &= \mktab((\mexpr,\menv), \mstore) \\
-  \returns(\mmktab, \mktab, ((\mexpr,\menv), \maddr)) &=
-    \bigcup\setbuild{\mktab((\mexpr,\menv),\mstore)}{\mstore \in \mmktab(\maddr)}
-\end{align*}
-
-At return boundaries, the memo table must add the result to all the represented contexts:
-\begin{align*}
-  \memoize(\mmktab, ((\mexpr,\menv), \mstore'), \mathit{out}) &=
-  [((\mexpr,\menv), \mstore') \mapsto \set{{\mathit{out}}}] \\
-  \memoize(\mmktab, ((\mexpr,\menv), \maddr), \mathit{out}) &=
-  \bigsqcup\limits_{\mstore' \in \mmktab(\maddr)}\snglm{((\mexpr,\menv), \mstore')}{\mathit{out}}
-\end{align*}
-At capture time, we strip the store in the $\rt$ continuation if there is one, and replace it with an address to make the context storeable:
+At capture time, we strip the store and stored continuations closure in the $\rt$ continuation if there is one, and replace them with an address to make the context storeable.
+%
+We can't recursively map addresses to stores and continuation closures, so we flatten the context's closure into the current one.
+%
+This operation makes lookups more costly since we have to find closures bounded above by the current closure, rather than one exact closure.
 
 \newcommand{\replacectx}{\mathit{replace}\mstore}
 \newcommand{\addstore}{\mathit{add}\mstore}
@@ -1208,13 +1189,28 @@ At capture time, we strip the store in the $\rt$ continuation if there is one, a
   \approximate(\mkont, \mmktab, \maddr) &= (\replacectx(\mkont), \addstore(\mkont)) \\
   \text{where }
    \replacectx(\kmt) &= \kmt \\
-   \replacectx(\krt{((\mexpr,\menv),\_)}) &= \krt{((\mexpr,\menv),\maddr)} \\
+   \replacectx(\krt{((\mexpr,\menv),\ldots)}) &= \krt{((\mexpr,\menv),\maddr)} \\
    \replacectx(\kcons{\mkframe}{\mkont}) &= \kcons{\mkframe}{\replacectx(\mkont)}
   \\[2pt]
    \addstore(\kmt) &= \mmktab \\
-   \addstore(\krt{((\mexpr,\menv),\mstore)}) &= \joinone{\mmktab}{\maddr}{\mstore} \\
+   \addstore(\krt{((\mexpr,\menv),\mstore,\mmktab')}) &= \joinone{\mmktab}{\maddr}{\mstore}\sqcup \mmktab' \\
    \addstore(\krt{((\mexpr,\menv),\maddr')}) &= \joinm{\mmktab}{\maddr}{\mmktab(\maddr')} \\
    \addstore(\kcons{\mkframe}{\mkont}) &= \addstore(\mkont)
+\end{align*}
+%
+If the context in an $\rt$ continuation is approximate, we must return to all the continuations known for all the contexts it approximates:
+\begin{align*}
+  \returns(\mmktab, \mktab, ((\mexpr,\menv), \mstore, \mmktab')) &= \mktab((\mexpr,\menv), \mstore, \mmktab') \\
+  \returns(\mmktab, \mktab, ((\mexpr,\menv), \maddr)) &=
+    \bigcup\setbuild{\mktab((\mexpr,\menv),\mstore,\mmktab')}{(\mstore \in \mmktab(\maddr), \mmktab' \sqsubseteq \mmktab}
+\end{align*}
+
+At return boundaries, the memo table must add the result to all the represented contexts:
+\begin{align*}
+  \memoize(\mmktab, \mktab, ((\mexpr,\menv), \mstore', \mmktab'), \mathit{out}) &=
+  [((\mexpr,\menv), \mstore',\mmktab') \mapsto \set{{\mathit{out}}}] \\
+  \memoize(\mmktab, \mktab, ((\mexpr,\menv), \maddr), \mathit{out}) &= [\mctx \mapsto \set{\mathit{out}} : \mctx \in \dom(\mktab) \cap C] \\
+    \text{where } C &= \setbuild{((\mexpr,\menv), \mstore', \mmktab')}{\mstore' \in \mmktab(\maddr), \mmktab' \sqsubseteq \mmktab}
 \end{align*}
 
 The result of this viewpoint is a sound, precise, and computable semantics for a ``pushdown approach'' to analyzing delimited, composable control.
@@ -1223,13 +1219,12 @@ The result of this viewpoint is a sound, precise, and computable semantics for a
   Tabular semantics has a bisimulation with standard semantics given fresh allocation.
 \end{theorem}
 
-We prove this with the invariant that the continuation and meta-continuation have unique unrollings in addition to the table invariants from \autoref{sec:pdcfa}, since entries in $\mktab$ are always fresh.
+We prove this with the invariant that the continuation and meta-continuation have unique unrollings in addition to the table invariants from \autoref{sec:pdcfa}, since the distinct $\mstore$ at push and capture time makes entries in $\mktab$ unique, regardless of $\mmktab$.
 
 \begin{theorem}\label{thm:sound-sr}
   Tabular semantics simulates standard semantics with abstract allocation.
 \end{theorem}
 
-%% TODO: complete
 \paragraph{Comparison to PDCFA CPS'd to remove {\tt shift} and {\tt reset}:}{
 We lose precision if we use a CPS transform to compile away {\tt shift} and {\tt reset} forms, because variables are treated less precisely than continuations.
 %
@@ -1331,6 +1326,13 @@ The control structures there are difficult to model even with AAM's techniques d
 %
 We have an unproven prototype of the stack inspection capabilities provided by the {\tt with-continuation-mark}, {\tt current-continuation-marks} and {\tt continuation-mark-set->list} primitives, where a ``context'' then also includes what is the result of {\tt current-continuation-marks}, since functions can inspect only this amount of the stack.
 %%
+
+%%
+Memoization with respect to the entire store is safe, if not a little wasteful; there are portions of the store that can change and be irrelevant to the result of a function call.
+%
+There are techniques to ignore differences in the heap when they are irrelevant, dubbed ``sparseness analysis'' that have been successful for large-scale first-order analysis~\citep{ianjohnson:DBLP:conf/pldi/OhHLLY12}, but they rely on a pre-analysis that knows the control-flow graph.
+%
+We have promising preliminary results in this direction that don't require a pre-analysis, but we leave further investigation of sparse techniques to future work.
 
 %%
 There is also the question of novel clients of these analyses.

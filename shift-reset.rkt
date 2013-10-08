@@ -6,7 +6,7 @@
   [e x (label e e ...) (λ (x ...) e) (shift x e) (reset e) prims]
   [prims number + <= #t #f]
   [label natural]
-  [(σ ρ Ξ M) any]
+  [(σ ρ χ Ξ M σ-token χ-token) any]
   [f (ev label (e ...) (v ...) ρ)]
   [a any]
   [(ks vs as) (side-condition (name vs any) (set? (term vs)))]  
@@ -14,23 +14,9 @@
   [x variable-not-otherwise-mentioned])
 
 (define-syntax-rule (for/union guards body ...) (for/fold ([acc (set)]) guards (set-union acc (let () body ...))))
+(define-syntax-rule (for*/union guards body ...) (for*/fold ([acc (set)]) guards (set-union acc (let () body ...))))
 
 (define (hash-join σ a vs) (hash-set σ a (set-union (hash-ref σ a (set)) vs)))
-(define (hashes-join σ σ*)
-  (for*/fold ([σ σ]) ([(a vs*) (in-hash σ*)]
-                      [vs (in-value (hash-ref σ a (set)))]
-                      #:unless (eq? vs vs*))
-    (hash-set σ a (set-union vs vs*))))
-(define (hashes-join/change? σ σ*)
-  (for*/fold ([σ σ] [change? #f])
-      ([(a vs*) (in-hash σ*)]
-       [vs (in-value (hash-ref σ a (set)))]
-       #:unless (eq? vs vs*)) ;; speed up joins
-    (define vs-next (set-union vs vs*))
-    ;; Not eq, but union to same thing.
-    (if (= (set-count vs-next) (set-count vs))
-        (values σ change?)
-        (values (hash-set σ a vs-next) #t))))
 (define (hash-set-many ρ xs as)
  (for/fold ([ρ ρ]) ([x (in-list xs)]
                     [a (in-list as)])
@@ -46,12 +32,6 @@
   [(alloc (x ...) any)
    ,(for/list ([xi (in-list (term (x ...)))])
       (term (,xi ,(begin (gensym) #f))))])
-(define-syntax-rule (mk-bind name L)
-  (...
-   (define-metafunction L
-     [(name σ ρ (x ...) (a ...) (v ...))
-      (,(hash-set-many (term ρ) (term (x ...)) (term (a ...)))
-       ,(hash-join-many (term σ) (term (a ...)) (term (v ...))))])))
 
 (define-extended-language L-SR L
   [κ mt (f κ)]
@@ -60,8 +40,13 @@
   [v .... (comp κ)]
   [ς (p σ κ C)
      (do-call label v (v ...) σ κ C)])
-(mk-bind bind L-SR)
 
+(define-metafunction L-SR
+  [(bind σ ρ (x ..._1) (a ..._1) (v ..._1))
+   (,(hash-set-many (term ρ) (term (x ...)) (term (a ...)))
+    ,(for/fold ([σ* (term σ)]) ([a* (in-list (term (a ...)))]
+                                [v* (in-list (term (v ...)))])
+       (hash-join σ* a* (set v*))))])
 (define R
   (reduction-relation L-SR
     [--> ((prims ρ) σ κ C) (prims σ κ C)]
@@ -102,184 +87,250 @@
   [C (prompt ctx) mt]
   [p (e ρ) v]
   [v .... (comp κ)]
-  [ctx ((e ρ) σ) (v v σ)
+  [ctx ((e ρ) σ χ) (v v σ χ)
        ((e ρ) a)]
-  [(Σ F) any]
-  [ς ((p κ C) σ Ξ M)
-     ((do-call label v (v ...) κ C) σ Ξ M)])
+  [(Σ F σΔ χΔ ΞΔ MΔ) any]
+  [pre-ς (p κ C)
+         (do-call label v (v ...) κ C)]
+  [simple-ς pre-ς
+            (pre-ς σ χ Ξ M)]
+  [ς simple-ς (Δs simple-ς σΔ χΔ ΞΔ MΔ)])
+
 (define-metafunction L-SRT
-  [(Ξextend Ξ ctx (κ C)) ,(hash-join (term Ξ) (term ctx) (set (term (κ C))))]
-  [(Ξextend Ξ ctx κ) ,(hash-join (term Ξ) (term ctx) (set (term κ)))])
+  [(bindΔ σ ρ (x ..._1) (a ..._1) (v ..._1))
+   (,(hash-set-many (term ρ) (term (x ...)) (term (a ...)))
+    ((a v) ...))])
+
+(define (update h Δ)
+  (for/fold ([h h]) ([kv (in-list Δ)])
+    (hash-join h (first kv) (set (second kv)))))
+
+(define ((changes?-base who combine) σ Δ)
+  (let loop ([Δ Δ] [same? #t])
+    (match Δ
+      ['() (not same?)]
+      [(cons (list k v) Δ)
+       (define old (hash-ref σ k (set)))
+       (define new (combine old v))
+       (if (= (set-count new) (set-count old))
+           (loop Δ same?)
+           (loop Δ #f))]
+      [bad (error who "bad ~a" bad)])))
+(define changes? (changes?-base 'changes? set-add))
+(define changes*? (changes?-base 'changes*? set-union))
+
+(define ((update/same-base who combine) σ Δ)
+  (let loop ([σ σ] [Δ Δ] [same? #t])
+    (match Δ
+      ['() (values σ same?)]
+      [(cons (list k v) Δ)
+       (define old (hash-ref σ k (set)))
+       (define new (combine old v))
+       (if (= (set-count new) (set-count old))
+           (loop σ Δ same?)
+           (loop (hash-set σ k new) Δ #f))]
+      [bad (error who "bad ~a" bad)])))
+(define update/same (update/same-base 'update/same set-add))
+(define update*/same (update/same-base 'update*/same set-union))
+
+(define (Ξupdate h Δ)
+  (for/fold ([h h]) ([kv (in-list Δ)])
+    (define-values (k χ-token v)
+      (match kv
+        [`(((,e ,ρ) ,σ-token ,χ-token) ,κ) (values `((,e ,ρ) ,σ-token) χ-token κ)]
+        [`(((comp ,κ) ,v ,σ-token ,χ-token) ,κC) (values `((comp ,κ) ,v ,σ-token) χ-token κC)]))
+    (define χmap (hash-ref h k #hash()))
+    (hash-set h k (hash-join χmap χ-token (set v)))))
+
+;; for wide. (Narrow is (v σ χ))
+(define (Mupdate h χ χ-token Ξ Δ)
+  (match Δ
+    ['() h]
+    [`((,(and k (or `((,_ ,_) ,_ ,_)
+                    `((comp ,_) ,_ ,_ ,_)))
+        (,v ,_ ,_)) . ,rest)
+     (Mupdate (hash-join h k (set v)) χ χ-token Ξ rest)]
+    [`((((,e ,ρ) ,a) (,v ,_ ,_)) . ,rest)
+     (define vs (set v))
+     (Mupdate (for*/fold ([M h]) ([σ-token (in-set (hash-ref χ a))]
+                                  [χ-token* (in-hash-keys (hash-ref Ξ `((,e ,ρ) ,σ-token)))])
+                (hash-join M `((,e ,ρ) ,σ-token ,χ-token*) vs))
+              χ χ-token Ξ rest)]
+    [_ (error 'Mupdate "bad ~a" Δ)]))
+
 (define-metafunction L-SRT
-  [(Mextend M ctx v σ) ,(hash-join (term M) (term ctx) (set (term v)))]) ;; for wide. (Narrow is (v σ))
+  [(Ξlookup Ξ χ χ-token ctx)
+   ,(set->list
+     ((term-match/single L-SRT
+        [((e ρ) a)
+         (for*/union ([σ-token (in-set (hash-ref (term χ) (term a) (set)))]
+                      [(χ-token* σs) (in-hash (hash-ref (term Ξ) (term ((e ρ) ,σ-token))))]
+                      #:when (<= χ-token* (term χ-token)))
+           σs)]
+        [((e ρ) σ-token χ-token)
+         (hash-ref (hash-ref (term Ξ) (term ((e ρ) σ-token))) (term χ-token))]
+        [((comp κ) v σ-token χ-token)
+         (hash-ref (hash-ref (term Ξ) (term ((comp κ) v σ-token))) (term χ-token))])
+      (term ctx)))])
 (define-metafunction L-SRT
-  [(Ξlookup Ξ ctx) ,(set->list
-                     ((term-match/single L-SRT
-                        [((e ρ) (side-condition (name a a) (not (hash? (term a)))))
-                         (let ([mer
-                                (for/union ([σ (in-set (hash-ref (term Ξ) (term a) (set)))])
-                                  (hash-ref (term Ξ) (term ((e ρ) ,σ)) (set)))])
-                           (printf "Here ~a ~a~%" (term ctx) mer)
-                           mer)]
-                        [_ (let ([res (hash-ref (term Ξ) (term ctx) (set))])
-                             (printf "lookup ~a ~a~%" (term ctx) res)
-                             res)])
-                      (term ctx)))])
+  [(Mlookup M ctx σ χ) ,(for/list ([vσχ (in-set (hash-ref (term M) (term ctx) (set)))])
+                          (list vσχ (term σ) (term χ)))]) ;; for wide. (Narrow is just vσ)
 (define-metafunction L-SRT
-  [(Mlookup M ctx σ) ,(for/list ([vσ (in-set (hash-ref (term M) (term ctx) (set)))])
-                        (list vσ (term σ)))]) ;; for wide. (Narrow is just vσ)
-(define-metafunction L-SRT
-  [(approximate Ξ (rt ((e ρ) (side-condition (name σ σ) (hash? (term σ))))) a)
-   (,(hash-join (term Ξ) (term a) (set (term σ)))
+  [(approximate χ (rt ((e ρ) σ-token χ-token)) a)
+   (((a ,(set (term σ-token)))) ;; FIXME: wat do? Everything less than χ-token?
     (rt ((e ρ) a)))]
-  [(approximate Ξ (f κ) a)
-   (Ξ_1 (f κ_1))
-   (where (Ξ_1 κ_1) (approximate Ξ κ a))]
-  [(approximate Ξ mt a) (Ξ mt)])
+  [(approximate χ (rt ((e ρ) a_0)) a)
+   (((a ,(hash-ref (term χ) (term a_0))))
+    (rt ((e ρ) a)))]
+  [(approximate χ (f κ) a)
+   (χΔ (f κ_1))
+   (where (χΔ κ_1) (approximate χ κ a))]
+  [(approximate χ mt a) (() mt)])
 
 (define W
   (reduction-relation L-SRT
-    [--> (Σ F σ Ξ M)
-         ,(step-system (term Σ) (term F) (term σ) (term Ξ) (term M))]))
+    [--> (Σ F σ χ σ-token χ-token Ξ M)
+         ,(step-system (term Σ) (term F) (term σ) (term χ)
+                       (term σ-token) (term χ-token)
+                       (term Ξ) (term M))]))
 
-(mk-bind bindt L-SRT)
+(define (R-table σ χ σΔ? χΔ? σ-token χ-token Ξ M)
+  (define-metafunction L-SRT
+    [(σtoken ()) ,σ-token]
+    [(σtoken any) ,(cond [(or σΔ? (not (changes? σ (term any)))) σ-token]
+                         [else (add1 σ-token)])])
+  (define-metafunction L-SRT
+    [(χtoken ()) ,χ-token]
+    [(χtoken any) ,(cond [(or χΔ? (not (changes*? χ (term any)))) χ-token]
+                         [else (add1 χ-token)])])
+  ;; for narrow
+  #;#;
+  (define-metafunction L-SRT
+    [(σtoken any) ,(update σ (term any))])
+  (define-metafunction L-SRT
+    [(χtoken any) ,(update χ (term any))])
 
-(define R-table
   (reduction-relation L-SRT
-    [--> (((prims ρ) κ C) σ Ξ M) ((prims κ C) σ Ξ M)]
-    [--> ((((λ (x ...) e) ρ) κ C) σ Ξ M)
-         (((clos (λ (x ...) e) ρ) κ C) σ Ξ M)]
+    [--> ((prims ρ) κ C) (prims κ C)]
+    [--> (((λ (x ...) e) ρ) κ C)
+         ((clos (λ (x ...) e) ρ) κ C)]
     ;; Actually do prompt
-    [--> ((((reset e) ρ) κ C) σ Ξ M)
-         (((e ρ) mt (prompt ctx)) σ Ξ_1 M)
-         (where ctx ((e ρ) σ))
-         (where Ξ_1 (Ξextend Ξ ctx (κ C)))
-         (side-condition (not (hash-has-key? (term M) (term ctx))))]
+    [--> (((reset e) ρ) κ C)
+         (Δs (((e ρ) mt (prompt ctx)) ,σ ,χ ,Ξ ,M) () () ((ctx (κ C))) ())
+         (where ctx ((e ρ) (σtoken ()) (χtoken ())))
+         (side-condition (not (hash-has-key? M (term ctx))))]
     ;; Use memo for prompt
-    [--> ((((reset e) ρ) κ C) σ Ξ M)
-         ((v κ C) σ_out Ξ_1 M)
-         (where ctx ((e ρ) σ))
-         (where Ξ_1 (Ξextend Ξ ctx (κ C)))
-         (where (any_0 ... (v σ_out) any_1 ...) (Mlookup M ctx σ))]
-    [--> ((name ς (((shift x e) ρ) κ C)) σ Ξ M)
-         (((e ρ_1) mt C) σ_1 Ξ_1 M)
+    [--> (((reset e) ρ) κ C)
+         (Δs ((v κ C) σ_out χ_out ,Ξ ,M) () () ((ctx (κ C))) ())
+         (where ctx ((e ρ) (σtoken ()) (χtoken ())))
+         (where (any_0 ... (v σ_out χ_out) any_1 ...) (Mlookup ,M ctx ,σ ,χ))]
+    [--> (name ς (((shift x e) ρ) κ C))
+         (Δs (((e ρ_1) mt C) ,σ ,χ ,Ξ ,M) σΔ χΔ () ())
          (where (a) (alloc (x) ς))
-         (where ctx ((e ρ) σ))
-         (where (Ξ_1 κ_1) (approximate Ξ κ a))
-         (where (ρ_1 σ_1) (bindt σ ρ (x) (a) ((comp κ_1))))]
-    [--> (((x ρ) κ C) σ Ξ M)
-         ((v κ C) σ Ξ M)
-         (where (any_0 ... v any_1 ...) (σlookup σ (ρlookup ρ x)))]
-    [--> ((((label e_0 e_rest ...) ρ) κ C) σ Ξ M)
-         (((e_0 ρ) ((ev label (e_rest ...) () ρ) κ) C) σ Ξ M)]
-    [--> ((v ((ev label (e e_rest ...) (v_done ...) ρ) κ) C) σ Ξ M)
-         (((e ρ) ((ev label (e_rest ...) (v_done ... v) ρ) κ) C) σ Ξ M)]
-    [--> ((v ((ev label () (v_fn v_args ...) ρ) κ) C) σ Ξ M)
-         ((do-call label v_fn (v_args ... v) κ C) σ Ξ M)]
-    [--> ((v ((ev label () () ρ) κ) C) σ Ξ M)
-         ((do-call label v () κ C) σ Ξ M)]
+         (where ctx ((e ρ) (σtoken ()) (χtoken ())))
+         (where (χΔ κ_1) (approximate ,χ κ a))
+         (where (ρ_1 σΔ) (bindΔ ,σ ρ (x) (a) ((comp κ_1))))]
+    [--> ((x ρ) κ C) (v κ C)
+         (where (any_0 ... v any_1 ...) (σlookup ,σ (ρlookup ρ x)))]
+    [--> (((label e_0 e_rest ...) ρ) κ C)
+         ((e_0 ρ) ((ev label (e_rest ...) () ρ) κ) C)]
+    [--> (v ((ev label (e e_rest ...) (v_done ...) ρ) κ) C)
+         ((e ρ) ((ev label (e_rest ...) (v_done ... v) ρ) κ) C)]
+    [--> (v ((ev label () (v_fn v_args ...) ρ) κ) C)
+         (do-call label v_fn (v_args ... v) κ C)]
+    [--> (v ((ev label () () ρ) κ) C)
+         (do-call label v () κ C)]
     ;; actually do call
-    [--> ((name ς (do-call label (clos (λ (x ..._i) e) ρ) (v ..._i) κ C)) σ Ξ M)
-         (((e ρ_1) (rt ctx) C) σ_1 Ξ_1 M)
+    [--> (name ς (do-call label (clos (λ (x ..._i) e) ρ) (v ..._i) κ C))
+         (Δs (((e ρ_1) (rt ctx) C) ,σ ,χ ,Ξ ,M) σΔ () ((ctx κ)) ())
          (where (a ...) (alloc (x ...) ς))
-         (where (ρ_1 σ_1) (bindt σ ρ (x ...) (a ...) (v ...)))
-         (where ctx ((e ρ_1) σ_1))
-         (where Ξ_1 (Ξextend Ξ ctx κ))
-         (side-condition (not (hash-has-key? (term M) (term ctx))))]
+         (where (ρ_1 σΔ) (bindΔ ,σ ρ (x ...) (a ...) (v ...)))
+         (where ctx ((e ρ_1) (σtoken σΔ) (χtoken ())))
+         (side-condition (not (hash-has-key? M (term ctx))))]
     ;; Use memo table
-    [--> ((name ς (do-call label (clos (λ (x ..._i) e) ρ) (v ..._i) κ C)) σ Ξ M)
-         ((v_result κ C) σ_out Ξ_1 M)
+    [--> (name ς (do-call label (clos (λ (x ..._i) e) ρ) (v ..._i) κ C))
+         (Δs ((v_result κ C) σ_out χ_out ,Ξ ,M) () () ((ctx κ)) ())
          (where (a ...) (alloc (x ...) ς))
-         (where (ρ_1 σ_1) (bindt σ ρ (x ...) (a ...) (v ...)))
-         (where ctx ((e ρ_1) σ_1))
-         (where Ξ_1 (Ξextend Ξ ctx κ))
-         (where (any_0 ... (v_result σ_out) any_1 ...) (Mlookup M ctx σ))]
+         (where (ρ_1 σΔ) (bindΔ ,σ ρ (x ...) (a ...) (v ...)))
+         (where ctx ((e ρ_1) (σtoken σΔ) (χtoken ())))
+         (where (any_0 ... (v_result σ_out χ_out) any_1 ...) (Mlookup ,M ctx ,σ ,χ))] ;; FIXME: Narrow should use updated σ
     ;; Actually do cont-invocation
-    [--> ((do-call label (comp κ_call) (v) κ C) σ Ξ M)
-         ((v κ_call (prompt ctx_1)) σ Ξ_1 M)
-         (where ctx_1 ((comp κ_call) v σ))
-         (where Ξ_1 (Ξextend Ξ ctx_1 (κ C)))
-         (side-condition (not (hash-has-key? (term M) (term ctx_1))))]
+    [--> (do-call label (comp κ_call) (v) κ C)
+         (Δs ((v κ_call (prompt ctx_1)) ,σ ,χ ,Ξ ,M) () () ((ctx_1 (κ C))) ())
+         (where ctx_1 ((comp κ_call) v (σtoken ()) (χtoken ())))
+         (side-condition (not (hash-has-key? M (term ctx_1))))]
     ;; Use memo table
-    [--> ((do-call label (comp κ_call) (v) κ C) σ Ξ M)
-         ((v_result κ C) σ_out Ξ_1 M)
-         (where ctx_1 ((comp κ_call) v σ))
-         (where Ξ_1 (Ξextend Ξ ctx_1 (κ C)))
-         (where (any_0 ... (v_result σ_out) any_1 ...) (Mlookup M ctx_1 σ))]
+    [--> (do-call label (comp κ_call) (v) κ C)
+         (Δs ((v_result κ C) σ_out χ_out ,Ξ ,M) () () ((ctx_1 (κ C))) ())
+         (where ctx_1 ((comp κ_call) v (σtoken ()) (χtoken ())))
+         (where (any_0 ... (v_result σ_out χ_out) any_1 ...) (Mlookup ,M ctx_1 ,σ ,χ))]
     ;; needs further abstracting for a fully terminating analysis. Only here for testing.
-    [--> ((do-call label + (number ...) κ C) σ Ξ M)
-         ((,(apply + (term (number ...))) κ C) σ Ξ M)]
-    [--> ((do-call label <= (number ...) κ C) σ Ξ M)
-         ((,(apply <= (term (number ...))) κ C) σ Ξ M)]
-    [--> ((v (rt ctx) C) σ Ξ M)
-         ((v κ C) σ Ξ M_1)
-         (where (any_0 ... κ any_1 ...) (Ξlookup Ξ ctx))
-         (where M_1 (Mextend M ctx v σ))]
-    [--> ((v mt (prompt ctx)) σ Ξ M)
-         ((v κ C) σ Ξ M_1)
-         (where (any_0 ... (κ C) any_1 ...) (Ξlookup Ξ ctx))
-         (where M_1 (Mextend M ctx v σ))]))
+    [--> (do-call label + (number ...) κ C)
+         (,(apply + (term (number ...))) κ C)]
+    [--> (do-call label <= (number ...) κ C)
+         (,(apply <= (term (number ...))) κ C)]
+    [--> (v (rt ctx) C)
+         (Δs ((v κ C) ,σ ,χ ,Ξ ,M) () () () ((ctx (v ,σ ,χ))))
+         (where (any_0 ... κ any_1 ...) (Ξlookup ,Ξ ,χ ,χ-token ctx))]
+    [--> (v mt (prompt ctx))
+         (Δs ((v κ C) ,σ ,χ ,Ξ ,M) () () () ((ctx (v ,σ ,χ))))
+         (where (any_0 ... (κ C) any_1 ...) (Ξlookup ,Ξ ,χ ,χ-token ctx))]))
 
-(define (rewrite-ctx ctx σ)
-  ((term-match/single L-SRT
-     [((e ρ) any) (term ((e ρ) ,σ))]
-     [(v_0 v_1 any) (term (v_0 v_1 ,σ))]
-     [_ #f])
-   ctx))
+(define Narrow
+  (reduction-relation L-SRT
+    [--> (name ς (pre-ς σ χ Ξ M))
+         (simple-ς_1 ,(update (term σ_1) (term σΔ))
+                     ,(update (term χ_1) (term χΔ))
+                     ,(update (term Ξ_1) (term ΞΔ))
+                     ,(update (term M_1) (term MΔ)))
+         (where (any_0 ... (Δs (simple-ς_1 σ_1 χ_1 Ξ_1 M_1) σΔ χΔ ΞΔ MΔ) any_1 ...)
+                ,(apply-reduction-relation (R-table (term σ) (term χ) #f #f (term σ) (term χ) (term Ξ) (term M)) (term ς)))]
+    [--> (name ς (pre-ς σ χ Ξ M))
+         (pre-ς_1 σ χ Ξ M)
+         (where (any_0 ... pre-ς_1 any_1 ...)
+                ,(apply-reduction-relation (R-table (term σ) (term χ) #f #f (term σ) (term χ) (term Ξ) (term M)) (term ς)))]))
 
-(define (step-system Σ F σ Ξ M)
-  (define-values (ς-out σ* Ξ* M* change?)
-    (for/fold ([ς-out (set)]
-               [σ* σ]
-               [Ξext #hash()]
-               [Mext #hash()]
-               [change? #f])
-        ([ς (in-set F)])
-      (define reds (apply-reduction-relation R-table (term (,ς ,σ ,Ξ ,M))))
-      (when (empty? reds)
-        (printf "Irreducible ~a~%~%" (term (,ς ,σ ,Ξ ,M))))
-      (for/fold ([ς-out ς-out] [σ* σ*] [Ξext Ξext] [Mext Mext] [change? change?])
-          ([ςσΞM (in-list reds)])
-        (match ςσΞM
-          [`(,ς ,σ** ,Ξ** ,M**)
-           (define-values (next-σ change?) (hashes-join/change? σ* σ**))
-           (define next-Ξ (hashes-join Ξext Ξ**))
-           (define next-M (hashes-join Mext M**))
-           (values (set-add ς-out ς) next-σ next-Ξ next-M change?)]
-          [bad (error 'step-system "Bad ~a" bad)]))))
-  (define next-ς
-    (for/set ([ς (in-set ς-out)])
-      ((term-match/single L-SRT
-         [((e ρ) (rt ((e_1 ρ_1) (side-condition (name a a) (not (hash? (term a)))))) C) ς]
-         [((e ρ) (rt ctx) C) (term ((e ρ) (rt ,(rewrite-ctx (term ctx) σ*)) C))]
-         [((e ρ) mt (prompt ctx)) (term ((e ρ) mt (prompt ,(rewrite-ctx (term ctx) σ*))))]
-         [_ ς])
-       ς)))
-  (define next-Ξ
-    (for/fold ([Ξ Ξ]) ([(ctx κs) (in-hash Ξ*)])
-      (match (rewrite-ctx ctx σ*)
-        [#f (hash-join Ξ ctx (set σ*))]
-        [ctx* (hash-join Ξ ctx* κs)])))
-  (define next-M
-    (for/fold ([M M]) ([(ctx vσs) (in-hash M*)])
-      (hash-join M (rewrite-ctx ctx σ*) vσs)))
-  (define-values (Σ* F*)
-    (if change?
-        (values (for/fold ([Σ* Σ]) ([ς (in-set next-ς)]) (hash-set Σ ς σ*)) ς-out)
-        (for/fold ([Σ* Σ] [F* (set)])
-            ([ς (in-set ς-out)]
-             #:unless (equal? (hash-ref Σ ς #f) σ*))
-          (values (hash-set Σ* ς σ*) (set-add F* ς)))))
+(define (step-system Σ F σ χ σ-token χ-token Ξ M)
+  (define-values (Σ* F* σ* χ* σ-token* χ-token* Ξ* M* σΔ? χΔ?)
+    (for*/fold ([Σ* Σ] [F* (set)] [σ* σ] [χ* χ] [σ-token σ-token] [χ-token χ-token] [Ξ* Ξ] [M* M] [σΔ? #f] [χΔ? #f])
+        ([simple-ς (in-set F)]
+         [ςσχΞM (in-list (let ([reds (apply-reduction-relation (R-table σ χ σΔ? χΔ? σ-token χ-token Ξ M) simple-ς)])
+                           (when (empty? reds)
+                             (printf "Irreducible ~a~%~%" (term (,simple-ς ,σ ,χ ,Ξ ,M))))
+                           reds))])
+      (match ςσχΞM
+        [`(Δs (,simple-ς ,_ ,_ ,_ ,_) ,σΔ ,χΔ ,ΞΔ ,MΔ)
+         (define-values (next-σ σsame?) (update/same σ* σΔ))
+         (define-values (next-χ χsame?) (update*/same χ* χΔ))
+         (define next-Ξ (Ξupdate Ξ* ΞΔ))
+         (define next-M (Mupdate M* χ* χ-token Ξ* MΔ))
+         (define next-σ-token (cond [(or σΔ? σsame?) σ-token]
+                                    [else (add1 σ-token)]))
+         (define next-χ-token (cond [(or χΔ? χsame?) χ-token]
+                                    [else (add1 χ-token)]))
+         (define-values (Σ-next F-next)
+           (match (hash-ref Σ* simple-ς #f)
+             [(list (== next-σ-token) (== next-χ-token)) (values Σ* F*)]
+             [_ (values (hash-set Σ* simple-ς (list next-σ-token next-χ-token)) (set-add F* simple-ς))]))
+         (values Σ-next F-next next-σ next-χ next-σ-token next-χ-token next-Ξ next-M σΔ? χΔ?)]
+        [simple-ς
+         (define-values (Σ-next F-next)
+           (match (hash-ref Σ* simple-ς #f)
+             [(list (== σ-token) (== χ-token)) (values Σ* F*)]
+             [_ (values (hash-set Σ* simple-ς (list σ-token χ-token)) (set-add F* simple-ς))]))
+         (values Σ-next F-next σ* χ* σ-token χ-token Ξ* M* σΔ? χΔ?)])))
   (if (set-empty? F*)
       (term (,(for/set ([(ς _) (in-hash Σ*)]
                         #:when (redex-match L (v mt mt) ς))
                 (first ς))
              ,σ*))
-      (term (,Σ* ,F* ,σ* ,next-Ξ ,next-M))))
+      (term (,Σ* ,F* ,σ* ,χ* ,σ-token* ,χ-token* ,Ξ* ,M*))))
+;;(trace step-system)
 
 (define (injectW e)
   (define ς (term ((,(add-labels e) #hash()) mt mt)))
-  (term (,(hash ς #hash()) ,(set ς) #hash() #hash() #hash())))
+  ;; Σ F σ χ σ-token χ-token Ξ M
+  (term (,(hash ς 0) ,(set ς) #hash() #hash() 0 0 #hash() #hash())))
 
 (define example1
   (term (reset (+ (shift k (+ 10 (k 100)))
@@ -315,7 +366,9 @@
       [_ e])))
 
 (apply-reduction-relation* R (term ((,(add-labels example1) #hash()) #hash() mt mt)))
-(apply-reduction-relation* R-table (term (((,(add-labels example1) #hash()) mt mt) #hash() #hash())))
+
+(apply-reduction-relation* (R-table #hash() #hash() #f #f 0 0 #hash() #hash())
+                           (term ((,(add-labels example1) #hash()) mt mt)))
 (printf "Example 1~%")
 (apply-reduction-relation* W (injectW example1))
 (printf "Example 2~%")
