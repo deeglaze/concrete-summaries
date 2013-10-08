@@ -39,15 +39,17 @@ To exercise the recipe further, we give a novel analysis for delimited, composab
 
 \section{The essence of summarization}
 
-CFA2 uses a technique called ``summarization'' from Sharir and Pnueli \citep[Chapter 7]{local:muchnick:jones:flow-analysis:1981}, which is synonymous with the $\epsilon$-closure graph that PDCFA constructs.
+CFA2 is an online version of a technique called ``summarization'' from Sharir and Pnueli \citep[Chapter 7]{local:muchnick:jones:flow-analysis:1981}, which is synonymous with the $\epsilon$-closure graph that PDCFA constructs.
+%
+The online quality of the algorithm is what makes it suitable for higher-order languages.
 %
 Summarization algorithms need not be restricted to languages with well-bracketed calls and returns.
 %
 We can adopt the technique for higher precision in the common case but still handle difficult cases such as first-class control.
 %
-This was shown for the \rackett{call-with-current-continuation} (a.k.a. \rackett{call/cc}) operator in ~\citet{ianjohnson:Vardoulakis2011Pushdown}.
+This was shown for the \rackett{call-with-current-continuation} (a.k.a. \rackett{call/cc}) operator in~\citet{ianjohnson:Vardoulakis2011Pushdown}.
 %
-This impressive work illuminated the fact that we can harness the enhanced technology of pushdown analyses in non-pushdown models of computation.
+This work illuminated the fact that we can harness the enhanced technology of pushdown analyses in non-pushdown models of computation.
 %
 Doing this sacrifices call/return matching in the general case, but in practice the precision is much better than the alternative regular model that, say, 0-CFA would provide.
 %%
@@ -99,7 +101,7 @@ Finally, we show in \autoref{sec:sr} that even though first-class control operat
 
 PDCFA does not have some orthogonal semantic components that CFA2 features to improve precision and is thus the simpler of the two.
 %
-The key to their method is to notice in languages without stack-capturing features, the continuation is only modified a frame at a time.
+The key insight of PDCFA is to notice in languages without stack-capturing features, the continuation is only modified a frame at a time.
 %
 If the state space without the stack is finite (and it can be made finite with an approximation ala AAM), then the model falls directly into the realm of pushdown systems.
 %
@@ -111,10 +113,10 @@ They call the main data-structure for this a Dyck state graph.
 %
 They additionally compute an $\epsilon$-closure graph to match nodes that push frames with later nodes following the pop of that frame, which keeps edges between nodes that have a net-zero stack change path between them.
 %
-We skip the detour to pushdown systems altogether and show an operational understanding of the resulting analysis.
-%%
 
-%%
+\subsection{Concrete semantics and summarization}
+We skip the detour to pushdown systems altogether and show an operational understanding of the resulting analysis.
+%
 We start by deriving PDCFA from an operational semantics for the untyped lambda calculus (\autoref{fig:base-semantics}).
 %
 The semantic spaces for the machine follow.
@@ -148,13 +150,15 @@ The semantic spaces for the machine follow.
 The $\Addr$ space is what controls the precision of the model.
 %
 For a concrete semantics, we require the allocation meta-function $\alloc :
-\State \to \Addr$ to return fresh addresses ($\alloc(\mstate) \notin \dom(\mstate.\mstore)$), but any choice of address is sound~\citep{dvanhorn:Might2009Posteriori}.
+\State \to \Addr$ to return fresh addresses ($\alloc(\tpl{(\mexpr, \menv), \mstore, \mkont}) \notin \dom(\mstore)$), but any choice of address is sound~\citep{dvanhorn:Might2009Posteriori}.
 %
-If $\alloc$ only uses addresses from a finite subset of $\Addr$, then the state space without continuations is finite, and the space of contination frames is finite --- thus the pushdown system interpretation is apt.
+If $\alloc$ only uses addresses from a finite subset of $\Addr$, then the state space without continuations is finite, and the space of continuation frames is finite.
 %
-This meta-function along with the commitment to having no recursive data-structures is the key to the AAM technique.
+A finite allocation strategy makes the continuation the only unbounded data structure in the machine, which follows a stack discipline with a finite ``stack alphabet'' --- thus the pushdown system interpretation is apt.
 %
-All recursion can be expressed by indirecting through addresses into a store --- tying Landin's knot.
+The $\alloc$ meta-function along with the commitment to having no recursive data-structures is the key to the AAM technique.
+%
+All recursion can be expressed by indirecting through addresses into a store.
 %
 We borrow this technique on top of our own.
 
@@ -191,7 +195,7 @@ We borrow this technique on top of our own.
 %
 This closely mirrors the technique of store-allocating continuations used in AAM.
 %
-Instead of deferring to the table (store) for the remainder of a continuation for each frame, we only have indirections at function call boundaries (see rules 4 and 5 in figure \ref{fig:summary-semantics} for saving and restoring continuations).
+Instead of deferring to the table (store) for the remainder of a continuation for each frame, we only have indirections at function call boundaries (see last 2 rules in figure \ref{fig:summary-semantics} for saving and restoring continuations).
 %
 Note that since AAM is about finitizing the state space, this step itself fits within the AAM method, since continuations within functions truncated at call boundaries are bounded by the nesting depth of those functions, thereby making the continuation space finite.
 %
@@ -199,11 +203,19 @@ In the monovariant case, the number of continuations is still linear in the size
 %%
 
 %%
-The tail of a continuation in the context of a function will contain the stack-less context in which the function was called, in order to link up with the proper call-site(s).
+The tail of a continuation within a function is some $\krt{\mctx}$, which instructs the semantics to memoize the result of the function evaluation at $\mctx$.
 %
-The context includes the function (or unique label of the function), the environment, and the store.
+A context, $\mctx$, must contain enough information for memoization to be sound, \ie, any extra components not in $\mctx$ must be irrelevant to the evaluation of the function.
 %
-Notice that this choice can be viewed as a special allocation strategy for continuations in the AAM viewpoint, but we separate the table of continuations from the store since continuations themselves contain stores in $\rt$ continuations --- this leads to a recursive data-structure that we are trying to avoid.
+In this case, the context includes the function, the environment, and the store.
+%
+All the extra components at a context $\mctx$ get stored in a separate table, $\mktab$, so that updates to the memo table will propagate to all callers that depend on the result of $\mctx$.
+%%
+
+%%
+Continuations count as ``extra'' in this semantics since functions cannot inspect the stack, so $\krt{\mctx}$ might be considered a special allocation strategy for continuations in the AAM viewpoint.
+%
+We separate the table of continuations, $\mktab$, from the store, $\mstore$, since $\rt$ continuations contain stores --- this leads to a recursive data-structure that we are trying to avoid.
 %
 The store is an important ingredient to maintaining enough precision to keep a pushdown abstraction.
 %
@@ -264,6 +276,7 @@ We have promising preliminary results in this direction that don't require a pre
           \krt{\mpoint, \mstore'},
           \mktab',
           \mmemo}$
+     \\ & \quad if $(\mpoint, \mstore') \notin \dom(\mmemo)$
 \\
     & or \\
     & $\tpl{\mval_\mathit{result},
@@ -1106,6 +1119,7 @@ Then, instead of entirely removing the store component of the $\rt$ context, we 
     $\tpl{\mval,\mstore,\kfn{\vcomp{\mkont'}, \mkont}, \mmkont, \mktab, \mmemo}$
     &
     $\tpl{\mval, \mstore, \mkont', \kprompt{\mctx}, \mktab',\mmemo}$
+    \\ & \quad if $\mctx \notin \dom(\mmemo)$
     \\
     & or \\
     & $\tpl{\mval', \mstore', \mkont, \mmkont, \mktab',\mmemo}$
@@ -1124,30 +1138,25 @@ Then, instead of entirely removing the store component of the $\rt$ context, we 
   \label{fig:shift-reset-table0}
 \end{figure*}
 
-The new indirection possibility changes $\Context$ to also include $\maddr$ where there was previously a $\mstore$ (though contexts for continuation calls remain unchanged), and $\KTab$ now additionally maps $\Addr$ to a set of stores.
+The new indirection possibility changes $\Context$ to also include $\maddr$ where there was previously a $\mstore$, and the approximations of continuations live in the store is relevant to contexts now.
 %
-The rules that change are presented in figure \ref{fig:shift-reset-table1}.
+We add a new component to states and contexts, $\mmktab \in \MKTab : \Addr \to \wp(\Store)$, that is also subject to GC for enhanced precision if included.
+%
+Continuations in the store are further closed by $\mmktab$, so that becomes part of the memoized content in addition to the value and store.
+%
+The rules that change significantly are presented in figure \ref{fig:shift-reset-table1}.
 
 {
 \setlength{\abovedisplayskip}{0pt}
 \setlength{\belowdisplayskip}{4pt}
 \setlength{\abovedisplayshortskip}{0pt}
 \setlength{\belowdisplayshortskip}{8pt}
-\begin{minipage}{0.45\linewidth}
-  \begin{align*}
-    \msctx \in \SContext &::= ((\mexpr,\menv),\maddr) \\
-    \mctx \in \Context &::= \msctx \alt \ldots \\
-    \mskont \in \SKont &= \krt{\msctx} \alt \ldots
+\begin{align*}
+  \msctx \in \SContext &::= ((\mexpr,\menv),\maddr) \\
+  \mctx \in \Context &::= \msctx \alt ((\mexpr,\menv),\mstore,\mmktab) \alt (\vcomp{\mskont}, \mval, \mstore, \mmktab) \\
+  \mskont \in \SKont &= \kmt \alt \kcons{\mkframe}{\mskont} \alt \krt{\msctx} \\
+  \mval \in \Value &= \vclo{\slam{\mvar}{\mexpr}}{\menv} \alt \vcomp{\mskont}
   \end{align*}
-\end{minipage}
-\begin{minipage}{0.50\linewidth}
-  \begin{align*}
-    \mval \in \Value &= \vclo{\slam{\mvar}{\mexpr}}{\menv} \alt \vcomp{\mskont} \\
-    \mktab \in \KTab &= (\Context \to \mathit{KRange}) \\
-    &\cup (\Addr \to \wp(\Store))
-  \end{align*}
-\end{minipage}
-
 }
 
 \begin{figure*}
@@ -1156,19 +1165,20 @@ The rules that change are presented in figure \ref{fig:shift-reset-table1}.
   $\mstate \stepto \mstate' \text{ where } \maddr = \alloc(\mstate)$ \\
   \begin{tabular}{r|l}
     \hline
-    $\tpl{(\sshift{\mvar}{\mexpr}, \menv), \mstore, \mkont, \mmkont, \mktab, \mmemo}$
+    $\tpl{(\sshift{\mvar}{\mexpr}, \menv), \mstore, \mkont, \mmkont, \mmktab, \mktab, \mmemo}$
     &
-    $\tpl{(\mexpr, \extm{\menv}{\mvar}{\maddr}), \joinone{\mstore}{\maddr}{\vcomp{\mkont'}},\kmt,\mmkont,\mktab',\mmemo}$
+    $\tpl{(\mexpr, \extm{\menv}{\mvar}{\maddr}), \mstore',\kmt,\mmkont, \mmktab', \mktab,\mmemo}$
     \\
-    where & $(\mkont',\mktab') = \approximate(\mkont, \mktab, \maddr)$
+    where & $\mstore' = \joinone{\mstore}{\maddr}{\vcomp{\mkont'}}$ \\
+    & $(\mkont',\mmktab') = \approximate(\mkont, \mmktab, \maddr)$
 \\
 % Return
-   $\tpl{\mval, \mstore, \krt{\mctx}, \mmkont, \mktab, \mmemo}$
+   $\tpl{\mval, \mstore, \krt{\mctx}, \mmkont, \mmktab, \mktab, \mmemo}$
    &
-   $\tpl{\mval, \mstore, \mkont, \mmkont, \mktab, \mmemo'}$
-   if $\mkont \in \returns(\mktab, \mctx)$
+   $\tpl{\mval, \mstore, \mkont, \mmkont, \mmktab, \mktab, \mmemo'}$
+   if $\mkont \in \returns(\mmktab, \mktab, \mctx)$
    \\
-   where & $\mmemo' = \mmemo \sqcup \memoize(\mktab, \mctx, (\mval, \mstore))$
+   where & $\mmemo' = \mmemo \sqcup \memoize(\mmktab, \mctx, (\mval, \mstore, \mmktab))$
   \end{tabular}
   \caption{Fixed table-based semantics for shift/reset}
   \label{fig:shift-reset-table1}
@@ -1178,32 +1188,32 @@ The meta-functions mentioned in the fixed semantics all deal with the addition o
 %
 If the context in an $\rt$ continuation is approximate, we must return to all the continuations known for all the contexts it approximates:
 \begin{align*}
-  \returns(\mktab, ((\mexpr,\menv), \mstore)) &= \mktab((\mexpr,\menv), \mstore) \\
-  \returns(\mktab, ((\mexpr,\menv), \maddr)) &=
-    \bigcup\setbuild{\mktab((\mexpr,\menv),\mstore)}{\mstore \in \mktab(\maddr)}
+  \returns(\mmktab, \mktab, ((\mexpr,\menv), \mstore)) &= \mktab((\mexpr,\menv), \mstore) \\
+  \returns(\mmktab, \mktab, ((\mexpr,\menv), \maddr)) &=
+    \bigcup\setbuild{\mktab((\mexpr,\menv),\mstore)}{\mstore \in \mmktab(\maddr)}
 \end{align*}
 
 At return boundaries, the memo table must add the result to all the represented contexts:
 \begin{align*}
-  \memoize(\mktab, ((\mexpr,\menv), \mstore'), \mathit{v\sigma}) &=
-  [((\mexpr,\menv), \mstore') \mapsto \set{{\mathit{v\sigma}}}] \\
-  \memoize(\mktab, ((\mexpr,\menv), \maddr), \mathit{v\sigma}) &=
-  \bigsqcup\limits_{\mstore' \in \mktab(\maddr)}\snglm{((\mexpr,\menv), \mstore')}{\mathit{v\sigma}}
+  \memoize(\mmktab, ((\mexpr,\menv), \mstore'), \mathit{out}) &=
+  [((\mexpr,\menv), \mstore') \mapsto \set{{\mathit{out}}}] \\
+  \memoize(\mmktab, ((\mexpr,\menv), \maddr), \mathit{out}) &=
+  \bigsqcup\limits_{\mstore' \in \mmktab(\maddr)}\snglm{((\mexpr,\menv), \mstore')}{\mathit{out}}
 \end{align*}
 At capture time, we strip the store in the $\rt$ continuation if there is one, and replace it with an address to make the context storeable:
 
 \newcommand{\replacectx}{\mathit{replace}\mstore}
 \newcommand{\addstore}{\mathit{add}\mstore}
 \begin{align*}
-  \approximate(\mkont, \mktab, \maddr) &= (\replacectx(\mkont), \addstore(\mkont)) \\
+  \approximate(\mkont, \mmktab, \maddr) &= (\replacectx(\mkont), \addstore(\mkont)) \\
   \text{where }
    \replacectx(\kmt) &= \kmt \\
    \replacectx(\krt{((\mexpr,\menv),\_)}) &= \krt{((\mexpr,\menv),\maddr)} \\
    \replacectx(\kcons{\mkframe}{\mkont}) &= \kcons{\mkframe}{\replacectx(\mkont)}
   \\[2pt]
-   \addstore(\kmt) &= \mktab \\
-   \addstore(\krt{((\mexpr,\menv),\mstore)}) &= \joinone{\mktab}{\maddr}{\mstore} \\
-   \addstore(\krt{((\mexpr,\menv),\maddr')}) &= \joinm{\mktab}{\maddr}{\mktab(\maddr')} \\
+   \addstore(\kmt) &= \mmktab \\
+   \addstore(\krt{((\mexpr,\menv),\mstore)}) &= \joinone{\mmktab}{\maddr}{\mstore} \\
+   \addstore(\krt{((\mexpr,\menv),\maddr')}) &= \joinm{\mmktab}{\maddr}{\mmktab(\maddr')} \\
    \addstore(\kcons{\mkframe}{\mkont}) &= \addstore(\mkont)
 \end{align*}
 
@@ -1262,7 +1272,7 @@ Our specialized analysis for delimited control, also with a monovariant allocati
 
 \section{Related Work}
 
-The immediately related work is that of PDCFA \citep{dvanhorn:Earl2010Pushdown, dvanhorn:Earl2012Introspective}, CFA2~\citep{ianjohnson:vardoulakis-lmcs11, ianjohnson:Vardoulakis2011Pushdown}, and AAM ~\citep{dvanhorn:VanHorn2010Abstracting}, the first two of which we recreated in full detail.
+The immediately related work is that of PDCFA \citep{dvanhorn:Earl2010Pushdown, dvanhorn:Earl2012Introspective}, CFA2~\citep{ianjohnson:vardoulakis-lmcs11, ianjohnson:Vardoulakis2011Pushdown}, and AAM~\citep{dvanhorn:VanHorn2010Abstracting}, the first two of which we recreated in full detail.
 %
 The version of CFA2 that handles \rackett{call/cc} does not handle composable control, is dependent on a restricted CPS representation, and has untunable precision for first-class continuations.
 %
@@ -1279,7 +1289,7 @@ Backward analyses for stack inspection also exist, with the same prerequisite~\c
 %%
 
 %%
-Pushdown models have existed in the first-order static analysis literature ~\citep[Chapter 7]{local:muchnick:jones:flow-analysis:1981}\citep{ianjohnson:reps:pushdown:1995}, and the first-order model checking literature \citep{ianjohnson:bouajiani:esparza:pushdown:1997}, for some time.
+Pushdown models have existed in the first-order static analysis literature~\citep[Chapter 7]{local:muchnick:jones:flow-analysis:1981}\citep{ianjohnson:reps:pushdown:1995}, and the first-order model checking literature \citep{ianjohnson:bouajiani:esparza:pushdown:1997}, for some time.
 %
 The higher-order setting imposes additional challenges that make their methods difficult to adapt.
 %
