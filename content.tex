@@ -65,7 +65,7 @@ We also give intuitive analogies to well-established ideas and techniques so tha
 %
 In order to demonstrate the applicability of this viewpoint, we show a new analysis for a language with composable control.
 %
-All of the semantics modeled in this paper are implemented in full detail in PLT Redex~\citep{ianjohnson:Felleisen:2009:SEP:1795772} and available online\footnote{\url{http://github.com/ianj/concrete-summaries}}.
+All of the semantics modeled in this paper are implemented in full detail in PLT Redex~\citep{ianjohnson:Felleisen:2009:SEP:1795772} and available online.\footnote{\url{http://github.com/ianj/concrete-summaries}}
 
 There are common underpinnings of PDCFA and CFA2 that can be embodied as concrete ``summarization'' machinery in the programming language semantics: 
 \begin{enumerate}
@@ -295,14 +295,9 @@ Instead of following an entire path through a call to return a value, we simply 
 \end{figure}
 
 To turn this semantics into PDCFA's algorithm for constructing a Dyck state graph, given the appropriate $\alloc$, we apply a widening operator to make $\mstore$, $\mkont$, and $\mmemo$ shared amongst all states (meaning states then become represented without these components), in what is then called a $\System$. We use a meta-function $\wn$, ``wide to narrow,'' to shift between the two representations of states.
-%%
-
-%%
-We show only the memo and continuation table widening, since store widening would require rewriting newly-created contexts to use the global store following the step.
 %
-This rewriting is unnecessary with the store-counting per-wide-step technique presented in \citet{ianjohnson:oaam:icfp2013}, or the less precise timestamp approximation from \citet{dvanhorn:Shivers:1991:CFA}.
+We show only the memo and continuation table widening, since store widening is standard.
 %
-Since these components are shared, they are always the least upper bound of any respective component that the semantics produces (the intermediate set $I$) in order to stay sound.
 
 {
 \setlength{\abovedisplayskip}{0pt}
@@ -380,8 +375,8 @@ We should expect that a pushdown analysis would predict this evaluates to true, 
 %
 0CFA~\citep{dvanhorn:Shivers:1991:CFA} claims there is a loop from the second call of \texttt{id} to the first, and thusly predicts this program evaluates to true or false.
 %
-PDCFA claims there is no loop, and depending on the implementation, that the result is true or false (paper), or just true (implemented)
-\footnote{This is because the paper steps every seen state with the current store every iteration, but the implementation only steps states that need stepping.}.
+PDCFA claims there is no loop, and depending on the implementation, that the result is true or false (paper), or just true (implemented).
+\footnote{This is because the paper steps every seen state with the current store every iteration, but the implementation only steps states that need stepping.}
 %
 The example evaluation is in \autoref{fig:ex-eval}.
 %
@@ -457,18 +452,16 @@ Where $\mkont_0 = \mathbf{lt}({\tt y}, {\tt (let\ ([z\ (id\ 1)])\ (}\le\ {\tt y}
 % \item{\texttt{z} gets bound to $\set{0,1}$, and \texttt{($\le$ y z)} evaluates to true.}
 % \end{enumerate}
 
-\begin{theorem}\label{thm:pdcfa-tabular}
-  Tabular semantics has a bisimulation with the standard semantics with comparable allocation strategies.
-\end{theorem}
+\subsection{Metatheory}
 
-This follows directly from the invariants we prove of $\mktab$ and $\mmemo$ in the tabular semantics.
+Correctness follows directly from the invariants we prove of $\mktab$ and $\mmemo$ in the tabular semantics.
 %
 Allocation strategies are comparable if they produce equal addresses regardless of the differences in the state representations.
 %
 More formally, $\alloc$ and $\alloc^*$ are comparable if this implication holds:
 \begin{mathpar}
-  \inferrule{\mkont \in \unroll{\mktab}{\mkont^*}}
-            {\alloc(\tpl{\mpoint,\mstore,\mkont}) = \alloc^*(\tpl{\mpoint,\mstore,\mkont^*,\mktab,\mmemo})}
+  \inferrule{\mkont \in \unroll{\mktab}{\mkont'}}
+            {\alloc(\tpl{\mpoint,\mstore,\mkont}) = \alloc^*(\tpl{\mpoint,\mstore,\mkont',\mktab,\mmemo})}
 \end{mathpar}
 
 The $\mathit{unroll}$ function interprets what are all the valid continuations that $\mktab$ encodes for a given continuation that contains $\krt{\mctx}$, defined as the greatest fixed point of the following rules:
@@ -476,8 +469,8 @@ The $\mathit{unroll}$ function interprets what are all the valid continuations t
   \inferrule{ }{\kmt \in \unroll{\mktab}{\kmt, G}} \quad
   \inferrule{\mkont \in \unroll{\mktab}{\mkont', \emptyset}}{\mkframe:\mkont \in \unroll{\mktab}{\mkframe:\mkont', G}} \\
   \inferrule{\mctx \notin G  \\
-             \mkont^\circ \in \mktab(\mctx) \\
-             \mkont \in \unroll{\mktab}{\mkont^\circ, \set{\mctx}\cup G}}
+             \mkont'' \in \mktab(\mctx) \\
+             \mkont \in \unroll{\mktab}{\mkont'', \set{\mctx}\cup G}}
             {\mkont \in \unroll{\mktab}{\krt{\mctx}, G}}  
 \end{mathpar}
 
@@ -501,13 +494,13 @@ The final invariant, $\phi_{\memo}$, states that the memo table is correct: all 
   \begin{align*}
     \inv(\tpl{\mpoint, \mstore, \mkont, \mktab, \mmemo}) &=
     \dom(\mmemo) \subseteq \dom(\mktab) \\
-    &\wedge \forall (\mpoint',\mstore') \in \dom(\mktab), \mkont^\circ
+    &\wedge \forall (\mpoint',\mstore') \in \dom(\mktab), \mkont''
     \in \mktab(\mpoint',\mstore'),
-    \mkont' \in \unroll{\mktab}{\mkont^\circ, \emptyset}. \\
+    \mkont' \in \unroll{\mktab}{\mkont'', \emptyset}. \\
     &\qquad \phi_{\reachable} \wedge \phi_{\memo} \\
-    \text{where } \phi_{\reachable} &= \exists \mkont^* \in
+    \text{where } \phi_{\reachable} &= \exists \mkont'' \in
     \unroll{\mktab}{\mkont,\emptyset}.
-    \tpl{\mpoint', \mstore', \mkont'} \stepto^* \tpl{\mpoint, \mstore, \mkont^*} \\
+    \tpl{\mpoint', \mstore', \mkont'} \stepto^* \tpl{\mpoint, \mstore, \mkont''} \\
     \phi_{\memo} &=
     \forall (\mval, \mstore'') \in \mmemo(\mpoint',\mstore'). \\
     &\qquad \exists \mtrace\equiv\tpl{\mpoint', \mstore', \mkont'}
@@ -522,8 +515,10 @@ The final invariant, $\phi_{\memo}$, states that the memo table is correct: all 
 \end{lemma}
 
 In order to prove this, we need a lemma that allows us to plug in any continuation for memoized results.
+%
+When traces (sequences of states such that adjacent states are related by $\stepto$) have a common tail, we can replace it with anything.
 
-\begin{lemma}[Stack irrelevance]\label{lem:irrelevance}
+\begin{lemma}[Stack irrelevance in CESK]\label{lem:irrelevance}
   $\hastail(\mtrace,\mkont)$ implies $\replacetail(\mtrace,\mkont,\mkont')$ is a valid trace.
 \end{lemma}
 \begin{mathpar}
@@ -541,10 +536,14 @@ In order to prove this, we need a lemma that allows us to plug in any continuati
   \replacetail(\mtrace\mstate,\mkont,\mkont') &= \replacetail(\mtrace,\mkont,\mkont')\replacetail(\mstate,\mkont,\mkont') \\
 \end{align*}
 
+\begin{claim}(Correctness of PDCFA)\label{thm:pdcfa-tabular}
+  Tabular semantics has a bisimulation with the standard semantics with comparable allocation strategies.
+\end{claim}
+
 Finally, we can show that even if the tables are shared amongst all states, they are precise enough to not interfere with the results.
-\begin{theorem}[Equivalence with global tables]\label{thm:global}
+\begin{claim}[Equivalence with global tables]\label{thm:global}
   Tabular semantics has a bisimulation with memo-and-k-table-widened semantics.
-\end{theorem}
+\end{claim}
 
 \section{Deriving GC from the introspective pushdown model}\label{sec:gc}
 
@@ -578,52 +577,6 @@ Entries in $\mktab$ might be circular, so we compute the continuation frames in 
   \inferrule{\mkont \in \mktab(\mctx)}{\krt{\mctx} \rightsquigarrow_\mktab \mkont}
 \end{mathpar}
 
-
-An implementation of the same functionality would use a mutable set to track which contexts have been traversed to build up a set of addresses:
-% This code is typeset below by Scribble
-% \begin{lstlisting}[mathescape]
-% (define (touch-kont $\mkont$ $\mktab$)
-%   (define seen (mutable-seteq))
-%   (let loop ([$\mkont$ $\mkont$])
-%     (match $\mkont$
-%       [(mt) $\emptyset$]
-%       [(cons $\mkframe$ $\mkont$) ($\cup$ $\touchesf(\mkframe)$ (loop $\mkont$))]
-%       [(rt $\mctx$)
-%        (cond
-%          [(set-member? seen $\mctx$) $\emptyset$]
-%          [else
-%           (set-add! seen $\mctx$)
-%           (for/union ([$\mkont$ (in-set $\mktab(\mctx)$)]) (loop $\mkont$))])])))           
-% \end{lstlisting}
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Begin scary Scribble output
-\begin{SCodeFlow}\begin{RktBlk}\begin{SingleColumn}\RktPn{(}\RktSym{define}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{touch{-}kont}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\kappa$}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\Xi$}\RktPn{)}
-
-\mbox{\hphantom{\Scribtexttt{xx}}}\RktPn{(}\RktSym{define}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{seen}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{mutable{-}seteq}\RktPn{)}\RktPn{)}
-
-\mbox{\hphantom{\Scribtexttt{xx}}}\RktPn{(}\RktSym{define}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{fix{-}touch}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\kappa$}\RktPn{)}
-
-\mbox{\hphantom{\Scribtexttt{xxxx}}}\RktPn{(}\RktSym{match}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\kappa$}
-
-\mbox{\hphantom{\Scribtexttt{xxxxxx}}}\RktPn{[}\RktPn{(}\RktSym{mt}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\emptyset$}\RktPn{]}
-
-\mbox{\hphantom{\Scribtexttt{xxxxxx}}}\RktPn{[}\RktPn{(}\RktSym{cons}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\phi$}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\kappa$}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\cup$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{touches{-}frame}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\phi$}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{fix{-}touch}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\kappa$}\RktPn{)}\RktPn{)}\RktPn{]}
-
-\mbox{\hphantom{\Scribtexttt{xxxxxx}}}\RktPn{[}\RktPn{(}\RktSym{rt}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{ctx}\RktPn{)}
-
-\mbox{\hphantom{\Scribtexttt{xxxxxxx}}}\RktPn{(}\RktSym{cond}
-
-\mbox{\hphantom{\Scribtexttt{xxxxxxxx}}}\RktPn{[}\RktPn{(}\RktSym{set{-}member{\hbox{\texttt{?}}}}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{seen}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{ctx}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\emptyset$}\RktPn{]}
-
-\mbox{\hphantom{\Scribtexttt{xxxxxxxx}}}\RktPn{[}\RktSym{else}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{set{-}add{\hbox{\texttt{!}}}}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{seen}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{ctx}\RktPn{)}
-
-\mbox{\hphantom{\Scribtexttt{xxxxxxxxxxxxxx}}}\RktPn{(}\RktSym{union{-}map}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{fix{-}touch}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{ref}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\Xi$}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{ctx}\RktPn{)}\RktPn{)}\RktPn{]}\RktPn{)}\RktPn{]}\RktPn{)}\RktPn{)}
-
-\mbox{\hphantom{\Scribtexttt{xx}}}\RktPn{(}\RktSym{fix{-}touch}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{$\kappa$}\RktPn{)}\RktPn{)}\end{SingleColumn}\end{RktBlk}\end{SCodeFlow}
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% End of scary Scribble output
-
 Garbage collection ($\Gamma$) amounts to restricting the heap to just the reachable addresses, so a garbage-collecting semantics introduces the following reduction rule:
 \begin{align*}
   \mstate &\stepto \Gamma(\mstate) \\
@@ -649,19 +602,19 @@ This extra context can be overlooked, since that means the computed touched addr
 %
 More touched addresses means a less effective GC, but this is an acceptable tradeoff for a possibly smaller state space.
 %
-\begin{theorem}[No dangling pointers]\label{thm:gc-pointers}
+\begin{claim}[No dangling pointers]\label{thm:gc-pointers}
   All addresses in $\Gamma(\mstate)$ are in the domain of $\Gamma(\mstate).\mstore$.
-\end{theorem}
+\end{claim}
 
-\begin{theorem}[Garbage is irrelevant]\label{thm:gc-concrete}
+\begin{claim}[Garbage is irrelevant]\label{thm:gc-concrete}
   If $\mstate \stepto^n \mstate'$ and $\mstate \stepto^n \mstate''$ then $\Gamma(\mstate') = \Gamma(\mstate'')$.
-\end{theorem}
+\end{claim}
 
-\begin{theorem}[Abstract GC is sound for garbage-free states]\label{thm:gc-sound}
+\begin{claim}[Abstract GC is sound for garbage-free states]\label{thm:gc-sound}
   If $\mstate \stepto \mstate'$ and $\alpha(\Gamma(\mstate)) \sqsubseteq \mastate$ then there is a $\mastate'$ such that $\mastate \astepto \mastate'$ and $\alpha(\Gamma(\mstate')) \sqsubseteq \mastate'$.
-\end{theorem}
+\end{claim}
 
-This final theorem is not in the original work on abstract GC; they prove soundness with respect to a concrete semantics that performs GC after every step.
+This final proposition is not in the original work on abstract GC; they prove soundness with respect to a concrete semantics that performs GC after every step.
 %
 The moral correctness of the abstraction is that it never under-approximates \emph{relevant} portions of the state space --- in this case, the reachable subset of the store.
 %
@@ -682,11 +635,13 @@ Vardoulakis and Shivers had a clear goal of harnessing the extra information a p
 %
 This resulted in more than just the call/return matching of the previous section, which is why we are showing the two separately.
 %
-There are two orthogonal features of the semantics, embodied by our semantics' two metafunctions ($\bind$ and $\lookup$, respectively in \autoref{fig:frame-semantics}):
+
 \begin{enumerate}
 \item{stack allocation for some bindings in an additional $\mframe \in \Store$}
 \item{strong updates on stack frames for resolved non-determinism}
 \end{enumerate}
+There are two orthogonal features of the semantics, embodied by our semantics' two metafunctions ($\bind$ and $\lookup$, respectively in \autoref{fig:frame-semantics}).
+%
 The first of these is an addition to the stack-less context.
 
 \begin{figure}
@@ -752,7 +707,7 @@ If they are not all considered $v$, it looks as if \texttt{x} was rebound; it ha
 %
 CFA2 does not step to all values on variable reference, but instead carries all its values around in superposition until they need to be observed at, say, a function call.
 %
-We give a simplified semantics that is more along the AAM style, but CFA2's approach can easily be recovered from it\footnote{Our Redex model implements the fake rebinding strategy CFA2 itself employs}.
+We give a simplified semantics that is more along the AAM style, but CFA2's approach can easily be recovered from it.\footnote{Our Redex model implements the fake rebinding strategy CFA2 itself employs.}
 %%
 
 %%
@@ -772,16 +727,15 @@ The meta-functions the semantics uses to extend and consult the heap and stack u
 
 \begin{align*}
   \bind(\mstore,\maddr,\mvar,\mval) &=
-   \left\{\begin{array}{l}
-            (\mstore, \snglm{\maddr}{\mval}) \text{ if } \mvar \text{ allocations never escape} \\
-            (\joinone{\mstore}{\maddr}{\mval}, \snglm{\maddr}{\mval}) \text{ otherwise} \\
+   \left\{\begin{array}{ll}
+            (\mstore, \snglm{\maddr}{\mval}) &\text{ if } \mvar \text{ allocations never escape} \\
+            (\joinone{\mstore}{\maddr}{\mval}, \snglm{\maddr}{\mval}) &\text{ otherwise} \\
           \end{array}\right. \\
   \lookup(\mstore,\mframe,\menv,\mvar,\mlab) &=
-    \left\{\begin{array}{l}
+    \left\{\begin{array}{ll}
           \setbuild{(\extm{\mframe}{\menv(\mvar)}{\set{\mval}}, \mval)}
-                   {\mval \in \mframe(\menv(\mvar))}
-                   \\ \qquad \text{if } \mlab \text{ non-escaping} \\
-          \setbuild{(\mframe,\mval)}{\mval \in \mstore(\menv(\mvar))} \text{ otherwise}
+                   {\mval \in \mframe(\menv(\mvar))} & \text{if } \mlab \text{ non-escaping} \\
+          \setbuild{(\mframe,\mval)}{\mval \in \mstore(\menv(\mvar))} & \text{ otherwise}
            \end{array}\right.
 \end{align*}
 
@@ -829,9 +783,9 @@ The repeated popping of $\rt$ inserted by what otherwise were tail-calls is syno
 The stack frame introduces a refinement over the original CESK machine, so we first prove it correct with respect to the concrete semantics.
 %
 We follow up with a similar proof to that of PDCFA, which is that the CES$\xi$K machine has a bisimulation with its tabular semantics, with comparable allocation strategies.
-\begin{theorem}[Correctness of stack frame refinement]\label{thm:refinement}
+\begin{claim}[Correctness of stack frame refinement]\label{thm:refinement}
   The CES$\xi$K machine has a bisimulation with the CESK machine with fresh allocation.
-\end{theorem}
+\end{claim}
 This follows from the invariant that if a stack frame maps $\maddr$ to $\mval$, then the store maps $\maddr$ to $\mval$, meaning that the special lookup function is equivalent to lookup directly in the store (exploits immutability).
 %
 That is, if we always allocated bindings in the heap.
@@ -843,9 +797,9 @@ The additional escape analysis adds information to use in the proof, that if $\m
 With this proposition, we can prove that the CES$\xi$K machine that always allocates in the store has a bisimulation with the refined machine that exploits escape analysis to avoid unnecessary changes to the store.
 %
 
-\begin{theorem}[Correctness of CFA2]\label{thm:cfa2}
+\begin{claim}[Correctness of CFA2]\label{thm:cfa2}
   Tabular semantics has a bisimulation with standard semantics.
-\end{theorem}
+\end{claim}
 This proof has the same structure as that of PDCFA.
 
 \ifwcm{
@@ -1215,15 +1169,15 @@ At return boundaries, the memo table must add the result to all the represented 
 
 The result of this viewpoint is a sound, precise, and computable semantics for a ``pushdown approach'' to analyzing delimited, composable control.
 
-\begin{theorem}\label{thm:concrete-sr}
+\begin{claim}\label{thm:concrete-sr}
   Tabular semantics has a bisimulation with standard semantics given fresh allocation.
-\end{theorem}
+\end{claim}
 
 We prove this with the invariant that the continuation and meta-continuation have unique unrollings in addition to the table invariants from \autoref{sec:pdcfa}, since the distinct $\mstore$ at push and capture time makes entries in $\mktab$ unique, regardless of $\mmktab$.
 
-\begin{theorem}\label{thm:sound-sr}
+\begin{claim}\label{thm:sound-sr}
   Tabular semantics simulates standard semantics with abstract allocation.
-\end{theorem}
+\end{claim}
 
 \paragraph{Comparison to PDCFA CPS'd to remove {\tt shift} and {\tt reset}:}{
 We lose precision if we use a CPS transform to compile away {\tt shift} and {\tt reset} forms, because variables are treated less precisely than continuations.
