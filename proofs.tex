@@ -64,28 +64,80 @@ Proof of \autoref{lem:irrelevance}
   \end{byCases}
 \end{proof}
 
-\noindent{}Proof of \autoref{thm:global}.
-\begin{proof}
-%% TODO
-  The invariants of the memo and k-tables are independent of the states that carry them, so lifting them to a global position does not affect their information.
-\end{proof}
+Proof of \autoref{lem:irrelevance} is by simple induction on traces.
+% \noindent{}Proof of \autoref{thm:pdcfa-tabular}, which is more formally stated as (tabular $\pdstepto$, CESK $\stepto$): There is a well-founded equivalence bisimulation between $\pdstepto$ (quotiented to states satisfying $\inv$) and $\tred{\stepto}$.
+% We define equivalence ($\simeq$) as
+% \begin{mathpar}
+%   \inferrule{\mkont \in \unroll{\mktab}{\mkont'} \\ \mkont \nequiv \kcons{\kfn{\mval}}{\mkont''}}
+%             {\mtrace\tpl{\mpoint,\mstore,\mkont} \simeq \tpl{\mpoint,\mstore,\mkont,\mktab,\mmemo}} \\
+% %
+%   \inferrule{\mkont \in \unroll{\mktab}{\mkont'} \\
+%              ((\mexpr,\menv[\mvar \mapsto \maddr]), \mstore\sqcup[\maddr \mapsto \set{\mval}]) \notin \dom(\mmemo)}
+%             {\mtrace\tpl{\mval,\mstore,\kcons{\kfn{\slam{\mvar}{\mexpr}, \menv}{\mkont}}} \simeq \tpl{\mval,\mstore,\kcons{\kfn{\slam{\mvar}{\mexpr},\menv}}{\mkont'},\mktab,\mmemo}} \\
+% %
+%   \inferrule{\tpl{\mval', \mstore', \mkont} \notin \mtrace'' \\
+%              \mkont \in \unroll{\mktab}{\mkont''} \\
+%              ((\mexpr,\menv[\mvar \mapsto \maddr]), \mstore\sqcup[\maddr \mapsto \set{\mval}]) \in \dom(\mmemo)}
+%             {\mtrace'\tpl{\mval, \mstore, \kcons{\kfn{\slam{\mvar}{\mexpr}, \menv}}{\mkont}}\mtrace''
+%               \simeq \tpl{\mval, \mstore, \kcons{\kfn{\slam{\mvar}{\mexpr}, \menv}}{\mkont''}, \mktab, \mmemo}}
+% \end{mathpar}
+% This means that states which ``line up'' regardless of history are related, and that states that follow a function call that has not yet completed are related to the function call state where we already have the memoized results.
+% %
+% Each step in this case will get ``closer to'' the result to memoize, as given by the length of the path we get from the invariant on the memo table.
+% \begin{proof}
+%   Let $\mtrace,\mtrace',\mstate_\Xi$ be arbitrary such that $\mtrace \simeq \mstate_\Xi$ and $\mtrace \tred{\stepto} \mtrace'$.
+%   By cases on $\mtrace \simeq \mstate_\Xi$:
+%   \begin{byCases}
+%     \case{\text{First rule}}{One step related by simple case analysis.}
+%     \case{\text{Second rule}}{One step related by definitions of $\mathit{unroll}$, $\stepto$ and $\pdstepto$.}
+%     \case{\text{Third rule}}{
+%     By cases on $\mtrace\mstate \tred{\stepto} \mtrace\mstate\mstate'$:
+%     \begin{byCases}
+%       \case{\mtrace\tpl{(\svar\mvar, \menv), \mstore, \mkont} \stepto
+%         \mtrace\mstate\tpl{\mval,\mstore,\mkont}}{...}
+%       % application
+%       \case{\mtrace\tpl{(\sapp{\mexpri0}{\mexpri1}, \menv), \mstore,
+%           \mkont} \stepto \mtrace\mstate\tpl{(\mexpri0, \menv),
+%           \mstore, \kcons{\kar{\mexpri1,\menv}}{\mkont}}}{...}
+%       % argument evaluation
+%       \case{\mtrace\tpl{\mval, \mstore,
+%           \kcons{\kar{\mexpr,\menv}}{\mkont}} \stepto
+%         \mtrace\mstate\tpl{(\mexpr, \menv), \mstore,
+%           \kcons{\kfn{\mval}}{\mkont}}}{...}
+%       % function call
+%       \case{\mtrace\tpl{\mval,\mstore,\kcons{\kfn{\vclo{\slam{\mvar}{\mexpr}}{\menv}}}{\mkont}}
+%         \stepto \mtrace\mstate\tpl{(\mexpr,
+%           \extm{\menv}{\mvar}{\maddr}),
+%           \joinone{\mstore}{\maddr}{\mval}, \mkont}}{...}
+%     \end{byCases}}
+%   \end{byCases}
+%   By \autoref{lem:tab-inv}
+  
+%   Soundness is a corollary of \autoref{lem:tab-inv}.
+% \end{proof}
 
-\noindent{}Proof of \autoref{thm:refinement}.
-\begin{proof}
-  todo
-\end{proof}
+% \noindent{}Proof of \autoref{thm:global}.
+% \begin{proof}
+% %% TODO
+%   The invariants of the memo and k-tables are independent of the states that carry them, so lifting them to a global position does not affect their information.
+% \end{proof}
 
-\noindent{}Proof of \autoref{thm:cfa2}.
-\begin{proof}
-  todo
-\end{proof}
+% \noindent{}Proof of \autoref{thm:refinement}.
+% \begin{proof}
+%   todo
+% \end{proof}
 
-\noindent{}Proof of \autoref{thm:concrete-sr}.
-\begin{proof}
-  todo
-\end{proof}
+% \noindent{}Proof of \autoref{thm:cfa2}.
+% \begin{proof}
+%   todo
+% \end{proof}
 
-\noindent{}Proof of \autoref{thm:sound-sr}
-\begin{proof}
-  tood
-\end{proof}
+% \noindent{}Proof of \autoref{thm:concrete-sr}.
+% \begin{proof}
+%   todo
+% \end{proof}
+
+% \noindent{}Proof of \autoref{thm:sound-sr}
+% \begin{proof}
+%   todo
+% \end{proof}
