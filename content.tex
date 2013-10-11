@@ -294,6 +294,14 @@ Instead of following an entire path through a call to return a value, we simply 
   \label{fig:summary-semantics}
 \end{figure}
 
+This semantics is only correct for fresh allocation strategies, which in turn make the reduction relation deterministic.
+%
+As it is, the CESK machine simulates the tabular machine, but not the other way around;
+%
+if we use a finite allocation strategy, then we don't explore some non-deterministic paths that lead to different results for a function call.
+%
+We thus explore all paths and share the k-table and memo tables between all paths.
+
 To turn this semantics into PDCFA's algorithm for constructing a Dyck state graph, given the appropriate $\alloc$, we apply a widening operator to make $\mstore$, $\mkont$, and $\mmemo$ shared amongst all states (meaning states then become represented without these components), in what is then called a $\System$. We use a meta-function $\wn$, ``wide to narrow,'' to shift between the two representations of states.
 %
 We show only the memo and continuation table widening, since store widening is standard.
@@ -308,20 +316,21 @@ We show only the memo and continuation table widening, since store widening is s
   \mastate \in \sa{State} &= (\Expr \times \Env) \times \Store \times \Kont \\
   \System &= \wp(\sa{State}) \times \wp(\sa{State}) \times \KTab \times \Memo \\
   {\mathcal F} &: \sa{\State} \to \System \to \System \\
-  {\mathcal F}(\mastate_0)(S, F, \mktab, \mmemo) &= (S \cup S', F', \mktab', \mmemo') \\
-  \text{where } I &= \setbuild{\mstate'}{\mastate \in F, \wn(\mastate,\mktab,\mmemo) \stepto \mstate'} \\
+  {\mathcal F}(\mastate_0)(S, \emptyset, \mktab, \mmemo) &= (S, \emptyset, \mktab, \mmemo) \\
+  {\mathcal F}(\mastate_0)(S, F\cup\set{\mastate}, \mktab, \mmemo) &= (S \cup S', F\cup F', \mktab', \mmemo') \\
+  \text{where } I &= \setbuild{\mstate'}{\wn(\mastate,\mktab,\mmemo) \stepto \mstate'} \\
                 \wn(\tpl{(\mexpr,\menv),\mstore,\mkont},\mktab,\mmemo)
                    &= \tpl{(\mexpr,\menv),\mstore,\mkont,\mktab,\mmemo}
 \end{align*}
 \begin{minipage}{.55\linewidth}
   \begin{align*}
-    \mktab' &=  \bigsqcup\setbuild{\mktab'}{\wn(\_, \_, \mktab', \_) \in I} \\
-    \mmemo' &= \bigsqcup\setbuild{\mmemo'}{\wn(\_, \_, \_, \mmemo') \in I}
+    \mktab' &=  \bigsqcup\setbuild{\mktab'}{\wn(\_, \mktab', \_) \in I} \\
+    \mmemo' &= \bigsqcup\setbuild{\mmemo'}{\wn(\_, \_, \mmemo') \in I}
   \end{align*}
 \end{minipage}
 \begin{minipage}{.40\linewidth}
   \begin{align*}
-    S' &= \setbuild{\mastate'}{\wn(\mastate', \_, \_, \_) \in I} \cup \set{\mastate_0}\\
+    S' &= \setbuild{\mastate'}{\wn(\mastate', \_, \_) \in I} \cup \set{\mastate_0}\\
     F' &= S' \setminus S
   \end{align*}
 \end{minipage}
@@ -375,25 +384,24 @@ We should expect that a pushdown analysis would predict this evaluates to true, 
 %
 0CFA~\citep{dvanhorn:Shivers:1991:CFA} claims there is a loop from the second call of \texttt{id} to the first, and thusly predicts this program evaluates to true or false.
 %
-PDCFA claims there is no loop, and depending on the implementation, that the result is true or false (paper), or just true (implemented).
-\footnote{This is because the paper steps every seen state with the current store every iteration, but the implementation only steps states that need stepping.}
+PDCFA claims there is no loop, and depending on the implementation, that the result is true.
 %
 The example evaluation is in \autoref{fig:ex-eval}.
 %
 We maintain enough context to distinguish the return points of \texttt{id} to not rebind \texttt{y} to 1.
 %
-When determining control flow through the expression, we consult $\mmemo$ to continue past function calls, so there is no confusion about a back edge from the second call to \texttt{id}.
+When determining control flow through the expression, we consult $\mktab$ to continue past function returns, so there is no confusion about a back edge from the second call to \texttt{id}.
 %
 
 \begin{figure}
   \centering
     \begin{minipage}{0.55\linewidth}
       \begin{center}
-        $\begin{array}{l}\includegraphics[scale=0.65]{example1}\end{array}$ \\
+        $\begin{array}{l}\includegraphics[scale=0.5]{example1}\end{array}$ \\
         $\Downarrow$ \\
-        $\begin{array}{l}\includegraphics[scale=0.65]{example2}\end{array}$ \\
+        $\begin{array}{l}\includegraphics[scale=0.5]{example2}\end{array}$ \\
         $\Downarrow$ \\
-        $\begin{array}{l}\includegraphics[scale=0.65]{example3}\end{array}$
+        $\begin{array}{l}\includegraphics[scale=0.5]{example3}\end{array}$
       \end{center}
     \end{minipage}
     \begin{minipage}{0.43\linewidth}
@@ -402,9 +410,9 @@ When determining control flow through the expression, we consult $\mmemo$ to con
           \hline
           \# & $\mstore$ & $\mkont$ \\
           \hline
-          0 & $[{\tt id} \mapsto \set{(\slam{\mvar}{\mvar},\bot)}]$ & $\mkont_0$ \\
+          0 & $[{\tt id} \mapsto \set{(\slam{\mvar}{\mvar},\iota)}]$ & $\mkont_0$ \\
           1 & $\mstore_0[{\tt \mvar} \mapsto \set{0}]$ & $\krt{\mctx_0}$ \\
-          2 & $\mstore_1[{\tt y} \mapsto \set{0}]$ & $\mathbf{lt}({\tt z}, {\tt (}\le\ {\tt y}\ {\tt z)})$ \\
+          2 & $\mstore_1[{\tt y} \mapsto \set{0}]$ & $\mathbf{lt}({\tt z}, {\tt (}\le\ {\tt y}\ {\tt z)}, \iota)$ \\
           3 & $\mstore_2[{\tt x} \mapsto \set{0,1}]$ & $\krt{\mctx_1}$ \\
           4 & $\mstore_3[{\tt z} \mapsto \set{0,1}]$ & $\kmt$ \\
           \hline
@@ -460,7 +468,7 @@ Allocation strategies are comparable if they produce equal addresses regardless 
 %
 More formally, $\alloc$ and $\alloc^*$ are comparable if this implication holds:
 \begin{mathpar}
-  \inferrule{\mkont \in \unroll{\mktab}{\mkont'}}
+  \inferrule{\mkont \in \unroll{\mktab}{\mkont', \emptyset}}
             {\alloc(\tpl{\mpoint,\mstore,\mkont}) = \alloc^*(\tpl{\mpoint,\mstore,\mkont',\mktab,\mmemo})}
 \end{mathpar}
 
@@ -474,7 +482,7 @@ The $\mathit{unroll}$ function interprets what are all the valid continuations t
             {\mkont \in \unroll{\mktab}{\krt{\mctx}, G}}  
 \end{mathpar}
 
-We add $G$ to protect against unguarded corecursion in order for the definition to be well-defined.
+We add $G$ to protect against unguarded corecursion in order for $\mathit{unroll}$ to be well-defined.
 %
 Interpreting a function with ill-founded recursion can lead to a table such that $\krt{\mctx} \in \mktab(\mctx)$.
 %
@@ -487,7 +495,9 @@ The first is that the memo table only contains information about previously seen
 %
 The second, $\phi_{\reachable}$, states that all the calling contexts in the continuation table reach some unrolling of the current state.
 %
-The final invariant, $\phi_{\memo}$, states that the memo table is correct: all calling contexts reach the memoized result, with the calling context's continuation in the tail (to justify using stack-irrelevance).
+The final invariant, $\phi_{\memo}$, states that all paths starting at a function call either reach the memoized result, or if the path does not include a return, there is an extension that will.
+%
+The portion of these paths between call and return hal the calling context's continuation in the tail to justify using stack-irrelevance.
 
 \begin{figure}
   \centering
@@ -503,14 +513,12 @@ The final invariant, $\phi_{\memo}$, states that the memo table is correct: all 
     \tpl{\mpoint', \mstore', \mkont'} \stepto^* \tpl{\mpoint, \mstore, \mkont''} \\
     \phi_{\memo} &=
     \forall (\mval, \mstore'') \in \mmemo(\mpoint',\mstore'). \\
-    &\qquad \exists \mtrace\equiv\tpl{\mpoint', \mstore', \mkont'}
-    \stepto^* \tpl{\mval,\mstore'', \mkont'}.
-    \hastail(\mtrace,\mkont') \\
+    &\qquad\exists \mtrace\equiv\tpl{\mpoint', \mstore', \mkont'} \stepto^* \tpl{\mval,\mstore'',\mkont'}. \hastail(\mtrace,\mkont')
   \end{align*}
   \caption{Table invariants}
 \label{fig:inv}
 \end{figure}
-\begin{lemma}[Table invariants]\label{lem:tab-inv}
+\begin{lemma}[Table invariants in CESK$\mathit{\Xi{}M}$]\label{lem:tab-inv}
   If $\inv(\mstate)$ and $\mstate \stepto \mstate'$ then $\inv(\mstate')$.
 \end{lemma}
 
@@ -536,13 +544,13 @@ When traces (sequences of states such that adjacent states are related by $\step
   \replacetail(\mtrace\mstate,\mkont,\mkont') &= \replacetail(\mtrace,\mkont,\mkont')\replacetail(\mstate,\mkont,\mkont') \\
 \end{align*}
 
-\begin{claim}(Correctness of PDCFA)\label{thm:pdcfa-tabular}
-  Tabular semantics has a bisimulation with the standard semantics with comparable allocation strategies.
+\begin{claim}(Correctness of Concrete Summarization)\label{thm:concrete-tabular}
+  The standard semantics has a bisimulation with the tabular semantics given comparable fresh allocation strategies.
 \end{claim}
 
-Finally, we can show that even if the tables are shared amongst all states, they are precise enough to not interfere with the results.
-\begin{claim}[Equivalence with global tables]\label{thm:global}
-  Tabular semantics has a bisimulation with memo-and-k-table-widened semantics.
+Finally, we can show that the reductions we find between states paired with the shared tables define a sound and complete abstraction of the CESK machine with a comparable allocation strategy.
+\begin{claim}[Correctness of PDCFA]\label{thm:global}
+  Widened tabular semantics reifies a relation that has a bisimulation with the standard semantics.
 \end{claim}
 
 \section{Deriving GC from the introspective pushdown model}\label{sec:gc}
@@ -587,14 +595,14 @@ Garbage collection ($\Gamma$) amounts to restricting the heap to just the reacha
 The ``reaches'' metafunction ($\reaches$) is a transitive closure of ``touches'' as it weaves through the store, starting from some root set of addresses:
 
 \begin{align*}
-  \reaches(\mathit{root}, \mstore) &= \setbuild{b}{\maddr \in \mathit{root}, \maddr \rightsquigarrow_\mstore^* b} \\
-   &
+  \reaches(\mathit{root}, \mstore) = \setbuild{b}{\maddr \in \mathit{root}, \maddr \rightsquigarrow_\mstore^* b}
+   \qquad
                \inferrule{\mval \in \mstore(\maddr) \\
                              b \in \touches(\mval)}
                             {\maddr \rightsquigarrow_\mstore b}
 \end{align*}
 
-This semantics of course enjoys the soundness properties that GC does not introduce dangling pointers (\autoref{thm:gc-pointers}), equal length traces are equal up to GC (in the concrete) (\autoref{thm:gc-concrete}), and abstractions are sound with respect to collected states (\autoref{thm:gc-sound}).
+This semantics of course enjoys the soundness properties that GC does not introduce dangling pointers, equal length traces are equal up to GC (in the concrete), and abstractions are sound with respect to collected states.
 %
 Technically since this semantics inspects the touched addresses of the continuation, the set of touched addresses should be considered part of the ``context'' in the $\mathbf{rt}$ continuations.
 %
@@ -638,7 +646,7 @@ This resulted in more than just the call/return matching of the previous section
 
 \begin{enumerate}
 \item{stack allocation for some bindings in an additional $\mframe \in \Store$}
-\item{strong updates on stack frames for resolved non-determinism}
+\item{strong updates on stack frames for resolved addresses}
 \end{enumerate}
 There are two orthogonal features of the semantics, embodied by our semantics' two metafunctions ($\bind$ and $\lookup$, respectively in \autoref{fig:frame-semantics}).
 %
@@ -699,7 +707,7 @@ The second of these is to ameliorate a problem they call ``fake rebinding.''
 %
 That is, since bindings in the abstract represent several values, we don't want to reference a variable \texttt{x} in two different places and have it resolve to two different values.
 %
-In AAM, a variable reference non-deterministically steps to all possible values associated with that variable.
+In AAM, a variable reference non-deterministically steps to all possible values associated with that variable, because there are several possible values in the store for allocated bindings.
 %
 Here we want to say that once \texttt{x} is considered to stand for value $v$, then all subsequent references of \texttt{x} should be $v$.
 %
@@ -798,7 +806,7 @@ With this proposition, we can prove that the CES$\xi$K machine that always alloc
 %
 
 \begin{claim}[Correctness of CFA2]\label{thm:cfa2}
-  Tabular semantics has a bisimulation with standard semantics.
+  The widened tabular semantics reifies a relation that has a bisimulation with standard semantics.
 \end{claim}
 This proof has the same structure as that of PDCFA.
 
@@ -1170,13 +1178,13 @@ At return boundaries, the memo table must add the result to all the represented 
 The result of this viewpoint is a sound, precise, and computable semantics for a ``pushdown approach'' to analyzing delimited, composable control.
 
 \begin{claim}\label{thm:concrete-sr}
-  Tabular semantics has a bisimulation with standard semantics given fresh allocation.
+  Tabular semantics simulates the standard semantics given fresh allocation.
 \end{claim}
 
 We prove this with the invariant that the continuation and meta-continuation have unique unrollings in addition to the table invariants from \autoref{sec:pdcfa}, since the distinct $\mstore$ at push and capture time makes entries in $\mktab$ unique, regardless of $\mmktab$.
 
 \begin{claim}\label{thm:sound-sr}
-  Tabular semantics simulates standard semantics with abstract allocation.
+  Widened tabular semantics reifies a relation that simulates standard semantics.
 \end{claim}
 
 \paragraph{Comparison to PDCFA CPS'd to remove {\tt shift} and {\tt reset}:}{
