@@ -202,15 +202,11 @@ We borrow this technique on top of our own.
   \label{fig:base-semantics}
 \end{figure}
 
-\paragraph{Tracking return points:} the magic of the method is in keeping a table of continuation segments for each function and store pair, where the continuation is segmented at function boundaries.
+\paragraph{Tracking return points:} the crux of the method is the table of continuations for each function and store pair.
 %
 This closely mirrors the technique of store-allocating continuations used in AAM.
 %
-Instead of deferring to the table (store) for the remainder of a continuation for each frame, we only have indirections at function call boundaries (see last 2 rules in figure \ref{fig:summary-semantics} for saving and restoring continuations).
-%
-Note that since AAM is about finitizing the state space, this step itself fits within the AAM method, since continuations within functions truncated at call boundaries are bounded by the nesting depth of those functions, thereby making the continuation space finite.
-%
-In the monovariant case, the number of continuations is still linear in the size of the program.
+The primary differences are that we separate the table from the store, and continuations do not indirect through the table for each continuation frame\footnote{They could, but it is unnecessary and wasteful}.
 %%
 
 %%
@@ -781,7 +777,7 @@ We give a simplified semantics that is more along the AAM style, but CFA2's appr
 %%
 CFA2 uses a ``local semantics'' that is similar to our segmenting continuations at function boundaries, but gets stuck when it gets to a point where it would need to ``return.''
 %
-It instead appeals to an external, imperative algorithm for summarization to sew the function calls and returns together by pattern matching on the states that the local semantics produces.
+Returns are un-stuck by an imperative summarization algorithm driving the state exploration.
 %
 What we show here is almost wholly the same in character, only embodied still in terms of a machine semantics and thus more easily reasoned about, and can be run in the concrete.
 %%
@@ -789,7 +785,7 @@ What we show here is almost wholly the same in character, only embodied still in
 %%
 We show only the significantly modified rules of the semantics in figure \ref{fig:frame-semantics}.
 %
-The other rules simply carry along the extra $\mframe$ component untouched.
+%The other rules simply carry along the extra $\mframe$ component untouched.
 %
 The meta-functions the semantics uses to extend and consult the heap and stack use implicit information from the pre-analysis we described above:
 
@@ -809,9 +805,9 @@ The meta-functions the semantics uses to extend and consult the heap and stack u
 
 Sidestepping fake rebinding does not need to be restricted to stackable references, but that is what CFA2 does.
 %
-Indeed, as soon as the non-determinism has been determined, we could extend the stack frame so any subsequent reference means what it meant previously in the function (reminiscent of how equality information of unknowns is tracked in \citet{ianjohnson:DBLP:journals/cacm/DilligDA10}).
+As soon as the non-determinism has been determined, we could extend the stack frame so any subsequent reference means what it meant previously in the function\footnote{This is reminiscent of how equality of unknowns is tracked in \citet{ianjohnson:DBLP:journals/cacm/DilligDA10}}.
 %
-Look-up would then always try the stack frame before falling back on the heap (of course this must be limited to immutable addresses).
+Look-up would then always try the stack frame before falling back on the heap (this must be limited to immutable addresses).
 %%
 
 A tabular semantics for the CES$\xi$K machine follows the previous section almost entirely, except that $\mktab$ now stores $(\mkont, \mframe)$ pairs, and returns reinstate the saved $\mframe$:
@@ -1114,11 +1110,9 @@ For example, a loop that continually captures continuations would introduce unbo
 %
 This means the store is not finite height, and there may be no fixed point.
 
-\paragraph{Possible fixes to non-termination:} The simplest fix to the circularity would be to strip stores out of the context of the $\rt$ in a captured continuation, and additionally consider contexts with a stripped store an abstraction of the same context with any store.
+\paragraph{A fix to non-termination:} we allow for a tunable approximation by using $\alloc$.
 %
-An alternative, more tunable approximation, uses our precision-tuning friend, $\alloc$.
-%
-Instead of entirely removing the store component of the $\rt$ context, we can replace it with an address of possible stores that it would approximate.
+Captured continuations' store component in the $\rt$ context gets replaced with an address of possible stores that it would approximate.
 
 \begin{figure*}
   \centering
@@ -1377,7 +1371,7 @@ Memoization with respect to the entire store is safe, if not a little wasteful; 
 %
 There are techniques to ignore differences in the heap when they are irrelevant, dubbed ``sparseness analysis'' that have been successful for large-scale first-order analysis~\citep{ianjohnson:DBLP:conf/pldi/OhHLLY12}, but they rely on a pre-analysis that knows the control-flow graph.
 %
-Alternatively, there is an analogous concept in concrete semantics called ``self-adjusting computation'' that has been used for higher-order programs that looks like the right starting point for systematically constructing sparse analyses.
+Alternatively, there is an analogous concept in concrete semantics called ``self-adjusting computation''~\citep{ianjohnson:DBLP:conf/afp/AcarL08} that has been used for higher-order programs that looks like the right starting point for systematically constructing sparse analyses.
 %
 %% XXX: Don't show this
 %We have promising preliminary results in this direction that don't require a pre-analysis, but we leave further investigation of sparse techniques to future work.
