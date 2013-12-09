@@ -17,7 +17,8 @@
 \usepackage[numbers,sectionbib]{natbib}
 \usepackage[english]{babel}
 % pdfpagescrop for preprint only
-\usepackage[hidelinks,pdfpagescrop={92 62 523 728}]{hyperref}
+%\usepackage[hidelinks,pdfpagescrop={92 62 523 728}]{hyperref}
+\usepackage[hidelinks]{hyperref}
 \usepackage{cleveref}
 \usepackage{placeins}
 
@@ -52,5 +53,5 @@
 \bibliographystyle{splncsnat}
 \bibliography{bibliography}
 
-\appendix{\input{proofs}}
+\iftr{\appendix{\input{proofs}}}
 \end{document}

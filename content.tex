@@ -15,7 +15,7 @@ CFA2 and PDCFA have difficult details to easily apply to an off-the-shelf semant
 %%
 
 %%
-There is a systematic process for transforming off-the-shelf programming language semantics into a form amenable to \emph{regular} analysis that has been widely applied with great success to production programming languages~\citet{dvanhorn:VanHorn2010Abstracting} (a technique called abstracting abstract machines, or AAM).
+There is a systematic process for transforming off-the-shelf programming language semantics into a form amenable to \emph{regular} analysis that has been widely applied with great success to production programming languages (a technique called abstracting abstract machines, or AAM~\citep{dvanhorn:VanHorn2010Abstracting}).
 %
 A contribution of this paper is a systematic process to construct \emph{pushdown} analyses of programming languages, due to the precision (and often performance) benefits.
 %
@@ -47,7 +47,7 @@ Summarization algorithms need not be restricted to languages with well-bracketed
 %
 We can adopt the technique for higher precision in the common case but still handle difficult cases such as first-class control.
 %
-This was shown for the \rackett{call-with-current-continuation} (a.k.a. \rackett{call/cc}) operator in~\citet{ianjohnson:Vardoulakis2011Pushdown}.
+This was shown for the \rackett{call-with-current-continuation} (or \rackett{call/cc}) operator in~\citet{ianjohnson:Vardoulakis2011Pushdown}.
 %
 This work illuminated the fact that we can harness the enhanced technology of pushdown analyses in non-pushdown models of computation.
 %
@@ -55,13 +55,11 @@ Doing this sacrifices call/return matching in the general case, but in practice 
 %%
 
 %%
-A downside of the work providing \rackett{call/cc} is that it was an algorithmic change to the already complicated CFA2 --- there was no recipe for how to do this for one's favorite control operator.
+This paper extends the work providing \rackett{call/cc} by giving an operational view of what summarization is, in essence.
 %
-This paper seeks to do just that with an operational view of what summarization is, in essence.
+In other words, we give a concrete semantics to the algorithmic techniques that the analyses in the literature use in the abstract, and maintain the original meaning of the language.
 %
-In other words, we give a concrete semantics to the tricks that the analyses in the literature use in the abstract, and maintain the original meaning of the language.
-%
-We also give intuitive analogies to well-established ideas and techniques so that the working semanticist can write a pushdown analysis for her language.
+We also give intuitive analogies to well-established ideas and techniques so that the working semanticist can write a pushdown analysis for their language.
 %
 In order to demonstrate the applicability of this viewpoint, we show a new analysis for a language with composable control.
 %
@@ -69,18 +67,33 @@ All of the semantics modeled in this paper are implemented in full detail in PLT
 
 There are common underpinnings of PDCFA and CFA2 that can be embodied as concrete ``summarization'' machinery in the programming language semantics: 
 \begin{enumerate}
-\item{bound continuations with with delimiters that specify the exact context in which any continuation replacement would lead to the same result, and}
-\item{memoize at these delimiters}
+\item{memoize calls with a ``return'' stack frame that tracks calling context, and}
+\item{store stacks that reach calls in order to continue to them after memoizing}
 \end{enumerate}
 
 %%
-The first of these two might seem unfamiliar, but it is just identifying what is needed for sound memoization, and we delimit the continuations in order to mark where to memoize results.
+The first of these is a semantic approach to memoizing that is a straight-forward analog to the programmatic approach.
 %
-In the case of a CESK machine, where the store is relevant to the evaluation of functions, a context is just the CES portion since stacks don't matter.
+A memoizing program will call a function in a non-tail context in order to obtain the result, store the result to an ``enough context to obtain the same result'' key in a table (in a pure setting, just the function and arguments), and continue with the result.
 %
-For stack inspecting analyses, a context is CES plus the inspected portion of K.
+The semantics we use is functionally equivalent, only we have a special stack frame that acts as the non-tail context that additionally stores results in a table that is part of the machine state.
 %
-As soon as we have a value that such a context evaluates to, all subsequent visits to that context can jump straight to the memoized result(s).
+In the case of a baseline abstract machine for AAM, a CESK machine~\citep{dvanhorn:Felleisen1987Calculus}, the store is relevant to the evaluation of functions.
+%
+As such, the CES portion of a state suffices as ``enough context.''
+%
+For a semantics that inspects the stack, ``enough context'' is CES plus the inspected portion of K.
+%%
+
+%%
+The second piece of machinery serves two purposes:
+%
+(1) the state space contains all function callsites to project out a control-flow graph, and %
+(2) the worklist semantics of execution makes it possible to appeal to an incomplete memo table, so the saved stacks allow new results to flow to calls that used incomplete memo information.
+%
+Consider a non-deterministic semantics where a function call reaches a result and memoizes, a second call uses the memo table (storing its stack), and then the original call reaches another result (since the worklist allows for such parallel reduction).
+%
+The second result had better also flow to the second call to maintain soundness!
 %%
 
 %%
@@ -103,15 +116,13 @@ PDCFA does not have some orthogonal semantic components that CFA2 features to im
 %
 The key insight of PDCFA is to notice in languages without stack-capturing features, the continuation is only modified a frame at a time.
 %
-If the state space without the stack is finite (and it can be made finite with an approximation ala AAM), then the model falls directly into the realm of pushdown systems.
-%
-They thus recast the problem in terms of pushdown systems.
+If the state space without the stack is finite (and it can be made finite with an approximation ala AAM), then the model is naturally recast into the realm of pushdown systems.
 %
 The whole of their machinery is then computing the pushdown system on-the-fly, only considering states reachable from the initial state.
 %
-They call the main data-structure for this a Dyck state graph.
+A key component is computing the $\epsilon$-closure graph to match nodes that push frames with later nodes following the pop of that frame.
 %
-They additionally compute an $\epsilon$-closure graph to match nodes that push frames with later nodes following the pop of that frame, which keeps edges between nodes that have a net-zero stack change path between them.
+This stores all edges between nodes that have a net-zero stack change path between them.
 %
 
 \subsection{Concrete semantics and summarization}
@@ -150,7 +161,7 @@ The semantic spaces for the machine follow.
 The $\Addr$ space is what controls the precision of the model.
 %
 For a concrete semantics, we require the allocation meta-function $\alloc :
-\State \to \Addr$ to return fresh addresses ($\alloc(\tpl{(\mexpr, \menv), \mstore, \mkont}) \notin \dom(\mstore)$), but any choice of address is sound~\citep{dvanhorn:Might2009Posteriori}.
+\State \to \Addr$ to return fresh addresses ($\alloc(\mstate) \notin \dom(\mstore)$), but any choice of address is sound~\citep{dvanhorn:Might2009Posteriori}.
 %
 If $\alloc$ only uses addresses from a finite subset of $\Addr$, then the state space without continuations is finite, and the space of continuation frames is finite.
 %
@@ -236,30 +247,36 @@ A ``summary edge'' in CFA2 or equivalently an $\epsilon$-edge in PDCFA is an edg
 %
 In our model, we only ``push'' when we call a function, and we only ``pop'' when we return with a value.
 %
-There is an analogy to something more operational: summary edges embody memoization (see the last rule in figure \ref{fig:summary-semantics}).
+There is an analogy to something more operational: summary edges embody memoization.
 %
-Instead of following an entire path through a call to return a value, we simply jump from the call to the return with the result of the call, with the resulting context changes---in this case only the store (the second case of rule 4).
+Instead of following an entire path through a call to return a value, we simply jump from the call to the return with the result of the call, with the resulting context changes---in this case only the store [memo lookup].
 %%
 
 \begin{figure}
   \centering
   $\mstate \stepto \mstate' \text{ where } \maddr = \alloc(\mstate)$ \\
-  \begin{tabular}{r|l}
+  \begin{tabular}{r|ll}
     \hline
 % variable lookup
     $\tpl{(\svar\mvar, \menv), \mstore, \mkont, \mktab, \mmemo}$
     &
     $\tpl{\mval,\mstore,\mkont, \mktab, \mmemo}$ if $\mval \in \mstore(\menv(\mvar))$
+    &
+    [variable lookup]
     \\
 % application
     $\tpl{(\sapp{\mexpri0}{\mexpri1}, \menv), \mstore, \mkont, \mktab, \mmemo}$
     &
     $\tpl{(\mexpri0, \menv), \mstore, \kcons{\kar{\mexpri1,\menv}}{\mkont}, \mktab, \mmemo}$
+    &
+    [function eval]
     \\
 % argument evaluation
     $\tpl{\mval, \mstore, \kcons{\kar{\mexpr,\menv}}{\mkont}, \mktab, \mmemo}$
     &
     $\tpl{(\mexpr, \menv), \mstore, \kcons{\kfn{\mval}}{\mkont}, \mktab, \mmemo}$
+    &
+    [argument eval]
     \\
 % function call
     $\tpl{\mval,\mstore,\kcons{\kfn{\vclo{\slam{\mvar}{\mexpr}}{\menv}}}{\mkont},\mktab,\mmemo}$
@@ -269,6 +286,8 @@ Instead of following an entire path through a call to return a value, we simply 
           \krt{\mpoint, \mstore'},
           \mktab',
           \mmemo}$
+    &
+    [un-memoized call] 
      \\ & \quad if $(\mpoint, \mstore') \notin \dom(\mmemo)$
 \\
     & or \\
@@ -277,6 +296,7 @@ Instead of following an entire path through a call to return a value, we simply 
             \mkont,
             \mktab',
             \mmemo}$
+    & [memo lookup]
     \\ & \quad if $(\mval_\mathit{result},\mstore'') \in \mmemo(\mpoint,\mstore')$
     \\ % or, lookup in table
 %    & $\tpl{\mval, \mstore', \mkont,\mktab,\mmemo}$ if $\mval \in \mmemo(\mpoint, \mstore')$ \\    
@@ -288,6 +308,8 @@ Instead of following an entire path through a call to return a value, we simply 
     $\tpl{\mval, \mstore, \krt{\mpoint,\mstore'}, \mktab, \mmemo}$
     &
     $\tpl{\mval, \mstore, \mkont, \mktab, \joinone{\mmemo}{(\mpoint, \mstore')}{(\mval,\mstore)}}$
+    &
+    [memoize/return]
     \\ & \quad if $\mkont \in \mktab(\mpoint, \mstore')$
   \end{tabular}
   \caption{The summarizing tabular stack machine}
@@ -300,11 +322,9 @@ As it is, the CESK machine simulates the tabular machine, but not the other way 
 %
 if we use a finite allocation strategy, then we don't explore some non-deterministic paths that lead to different results for a function call.
 %
-We thus explore all paths and share the k-table and memo tables between all paths.
+We thus explore all paths and share the KTable and memo tables between all paths.
 
-To turn this semantics into PDCFA's algorithm for constructing a Dyck state graph, given the appropriate $\alloc$, we apply a widening operator to make $\mstore$, $\mkont$, and $\mmemo$ shared amongst all states (meaning states then become represented without these components), in what is then called a $\System$. We use a meta-function $\wn$, ``wide to narrow,'' to shift between the two representations of states.
-%
-We show only the memo and continuation table widening, since store widening is standard.
+To turn this semantics into PDCFA's algorithm for constructing a pushdown system with only reachable states, given the appropriate $\alloc$, we apply a widening operator to make $\mkont$, and $\mmemo$ shared amongst all states (meaning states then become represented without these components), in what is then called a $\System$. We use a meta-function $\wn$, ``wide to narrow,'' to shift between the two representations of states.
 %
 
 {
@@ -317,7 +337,7 @@ We show only the memo and continuation table widening, since store widening is s
   \System &= \wp(\sa{State}) \times \wp(\sa{State}) \times \KTab \times \Memo \\
   {\mathcal F} &: \sa{\State} \to \System \to \System \\
   {\mathcal F}(\mastate_0)(S, \emptyset, \mktab, \mmemo) &= (S, \emptyset, \mktab, \mmemo) \\
-  {\mathcal F}(\mastate_0)(S, F\cup\set{\mastate}, \mktab, \mmemo) &= (S \cup S', F\cup F', \mktab', \mmemo') \\
+  {\mathcal F}(\mastate_0)(S, F\uplus\set{\mastate}, \mktab, \mmemo) &= (S \cup S', F\cup F', \mktab', \mmemo') \\
   \text{where } I &= \setbuild{\mstate'}{\wn(\mastate,\mktab,\mmemo) \stepto \mstate'} \\
                 \wn(\tpl{(\mexpr,\menv),\mstore,\mkont},\mktab,\mmemo)
                    &= \tpl{(\mexpr,\menv),\mstore,\mkont,\mktab,\mmemo}
@@ -382,9 +402,9 @@ Call the constructor of this frame $\mathbf{lt}$.
 %%
 We should expect that a pushdown analysis would predict this evaluates to true, and there are no loops in the program.
 %
-0CFA~\citep{dvanhorn:Shivers:1991:CFA} claims there is a loop from the second call of \texttt{id} to the first, and thusly predicts this program evaluates to true or false.
+0-CFA~\citep{dvanhorn:Shivers:1991:CFA} claims there is a loop from the second call of \texttt{id} to the first, and thusly predicts this program evaluates to true or false.
 %
-PDCFA claims there is no loop, and depending on the implementation, that the result is true.
+PDCFA claims there is no loop and that the result is true.
 %
 The example evaluation is in \autoref{fig:ex-eval}.
 %
@@ -394,18 +414,37 @@ When determining control flow through the expression, we consult $\mktab$ to con
 %
 
 \begin{figure}
-  \centering
-    \begin{minipage}{0.55\linewidth}
-      \begin{center}
-        $\begin{array}{l}\includegraphics[scale=0.5]{example1}\end{array}$ \\
-        $\Downarrow$ \\
+      \begin{tabular}{rcl}
+        $\begin{array}{l}\includegraphics[scale=0.5]{example1}\end{array}$
+        & $\Rightarrow$ &
         $\begin{array}{l}\includegraphics[scale=0.5]{example2}\end{array}$ \\
-        $\Downarrow$ \\
+        & & \multicolumn{1}{c}{$\Downarrow$} \\
+        \begin{minipage}{0.5\linewidth}
+          \begin{center}
+            {\small
+              \begin{tabular}{|l|c|c|c|}
+                \hline
+                \# & $\mktab$ & $\mmemo$ \\
+                \hline
+                0  & $[\mctx_0 \mapsto \set{\mkont_0}]$ & $[\mctx_0 \mapsto \set{0}]$ \\
+                1  & $\mktab_0[\mctx_1 \mapsto \set{\mkont_2}]$ & $\mmemo_0[\mctx_1 \mapsto \set{0,1}]$ \\
+                \hline
+              \end{tabular}} \\[8pt]
+            {\small
+              \begin{tabular}{|l|c|}
+                \hline
+                \# & $\mctx$ \\
+                \hline
+                0  & $(({\tt x}, \iota), \mstore_1)$ \\
+                1  & $(({\tt x}, \iota), \mstore_3)$ \\
+                \hline
+              \end{tabular}}
+          \end{center}
+
+      \end{minipage} & &
         $\begin{array}{l}\includegraphics[scale=0.5]{example3}\end{array}$
-      \end{center}
-    \end{minipage}
-    \begin{minipage}{0.43\linewidth}
-      \begin{center} {\small
+      \end{tabular}
+    \begin{center} {\small
         \begin{tabular}{|l|c|c|}
           \hline
           \# & $\mstore$ & $\mkont$ \\
@@ -417,28 +456,8 @@ When determining control flow through the expression, we consult $\mktab$ to con
           4 & $\mstore_3[{\tt z} \mapsto \set{0,1}]$ & $\kmt$ \\
           \hline
         \end{tabular}} \\[10pt]
-      {\small
-        \begin{tabular}{|l|c|}
-          \hline
-          \# & $\mctx$ \\
-          \hline
-          0  & $(({\tt x}, \iota), \mstore_1)$ \\
-          1  & $(({\tt x}, \iota), \mstore_3)$ \\
-          \hline
-        \end{tabular}}
-      \\[10pt]
-      {\small
-        \begin{tabular}{|l|c|c|c|}
-          \hline
-          \# & $\mktab$ & $\mmemo$ \\
-          \hline
-          0  & $[\mctx_0 \mapsto \set{\mkont_0}]$ & $[\mctx_0 \mapsto \set{0}]$ \\
-          1  & $\mktab_0[\mctx_1 \mapsto \set{\mkont_2}]$ & $\mmemo_0[\mctx_1 \mapsto \set{0,1}]$ \\
-          \hline
-        \end{tabular}}    
+ Where $\mkont_0 = \mathbf{lt}({\tt y}, {\tt (let\ ([z\ (id\ 1)])\ (}\le\ {\tt y}\ {\tt z))}, \iota)$
     \end{center}
-  \end{minipage}
-Where $\mkont_0 = \mathbf{lt}({\tt y}, {\tt (let\ ([z\ (id\ 1)])\ (}\le\ {\tt y}\ {\tt z))}, \iota)$
 \caption{Example analysis evaluation}
 \label{fig:ex-eval}
 \end{figure}
@@ -460,6 +479,7 @@ Where $\mkont_0 = \mathbf{lt}({\tt y}, {\tt (let\ ([z\ (id\ 1)])\ (}\le\ {\tt y}
 % \item{\texttt{z} gets bound to $\set{0,1}$, and \texttt{($\le$ y z)} evaluates to true.}
 % \end{enumerate}
 
+\iftr{%
 \subsection{Metatheory}
 
 Correctness follows directly from the invariants we prove of $\mktab$ and $\mmemo$ in the tabular semantics.
@@ -544,14 +564,39 @@ When traces (sequences of states such that adjacent states are related by $\step
   \replacetail(\mtrace\mstate,\mkont,\mkont') &= \replacetail(\mtrace,\mkont,\mkont')\replacetail(\mstate,\mkont,\mkont') \\
 \end{align*}
 
-\begin{claim}(Correctness of Concrete Summarization)\label{thm:concrete-tabular}
-  The standard semantics has a bisimulation with the tabular semantics given comparable fresh allocation strategies.
-\end{claim}
+\begin{theorem}[Correctness of Concrete Summarization]\label{thm:concrete-tabular}
+  The standard semantics has a skipping bisimulation with the tabular semantics given comparable fresh allocation strategies.
+\end{theorem}
+\begin{proof}[Sketch]
+  The tabular semantics skipping simulates that standard semantics by appealing to the table invariants to show the long ``recomputation'' path.
+  Crucially, since the memo table is only set once before being used to bypass to the result, there must be only one possible result in the standard semantics. Otherwise, the tabular semantics would miss out on the other results for subsequent calls with the same context.
+  The fresh allocation strategy ensures that relation is deterministic and thus function calls only reduce to one result.
+
+  The standard semantics skipping simulates the tabular semantics because ``recomputing'' paths always have the calling stack as its tail, so we can step forward on the invariant's inductively built path until the result.
+\end{proof}
 
 Finally, we can show that the reductions we find between states paired with the shared tables define a sound and complete abstraction of the CESK machine with a comparable allocation strategy.
-\begin{claim}[Correctness of PDCFA]\label{thm:global}
-  Widened tabular semantics reifies a relation that has a bisimulation with the standard semantics.
-\end{claim}
+}
+\begin{theorem}[Correctness of PDCFA]\label{thm:global}
+  With a fair state selection from the frontier, the widened tabular semantics reflects a relation that has a bisimulation with the standard semantics.
+\end{theorem}
+\iftr{%
+\begin{proof}[Sketch]
+  The invariants on the tables still hold. 
+  The widening to share $\mmemo$ and $\mktab$ amongst all explored states reifies the search state into a $\sa{System}$. We can add a set of edges simply.
+  If we add $\mmemo$ and $\mktab$ to all states in these edges, we get a reduction relation comparable to the unwidened tabular semantics.
+  We prove that the infinite unrolling of the standard reduction relation stuttering bisimulates the relation reified from an infinite stepping of the widened tabular semantics.
+  This only holds if the state selection from the frontier is fair, since unfair choices can leave some function calls unresolved.
+  Formally,
+  \begin{equation*}
+    \setbuild{\mtrace}{\mtrace : i \le \omega, \mstate_0 \longmapsto^i \mstate} \simeq {\mathcal F}(\mstate_0)^\omega
+  \end{equation*}
+  where $\simeq$ is TODO
+by coinduction and appeals to the table invariants.
+  If a new function result is found after a call already used the memo table, the context of the memo user is used after memoizing, so it looks like that result was part of the original memo table lookup.
+  The fair selection guarantees that all function results will be eventually discovered, so the memo table appeals eventually catch up to the found results.
+\end{proof}
+}
 
 \section{Deriving GC from the introspective pushdown model}\label{sec:gc}
 
@@ -566,12 +611,18 @@ We follow the GC style of \citet{dvanhorn:Might:2006:GammaCFA} with a stop-and-c
 Address reachability is in terms of a base ``touches'' function, $\touches$, that is different for our continuations.
 %
 Entries in $\mktab$ might be circular, so we compute the continuation frames in a fixed-point before computing touched addresses:
-\begin{align*}
-  \touchesk{\mkont}(\mktab) &= \setbuild{\maddr}{\mkont \rightsquigarrow_\mktab^* \maddr}
-\\[2pt]
-  \touchesf(\kar{\mexpr,\menv}) &= \mathit{rng}(\menv|_{\mathit{fv}(\mexpr)}) \\
-  \touchesf(\kfn{\mval}) &= \touches(\mval)
-\end{align*}
+\begin{center}
+  \,
+  \begin{minipage}{0.32\linewidth}
+    $\touchesk{\mkont}(\mktab) = \setbuild{\maddr}{\mkont \rightsquigarrow_\mktab^*\maddr}$
+  \end{minipage}
+  \begin{minipage}{0.36\linewidth}
+    $\touchesf(\kar{\mexpr,\menv}) = \mathit{rng}(\menv|_{\mathit{fv}(\mexpr)})$
+  \end{minipage}
+  \begin{minipage}{0.3\linewidth}
+    $\touchesf(\kfn{\mval}) = \touches(\mval)$
+  \end{minipage}
+\end{center}
 \begin{mathpar}
   \inferrule{ }{\kcons{\mkframe}{\mkont} \rightsquigarrow_\mktab \mkont}
   \quad
@@ -586,11 +637,20 @@ Entries in $\mktab$ might be circular, so we compute the continuation frames in 
 \end{mathpar}
 
 Garbage collection ($\Gamma$) amounts to restricting the heap to just the reachable addresses, so a garbage-collecting semantics introduces the following reduction rule:
-\begin{align*}
-  \mstate &\stepto \Gamma(\mstate) \\
-  \Gamma(\tpl{(\mexpr,\menv),\mstore,\mkont, \mktab, \mmemo}) &= \tpl{(\mexpr,\menv),\mstore|_{\reaches(\mathit{root}, \mstore)}, \mkont, \mktab, \mmemo} \\
-  \text{where } \mathit{root} &= \touchesk{\mkont}(\mktab) \cup \mathit{rng}(\menv|_{\mathit{fv}(\mexpr)})
-\end{align*}
+\begin{center}
+  \begin{minipage}{0.3\linewidth}
+    \begin{align*}
+      \frac{\mstate \stepto \mstate'}{\mstate \stepto \Gamma(\mstate')}
+    \end{align*}
+  \end{minipage}
+  \begin{minipage}{0.65\linewidth}
+    \begin{align*}
+      \Gamma(\tpl{(\mexpr,\menv),\mstore,\mkont, \mktab, \mmemo}) &= \tpl{(\mexpr,\menv),\mstore|_{\reaches(\mathit{root}, \mstore)}, \mkont, \mktab, \mmemo} \\
+      \text{where } \mathit{root} &= \touchesk{\mkont}(\mktab) \cup
+      \mathit{rng}(\menv|_{\mathit{fv}(\mexpr)})
+    \end{align*}
+  \end{minipage}
+\end{center}
 %
 The ``reaches'' metafunction ($\reaches$) is a transitive closure of ``touches'' as it weaves through the store, starting from some root set of addresses:
 
@@ -604,23 +664,28 @@ The ``reaches'' metafunction ($\reaches$) is a transitive closure of ``touches''
 
 This semantics of course enjoys the soundness properties that GC does not introduce dangling pointers, equal length traces are equal up to GC (in the concrete), and abstractions are sound with respect to collected states.
 %
+The proofs are all similar to the original abstract GC paper's.
+%
 Technically since this semantics inspects the touched addresses of the continuation, the set of touched addresses should be considered part of the ``context'' in the $\mathbf{rt}$ continuations.
 %
-This extra context can be overlooked, since that means the computed touched addresses will be an overapproximation of what is already sound.
+This extra context can be overlooked, but it leads to larger live address sets.
 %
-More touched addresses means a less effective GC, but this is an acceptable tradeoff for a possibly smaller state space.
+More live addresses means a less effective GC, but this is an acceptable tradeoff for a possibly smaller state space.
 %
-\begin{claim}[No dangling pointers]\label{thm:gc-pointers}
+Indeed, the introspective pushdown analysis work chooses this more approximate method.
+%
+\iftr{%
+\begin{theorem}[No dangling pointers]\label{thm:gc-pointers}
   All addresses in $\Gamma(\mstate)$ are in the domain of $\Gamma(\mstate).\mstore$.
-\end{claim}
+\end{theorem}
 
-\begin{claim}[Garbage is irrelevant]\label{thm:gc-concrete}
+\begin{theorem}[Garbage is irrelevant]\label{thm:gc-concrete}
   If $\mstate \stepto^n \mstate'$ and $\mstate \stepto^n \mstate''$ then $\Gamma(\mstate') = \Gamma(\mstate'')$.
-\end{claim}
+\end{theorem}
 
-\begin{claim}[Abstract GC is sound for garbage-free states]\label{thm:gc-sound}
+\begin{theorem}[Abstract GC is sound for garbage-free states]\label{thm:gc-sound}
   If $\mstate \stepto \mstate'$ and $\alpha(\Gamma(\mstate)) \sqsubseteq \mastate$ then there is a $\mastate'$ such that $\mastate \astepto \mastate'$ and $\alpha(\Gamma(\mstate')) \sqsubseteq \mastate'$.
-\end{claim}
+\end{theorem}
 
 This final proposition is not in the original work on abstract GC; they prove soundness with respect to a concrete semantics that performs GC after every step.
 %
@@ -632,12 +697,11 @@ Both $\alpha$ and $\sqsubseteq$ are parameterized on the choice of $\Addr$, for 
 \begin{mathpar}
   \inferrule*[right={[Sound allocation]}]{\alpha(\mstate) \sqsubseteq \mastate}{\alpha(\alloc(\mstate)) \sqsubseteq \widehat{\alloc}(\mastate)}
 \end{mathpar}
+}
 \section{Deriving CFA2}
 \label{sec:cfa2}
 
-CFA2 is the first published analysis of a higher-order programming language that could properly match calls and returns.
-%
-We will show that it fits well into the same presentation we gave for PDCFA.
+CFA2 is the first published analysis of an untyped higher-order programming language that could properly match calls and returns.
 %
 Vardoulakis and Shivers had a clear goal of harnessing the extra information a pushdown model provides to produce a high-precision analysis that works well in practice.
 %
@@ -660,7 +724,7 @@ The first of these is an addition to the stack-less context.
 % variable lookup
     $\tpl{(\svar[\mlab]{\mvar}, \menv), \mstore, \mframe, \mkont}$
     &
-    $\tpl{\mval,\mstore,\mframe',\mkont}$ if $(\mframe', \mval) \in \lookup(\mstore,\mframe,\menv,\mvar,\mlab)$
+    $\tpl{\mval,\mstore,\mframe',\mkont}$ if $(\mframe', \mval) \in \lookup(\mstore,\mframe,\menv(\mvar),\mlab)$
     \\
 % % application
 %     $\tpl{(\sapp{\mexpri0}{\mexpri1}, \menv), \mstore, \mframe, \mkont}$
@@ -689,11 +753,7 @@ The first of these is an addition to the stack-less context.
 %
 There is a conservative pre-analysis that checks locally whether a binding will never escape, and classifies references (labeled with a distinguishing $\mlab$ from an arbitrary space of labels) as able to use the stack frame or not.
 %
-Their criteria for a binding never escaping is that it is never referenced in a function that is not its binder.
-%
-This can be extended in a language with more linguistic features; see Kranz's thesis about register-allocatable bindings in the Orbit Scheme compiler \citep{ianjohnson:kranz:thesis:1988}.
-%
-A stackable reference is one that appears in the body of the binding function, by which we mean not within the body of a nested function.
+Their criteria for a binding never escaping is like the criteria of register-allocatable bindings in the Orbit Scheme compiler~\citep{ianjohnson:kranz:thesis:1988}.
 %
 They use the information that a binding never escapes to not bother allocating it in the heap.
 %
@@ -739,11 +799,11 @@ The meta-functions the semantics uses to extend and consult the heap and stack u
             (\mstore, \snglm{\maddr}{\mval}) &\text{ if } \mvar \text{ allocations never escape} \\
             (\joinone{\mstore}{\maddr}{\mval}, \snglm{\maddr}{\mval}) &\text{ otherwise} \\
           \end{array}\right. \\
-  \lookup(\mstore,\mframe,\menv,\mvar,\mlab) &=
+  \lookup(\mstore,\mframe,\maddr,\mlab) &=
     \left\{\begin{array}{ll}
-          \setbuild{(\extm{\mframe}{\menv(\mvar)}{\set{\mval}}, \mval)}
-                   {\mval \in \mframe(\menv(\mvar))} & \text{if } \mlab \text{ non-escaping} \\
-          \setbuild{(\mframe,\mval)}{\mval \in \mstore(\menv(\mvar))} & \text{ otherwise}
+          \setbuild{(\extm{\mframe}{\maddr}{\set{\mval}}, \mval)}
+                   {\mval \in \mframe(\maddr)} & \text{if } \mlab \text{ non-escaping} \\
+          \setbuild{(\mframe,\mval)}{\mval \in \mstore(\maddr)} & \text{ otherwise}
            \end{array}\right.
 \end{align*}
 
@@ -780,7 +840,7 @@ We create an $\rt$ continuation at every function call.
 %
 This view contends with tail calls, but we can identify tail calls easily --- any call with an $\rt$ as its continuation is a tail call.
 %
-Tail calls are important in language implementations for space complexity reasons \citep{ianjohnson:clinger:tail-calls:1998}, but in an analysis, these concerns are less important.
+Tail calls are important in language implementations for space complexity reasons \citep{ianjohnson:clinger:tail-calls:1998}, but in an analysis, these concerns are less important since there is no unbounded recursion.
 %
 The repeated popping of $\rt$ inserted by what otherwise were tail-calls is synonymous with CFA2's transitive summaries.
 
@@ -791,23 +851,23 @@ The repeated popping of $\rt$ inserted by what otherwise were tail-calls is syno
 The stack frame introduces a refinement over the original CESK machine, so we first prove it correct with respect to the concrete semantics.
 %
 We follow up with a similar proof to that of PDCFA, which is that the CES$\xi$K machine has a bisimulation with its tabular semantics, with comparable allocation strategies.
-\begin{claim}[Correctness of stack frame refinement]\label{thm:refinement}
+\begin{theorem}[Correctness of stack frame refinement]\label{thm:refinement}
   The CES$\xi$K machine has a bisimulation with the CESK machine with fresh allocation.
-\end{claim}
+\end{theorem}
 This follows from the invariant that if a stack frame maps $\maddr$ to $\mval$, then the store maps $\maddr$ to $\mval$, meaning that the special lookup function is equivalent to lookup directly in the store (exploits immutability).
 %
-That is, if we always allocated bindings in the heap.
+%That is, if we always allocated bindings in the heap.
 %
 The additional escape information that allows us to elide allocation in the heap introduces a second level of reasoning, where the burden of proof falls on the escape analysis.
 %
-The additional escape analysis adds information to use in the proof, that if $\mvar$ never escapes, then every reference to allocations of $\mvar$'s binding will always be able to use $\mframe$ for the lookup.
+The escape analysis adds information to use in the proof, that if $\mvar$ never escapes, then every reference to allocations of $\mvar$'s binding will always be able to use $\mframe$ for the lookup.
 %
 With this proposition, we can prove that the CES$\xi$K machine that always allocates in the store has a bisimulation with the refined machine that exploits escape analysis to avoid unnecessary changes to the store.
 %
 
-\begin{claim}[Correctness of CFA2]\label{thm:cfa2}
+\begin{theorem}[Correctness of CFA2]\label{thm:cfa2}
   The widened tabular semantics reifies a relation that has a bisimulation with standard semantics.
-\end{claim}
+\end{theorem}
 This proof has the same structure as that of PDCFA.
 
 \ifwcm{
@@ -963,7 +1023,7 @@ However, the stacks captured by these operators always extend the stack when inv
 %
 Continuations that have this extension behavior are called ``composable continuations.''
 %
-Stack replacement is easily modeled in a regular analysis using the AAM approach, and Vardoulakis and Shivers showed it can be done in a pushdown approach (although it breaks the pushdown model).
+Stack replacement is easily modeled in a regular analysis using the AAM approach, and Vardoulakis and Shivers showed it can be done in a pushdown approach.
 %
 Stack extension, however, poses a new challenge for pushdown analysis, since one application of a composable continuation means pushing an unbounded amount of frames onto the stack.
 %
@@ -979,38 +1039,53 @@ Resets then insert a second-tier prompt.
 %
 The changed semantic spaces for the shift/reset semantics are as follows:
 
-\begin{align*}
-  \mstate \in \State &::= \tpl{\mpoint, \mstore, \mkont, \mmkont} \\
-  \mpoint \in \Point &::= (\mexpr, \menv) \alt \mval \\
-  \mval \in \Value &::= \vclo{\slam{\mvar}{\mexpr}}{\menv} \alt \vcomp{\mkont} \\
-  \mmkont \in \MKont &::= \kmt \alt \mkapp{\mkont}{\mmkont}
-\end{align*}
-
+\begin{center}
+  \begin{minipage}{0.45\linewidth}
+    \begin{align*}
+      \mstate \in \State &::= \tpl{\mpoint, \mstore, \mkont, \mmkont} \\
+      \mpoint \in \Point &::= (\mexpr, \menv) \alt \mval
+    \end{align*}
+  \end{minipage}
+  \begin{minipage}{0.50\linewidth}
+    \begin{align*}
+      \mval \in \Value &::= \vclo{\slam{\mvar}{\mexpr}}{\menv} \alt \vcomp{\mkont} \\
+      \mmkont \in \MKont &::= \kmt \alt \mkapp{\mkont}{\mmkont}
+    \end{align*}
+  \end{minipage}
+\end{center}
 \begin{figure}
   \centering
   $\mstate \stepto \mstate' \text{ where } \maddr = \alloc(\mstate)$ \\
-  \begin{tabular}{r|l}
+  \begin{tabular}{r|ll}
     \hline
 % Reset
     $\tpl{(\sreset{\mexpr}, \menv), \mstore, \mkont, \mmkont}$
     &
     $\tpl{(\mexpr, \menv), \mstore, \kmt, \mkapp{\mkont}{\mmkont}}$
+    &
+    [push prompt]
     \\
 % Pop prompt
     $\tpl{\mval, \mstore, \kmt, \mkapp{\mkont}{\mmkont}}$
     &
     $\tpl{\mval, \mstore, {\mkont}, {\mmkont}}$
+    &
+    [pop prompt]
     \\
 % Shift
     $\tpl{(\sshift{\mvar}{\mexpr}, \menv), \mstore, \mkont, \mmkont}$
     &
     $\tpl{(\mexpr, \extm{\menv}{\mvar}{\maddr}), \mstore',\kmt,\mmkont}$
+    &
+    [capture continuation]
     \\ & where $\mstore' = \joinone{\mstore}{\maddr}{\vcomp{\mkont}}$
     \\
 % continuation call
     $\tpl{\mval,\mstore,\kcons{\kfn{\vcomp{\mkont'}}}{\mkont}, \mmkont}$
     &
     $\tpl{\mval, \mstore, \mkont', \mkapp{\mkont}{\mmkont}}$
+    &
+    [compose continuation]
   \end{tabular}  
   \caption{Machine semantics for shift/reset}
   \label{fig:shift-reset}
@@ -1041,9 +1116,9 @@ This means the store is not finite height, and there may be no fixed point.
 
 \paragraph{Possible fixes to non-termination:} The simplest fix to the circularity would be to strip stores out of the context of the $\rt$ in a captured continuation, and additionally consider contexts with a stripped store an abstraction of the same context with any store.
 %
-This is a fairly brutal approximation of a captured continuation, so an alternative is to make this tunable with our precision-tuning friend, $\alloc$.
+An alternative, more tunable approximation, uses our precision-tuning friend, $\alloc$.
 %
-Then, instead of entirely removing the store component of the $\rt$ context, we can replace it with an address of possible stores that it would approximate.
+Instead of entirely removing the store component of the $\rt$ context, we can replace it with an address of possible stores that it would approximate.
 
 \begin{figure*}
   \centering
@@ -1099,18 +1174,23 @@ Continuations in the store are further closed by $\mmktab$, so that becomes part
 %
 The rules that change significantly are presented in figure \ref{fig:shift-reset-table1}.
 
-{
-\setlength{\abovedisplayskip}{0pt}
-\setlength{\belowdisplayskip}{4pt}
-\setlength{\abovedisplayshortskip}{0pt}
-\setlength{\belowdisplayshortskip}{8pt}
-\begin{align*}
-  \msctx \in \SContext &::= ((\mexpr,\menv),\maddr) \\
-  \mctx \in \Context &::= \msctx \alt ((\mexpr,\menv),\mstore,\mmktab) \alt (\vcomp{\mskont}, \mval, \mstore, \mmktab) \\
-  \mskont \in \SKont &= \kmt \alt \kcons{\mkframe}{\mskont} \alt \krt{\msctx} \\
-  \mval \in \Value &= \vclo{\slam{\mvar}{\mexpr}}{\menv} \alt \vcomp{\mskont}
-  \end{align*}
-}
+\begin{center}
+  \begin{minipage}{0.50\linewidth}
+    \begin{align*}
+      \msctx \in \SContext &::= ((\mexpr,\menv),\maddr) \\
+      \mctx \in \Context &::= \msctx \alt
+      ((\mexpr,\menv),\mstore,\mmktab) \\ &\alt (\vcomp{\mskont},
+      \mval, \mstore, \mmktab)
+    \end{align*}
+  \end{minipage}
+  \begin{minipage}{0.45\linewidth}
+    \begin{align*}
+      \mskont \in \SKont &= \kmt \alt \kcons{\mkframe}{\mskont} \alt \krt{\msctx} \\
+      \mval \in \Value &= \vclo{\slam{\mvar}{\mexpr}}{\menv} \alt
+      \vcomp{\mskont}
+    \end{align*}
+  \end{minipage}
+\end{center}
 
 \begin{figure*}
   \centering
@@ -1177,16 +1257,23 @@ At return boundaries, the memo table must add the result to all the represented 
 
 The result of this viewpoint is a sound, precise, and computable semantics for a ``pushdown approach'' to analyzing delimited, composable control.
 
-\begin{claim}\label{thm:concrete-sr}
+\iftr{%
+\begin{theorem}\label{thm:concrete-sr}
   Tabular semantics simulates the standard semantics given fresh allocation.
-\end{claim}
-
-We prove this with the invariant that the continuation and meta-continuation have unique unrollings in addition to the table invariants from \autoref{sec:pdcfa}, since the distinct $\mstore$ at push and capture time makes entries in $\mktab$ unique, regardless of $\mmktab$.
-
-\begin{claim}\label{thm:sound-sr}
-  Widened tabular semantics reifies a relation that simulates standard semantics.
-\end{claim}
-
+\end{theorem}
+\begin{proof}[Sketch]
+  We have the invariant that the continuation and meta-continuation have unique unrollings in addition to the table invariants from \autoref{sec:pdcfa},
+  since the distinct $\mstore$ at push and capture time makes entries in $\mktab$ unique, regardless of $\mmktab$.
+\end{proof}
+}
+\begin{theorem}\label{thm:sound-sr}
+  Widened tabular semantics reflects a relation that simulates standard semantics.
+\end{theorem}
+\iftr{%
+\begin{proof}[Sketch]
+  This follows the same line of reasoning as the correctness of PDCFA.
+\end{proof}
+}
 \paragraph{Comparison to PDCFA CPS'd to remove {\tt shift} and {\tt reset}:}{
 We lose precision if we use a CPS transform to compile away {\tt shift} and {\tt reset} forms, because variables are treated less precisely than continuations.
 %
@@ -1248,9 +1335,7 @@ Backward analyses for stack inspection also exist, with the same prerequisite~\c
 %%
 Pushdown models have existed in the first-order static analysis literature~\citep[Chapter 7]{local:muchnick:jones:flow-analysis:1981}\citep{ianjohnson:reps:pushdown:1995}, and the first-order model checking literature \citep{ianjohnson:bouajiani:esparza:pushdown:1997}, for some time.
 %
-The higher-order setting imposes additional challenges that make their methods difficult to adapt.
-%
-The most important constraint is that we can't know all call-sites of a function or method before the analysis begins, which their methods heavily rely on.
+The important difference when we move higher-order is that the model construction to feed these methods is an additional problem --- the one we solve here.
 %%
 
 %%
@@ -1258,33 +1343,31 @@ The trend of deriving static analyses from abstract machines does not stop at fl
 %
 The model-checking community showed how to check temporal logic queries for collapsible pushdown automata (CPDA), or equivalently, higher-order recursion schemes, by deriving the checking algorithm from the Krivine machine~\citep{ianjohnson:Salvati:2011:KMH:2027223.2027239}.
 %
-The expressiveness of CPDAs outweighs that of PDAs, but it is unclear how to adapt higher-order recursion schemes to model arbitrary programming language features.
+The expressiveness of CPDAs outweighs that of PDAs, but it is unclear how to adapt higher-order recursion schemes (HORS) to model arbitrary programming language features.
 %
 The method is strongly tied to the simply-typed call-by-name lambda calculus and depends on finite sized base-types.
+%
+HORSs are a powerful abstraction target for which monadic second order logic (MSO) is decidable, but systematic constructions of models in HORS from arbitrary programming languages are still out of reach.
 
 \section{Conclusion and future work}
 
-As the programming world continues to embrace behavioral values, it becomes more important to import the powerful techniques pioneered by the first-order analysis and model checking communities.
+As the programming world continues to embrace behavioral values, it becomes more important to import the powerful techniques pioneered by the first-order analysis and model-checking communities.
 %
 CFA2 and PDCFA paved the way, and in large part inspired this work.
 %
 It is our view that systematic approaches to applying the techniques are pivotal to scaling them to production programming languages.
 %
-We believe that the recipe that this paper set forth is a step in that direction.
+We showed how to systematically construct executable concrete semantics that pointwise abstract to known algorithms for pushdown analyses of higher-order languages.
 %
-That is, make continuation tables keyed with enough context, and memoize at the introduced indirection points.
+We bypass the automata theoretic approach so that we are not chained to a pushdown automaton to model features such as first-class composable control operators.
 %
-The result in a language with well-bracketed control is a ``pushdown analysis'' using summarization.
-%
-In a language without well-bracketed control, we are not chained to a pushdown automaton as the target of the approximation, so the techniques still apply and give better precision than regular methods.
+The techniques still apply and give better precision than regular methods.
 %%
 
 %%
 Our goal in the future is to show that this technique is even more widely applicable than shift and reset.
 %
 We conjecture that the same recipe will apply to the most intricate control operators in production languages such as in \citet{ianjohnson:Flatt:2007:ADC:1291151.1291178}.
-%
-The control structures there are difficult to model even with AAM's techniques due to the ability to capture and compose continuations with arbitrarily many prompts, but once we can tackle AAM, there should be a straightforward route to extending it with the pushdown techniques of this paper.
 %
 We have an unproven prototype of the stack inspection capabilities provided by the {\tt with-continuation-mark}, {\tt current-continuation-marks} and {\tt continuation-mark-set->list} primitives, where a ``context'' then also includes what is the result of {\tt current-continuation-marks}, since functions can inspect only this amount of the stack.
 %%
@@ -1294,15 +1377,18 @@ Memoization with respect to the entire store is safe, if not a little wasteful; 
 %
 There are techniques to ignore differences in the heap when they are irrelevant, dubbed ``sparseness analysis'' that have been successful for large-scale first-order analysis~\citep{ianjohnson:DBLP:conf/pldi/OhHLLY12}, but they rely on a pre-analysis that knows the control-flow graph.
 %
-We have promising preliminary results in this direction that don't require a pre-analysis, but we leave further investigation of sparse techniques to future work.
+Alternatively, there is an analogous concept in concrete semantics called ``self-adjusting computation'' that has been used for higher-order programs that looks like the right starting point for systematically constructing sparse analyses.
+%
+%% XXX: Don't show this
+%We have promising preliminary results in this direction that don't require a pre-analysis, but we leave further investigation of sparse techniques to future work.
 
 %%
-There is also the question of novel clients of these analyses.
-%
-Most obviously we would want to know where we can implement first-class control more efficiently.
-%
-In particular, we would want to have an escape analysis to find first-class continuations that don't need to be heap-allocated, and single target abort operations that can be turned into long jumps after a computed stack unraveling.
-%
-On top of optimizations, there are security analyses.
-%
-Greater control of the stack gives us the ability to drill deep into context-sensitive security properties and make precise predictions.
+% There is also the question of novel clients of these analyses.
+% %
+% Most obviously we would want to know where we can implement first-class control more efficiently.
+% %
+% In particular, we would want to have an escape analysis to find first-class continuations that don't need to be heap-allocated, and single target abort operations that can be turned into long jumps after a computed stack unraveling.
+% %
+% On top of optimizations, there are security analyses.
+% %
+% Greater control of the stack gives us the ability to drill deep into context-sensitive security properties and make precise predictions.
