@@ -33,13 +33,13 @@ The framework we present in this paper is applicable in the concrete such that a
 %%
 
 %%
-This paper gives a common, simple framework to derive CFA2, PDCFA and its garbage-collecting extension using a recipe to apply pushdown analysis techniques to arbitrary semantics in a manner similar to AAM.
+This paper gives a common, simple framework to derive CFA2, PDCFA and its garbage-collecting extension in a manner similar to AAM.
 %
-To exercise the recipe further, we give a novel analysis for delimited, composable control. \\
+To exercise the framework further, we give a novel analysis for delimited, composable control. \\
 
 \section{The essence of summarization}
 
-CFA2 is an online version of a technique called ``summarization'' from Sharir and Pnueli \citep[Chapter 7]{local:muchnick:jones:flow-analysis:1981}, which is synonymous with the $\epsilon$-closure graph that PDCFA constructs.
+CFA2 is an online version of a technique called ``summarization'' from Sharir and Pnueli \citep[Chapter 7]{local:muchnick:jones:flow-analysis:1981}, which is synonymous with PDCFA's crucial ``$\epsilon$-closure graph''.
 %
 The online quality of the algorithm is what makes it suitable for higher-order languages.
 %
@@ -47,7 +47,7 @@ Summarization algorithms need not be restricted to languages with well-bracketed
 %
 We can adopt the technique for higher precision in the common case but still handle difficult cases such as first-class control.
 %
-This was shown for the \rackett{call-with-current-continuation} (or \rackett{call/cc}) operator in~\citet{ianjohnson:Vardoulakis2011Pushdown}.
+This was shown for the \rackett{call/cc} operator in~\citet{ianjohnson:Vardoulakis2011Pushdown}.
 %
 This work illuminated the fact that we can harness the enhanced technology of pushdown analyses in non-pushdown models of computation.
 %
@@ -161,7 +161,7 @@ The semantic spaces for the machine follow.
 The $\Addr$ space is what controls the precision of the model.
 %
 For a concrete semantics, we require the allocation meta-function $\alloc :
-\State \to \Addr$ to return fresh addresses ($\alloc(\mstate) \notin \dom(\mstore)$), but any choice of address is sound~\citep{dvanhorn:Might2009Posteriori}.
+\State \to \Addr$ to return fresh addresses ($\alloc(\tpl{(\mexpr,\menv),\mstore,\mkont}) \notin \dom(\mstore)$), but any choice of address is sound~\citep{dvanhorn:Might2009Posteriori}.
 %
 If $\alloc$ only uses addresses from a finite subset of $\Addr$, then the state space without continuations is finite, and the space of continuation frames is finite.
 %
@@ -245,7 +245,7 @@ In our model, we only ``push'' when we call a function, and we only ``pop'' when
 %
 There is an analogy to something more operational: summary edges embody memoization.
 %
-Instead of following an entire path through a call to return a value, we simply jump from the call to the return with the result of the call, with the resulting context changes---in this case only the store [memo lookup].
+Instead of following an entire path through a call to return a value, we simply jump from the call to the return with the result of the call, with the resulting context changes---in this case only the store \textsc{[memo lookup]}.
 %%
 
 \begin{figure}
@@ -258,21 +258,21 @@ Instead of following an entire path through a call to return a value, we simply 
     &
     $\tpl{\mval,\mstore,\mkont, \mktab, \mmemo}$ if $\mval \in \mstore(\menv(\mvar))$
     &
-    [variable lookup]
+    \textsc{[variable lookup]}
     \\
 % application
     $\tpl{(\sapp{\mexpri0}{\mexpri1}, \menv), \mstore, \mkont, \mktab, \mmemo}$
     &
     $\tpl{(\mexpri0, \menv), \mstore, \kcons{\kar{\mexpri1,\menv}}{\mkont}, \mktab, \mmemo}$
     &
-    [function eval]
+    \textsc{[function eval]}
     \\
 % argument evaluation
     $\tpl{\mval, \mstore, \kcons{\kar{\mexpr,\menv}}{\mkont}, \mktab, \mmemo}$
     &
     $\tpl{(\mexpr, \menv), \mstore, \kcons{\kfn{\mval}}{\mkont}, \mktab, \mmemo}$
     &
-    [argument eval]
+    \textsc{[argument eval]}
     \\
 % function call
     $\tpl{\mval,\mstore,\kcons{\kfn{\vclo{\slam{\mvar}{\mexpr}}{\menv}}}{\mkont},\mktab,\mmemo}$
@@ -283,7 +283,7 @@ Instead of following an entire path through a call to return a value, we simply 
           \mktab',
           \mmemo}$
     &
-    [un-memoized call] 
+    \textsc{[un-memoized call]}
      \\ & \quad if $(\mpoint, \mstore') \notin \dom(\mmemo)$
 \\
     & or \\
@@ -292,7 +292,7 @@ Instead of following an entire path through a call to return a value, we simply 
             \mkont,
             \mktab',
             \mmemo}$
-    & [memo lookup]
+    & \textsc{[memo lookup]}
     \\ & \quad if $(\mval_\mathit{result},\mstore'') \in \mmemo(\mpoint,\mstore')$
     \\ % or, lookup in table
 %    & $\tpl{\mval, \mstore', \mkont,\mktab,\mmemo}$ if $\mval \in \mmemo(\mpoint, \mstore')$ \\    
@@ -305,7 +305,7 @@ Instead of following an entire path through a call to return a value, we simply 
     &
     $\tpl{\mval, \mstore, \mkont, \mktab, \joinone{\mmemo}{(\mpoint, \mstore')}{(\mval,\mstore)}}$
     &
-    [memoize/return]
+    \textsc{[memoize/return]}
     \\ & \quad if $\mkont \in \mktab(\mpoint, \mstore')$
   \end{tabular}
   \caption{The summarizing tabular stack machine}
@@ -318,9 +318,9 @@ As it is, the CESK machine simulates the tabular machine, but not the other way 
 %
 if we use a finite allocation strategy, then we don't explore some non-deterministic paths that lead to different results for a function call.
 %
-We thus explore all paths and share the KTable and memo tables between all paths.
+We thus explore all paths and share $\mktab$ and $\mmemo$ between all paths.
 
-To turn this semantics into PDCFA's algorithm for constructing a pushdown system with only reachable states, given the appropriate $\alloc$, we apply a widening operator to make $\mkont$, and $\mmemo$ shared amongst all states (meaning states then become represented without these components), in what is then called a $\System$. We use a meta-function $\wn$, ``wide to narrow,'' to shift between the two representations of states.
+To turn this semantics into PDCFA's algorithm for constructing a pushdown system with only reachable states, given the appropriate $\alloc$, we apply a widening operator to make $\mktab$, and $\mmemo$ shared amongst all states, in what is then called a $\System$. We use a meta-function $\wn$, ``wide to narrow,'' to shift between the two representations of states.
 %
 
 {
@@ -475,124 +475,11 @@ When determining control flow through the expression, we consult $\mktab$ to con
 % \item{\texttt{z} gets bound to $\set{0,1}$, and \texttt{($\le$ y z)} evaluates to true.}
 % \end{enumerate}
 
-\iftr{%
-\subsection{Metatheory}
+\iftr{\input{metatheory}}
 
-Correctness follows directly from the invariants we prove of $\mktab$ and $\mmemo$ in the tabular semantics.
-%
-Allocation strategies are comparable if they produce equal addresses regardless of the differences in the state representations.
-%
-More formally, $\alloc$ and $\alloc^*$ are comparable if this implication holds:
-\begin{mathpar}
-  \inferrule{\mkont \in \unroll{\mktab}{\mkont', \emptyset}}
-            {\alloc(\tpl{\mpoint,\mstore,\mkont}) = \alloc^*(\tpl{\mpoint,\mstore,\mkont',\mktab,\mmemo})}
-\end{mathpar}
-
-The $\mathit{unroll}$ function interprets what are all the valid continuations that $\mktab$ encodes for a given continuation that contains $\krt{\mctx}$, defined as the greatest fixed point of the following rules:
-\begin{mathpar}
-  \inferrule{ }{\kmt \in \unroll{\mktab}{\kmt, G}} \quad
-  \inferrule{\mkont \in \unroll{\mktab}{\mkont', \emptyset}}{\mkframe:\mkont \in \unroll{\mktab}{\mkframe:\mkont', G}} \\
-  \inferrule{\mctx \notin G  \\
-             \mkont'' \in \mktab(\mctx) \\
-             \mkont \in \unroll{\mktab}{\mkont'', \set{\mctx}\cup G}}
-            {\mkont \in \unroll{\mktab}{\krt{\mctx}, G}}  
-\end{mathpar}
-
-We add $G$ to protect against unguarded corecursion in order for $\mathit{unroll}$ to be well-defined.
-%
-Interpreting a function with ill-founded recursion can lead to a table such that $\krt{\mctx} \in \mktab(\mctx)$.
-%
-The abstractions that we impose on our data might also cause this situation, even though the concrete execution might always terminate.
-
-%%
-The different tables we have encode information about execution history that we prove is invariant (\autoref{fig:inv}).
-%
-The first is that the memo table only contains information about previously seen contexts; we need this to infer that there was at least one call leading to the memoized context such that we can use stack irrelevance to justify skipping to the memoized result.
-%
-The second, $\phi_{\reachable}$, states that all the calling contexts in the continuation table reach some unrolling of the current state.
-%
-The final invariant, $\phi_{\memo}$, states that all paths starting at a function call either reach the memoized result, or if the path does not include a return, there is an extension that will.
-%
-The portion of these paths between call and return hal the calling context's continuation in the tail to justify using stack-irrelevance.
-
-\begin{figure}
-  \centering
-  \begin{align*}
-    \inv(\tpl{\mpoint, \mstore, \mkont, \mktab, \mmemo}) &=
-    \dom(\mmemo) \subseteq \dom(\mktab) \\
-    &\wedge \forall (\mpoint',\mstore') \in \dom(\mktab), \mkont''
-    \in \mktab(\mpoint',\mstore'),
-    \mkont' \in \unroll{\mktab}{\mkont'', \emptyset}. \\
-    &\qquad \phi_{\reachable} \wedge \phi_{\memo} \\
-    \text{where } \phi_{\reachable} &= \exists \mkont'' \in
-    \unroll{\mktab}{\mkont,\emptyset}.
-    \tpl{\mpoint', \mstore', \mkont'} \stepto^* \tpl{\mpoint, \mstore, \mkont''} \\
-    \phi_{\memo} &=
-    \forall (\mval, \mstore'') \in \mmemo(\mpoint',\mstore'). \\
-    &\qquad\exists \mtrace\equiv\tpl{\mpoint', \mstore', \mkont'} \stepto^* \tpl{\mval,\mstore'',\mkont'}. \hastail(\mtrace,\mkont')
-  \end{align*}
-  \caption{Table invariants}
-\label{fig:inv}
-\end{figure}
-\begin{lemma}[Table invariants in CESK$\mathit{\Xi{}M}$]\label{lem:tab-inv}
-  If $\inv(\mstate)$ and $\mstate \stepto \mstate'$ then $\inv(\mstate')$.
-\end{lemma}
-
-In order to prove this, we need a lemma that allows us to plug in any continuation for memoized results.
-%
-When traces (sequences of states such that adjacent states are related by $\stepto$) have a common tail, we can replace it with anything.
-
-\begin{lemma}[Stack irrelevance in CESK]\label{lem:irrelevance}
-  $\hastail(\mtrace,\mkont)$ implies $\replacetail(\mtrace,\mkont,\mkont')$ is a valid trace.
-\end{lemma}
-\begin{mathpar}
-  \inferrule{ }{\hastail(\epsilon,\mkont)} \quad
-  \inferrule{ }{\hastail(\tpl{\mpoint,\mstore,\append{\mkont'}{\mkont}},\mkont)} \quad
-  \inferrule{\hastail(\mtrace\mstate,\mkont) \quad
-             \mstate \stepto \mstate' \quad
-             \hastail(\mstate',\mkont)}
-            {\hastail(\mtrace\mstate\mstate',\mkont)}
-\end{mathpar}
-
-\begin{align*}
-  \replacetail(\tpl{\mpoint,\mstore,\append{\mkont'}{\mkont}},\mkont,\mkont'') &= \tpl{\mpoint,\mstore,\append{\mkont'}{\mkont''}} \\
-  \replacetail(\epsilon,\mkont,\mkont'') &= \epsilon \\
-  \replacetail(\mtrace\mstate,\mkont,\mkont') &= \replacetail(\mtrace,\mkont,\mkont')\replacetail(\mstate,\mkont,\mkont') \\
-\end{align*}
-
-\begin{theorem}[Correctness of Concrete Summarization]\label{thm:concrete-tabular}
-  The standard semantics has a skipping bisimulation with the tabular semantics given comparable fresh allocation strategies.
-\end{theorem}
-\begin{proof}[Sketch]
-  The tabular semantics skipping simulates that standard semantics by appealing to the table invariants to show the long ``recomputation'' path.
-  Crucially, since the memo table is only set once before being used to bypass to the result, there must be only one possible result in the standard semantics. Otherwise, the tabular semantics would miss out on the other results for subsequent calls with the same context.
-  The fresh allocation strategy ensures that relation is deterministic and thus function calls only reduce to one result.
-
-  The standard semantics skipping simulates the tabular semantics because ``recomputing'' paths always have the calling stack as its tail, so we can step forward on the invariant's inductively built path until the result.
-\end{proof}
-
-Finally, we can show that the reductions we find between states paired with the shared tables define a sound and complete abstraction of the CESK machine with a comparable allocation strategy.
-}
 \begin{theorem}[Correctness of PDCFA]\label{thm:global}
   With a fair state selection from the frontier, the widened tabular semantics reflects a relation that has a bisimulation with the standard semantics.
 \end{theorem}
-\iftr{%
-\begin{proof}[Sketch]
-  The invariants on the tables still hold. 
-  The widening to share $\mmemo$ and $\mktab$ amongst all explored states reifies the search state into a $\sa{System}$. We can add a set of edges simply.
-  If we add $\mmemo$ and $\mktab$ to all states in these edges, we get a reduction relation comparable to the unwidened tabular semantics.
-  We prove that the infinite unrolling of the standard reduction relation stuttering bisimulates the relation reified from an infinite stepping of the widened tabular semantics.
-  This only holds if the state selection from the frontier is fair, since unfair choices can leave some function calls unresolved.
-  Formally,
-  \begin{equation*}
-    \setbuild{\mtrace}{\mtrace : i \le \omega, \mstate_0 \longmapsto^i \mstate} \simeq {\mathcal F}(\mstate_0)^\omega
-  \end{equation*}
-  where $\simeq$ is TODO
-by coinduction and appeals to the table invariants.
-  If a new function result is found after a call already used the memo table, the context of the memo user is used after memoizing, so it looks like that result was part of the original memo table lookup.
-  The fair selection guarantees that all function results will be eventually discovered, so the memo table appeals eventually catch up to the found results.
-\end{proof}
-}
 
 \section{Deriving GC from the introspective pushdown model}\label{sec:gc}
 
@@ -632,7 +519,7 @@ Entries in $\mktab$ might be circular, so we compute the continuation frames in 
   \inferrule{\mkont \in \mktab(\mctx)}{\krt{\mctx} \rightsquigarrow_\mktab \mkont}
 \end{mathpar}
 
-Garbage collection ($\Gamma$) amounts to restricting the heap to just the reachable addresses, so a garbage-collecting semantics introduces the following reduction rule:
+Garbage collection ($\Gamma$) restricts the heap to just the reachable addresses, so a semantics with GC introduces the following reduction rule:
 \begin{center}
   \begin{minipage}{0.3\linewidth}
     \begin{align*}
@@ -666,34 +553,9 @@ Technically since this semantics inspects the touched addresses of the continuat
 %
 This extra context can be overlooked, but it leads to larger live address sets.
 %
-More live addresses means a less effective GC, but this is an acceptable tradeoff for a possibly smaller state space.
+More live addresses means a less effective GC, but the introspective pushdown analysis chose this tradeoff for a possibly smaller state space.
 %
-Indeed, the introspective pushdown analysis work chooses this more approximate method.
-%
-\iftr{%
-\begin{theorem}[No dangling pointers]\label{thm:gc-pointers}
-  All addresses in $\Gamma(\mstate)$ are in the domain of $\Gamma(\mstate).\mstore$.
-\end{theorem}
 
-\begin{theorem}[Garbage is irrelevant]\label{thm:gc-concrete}
-  If $\mstate \stepto^n \mstate'$ and $\mstate \stepto^n \mstate''$ then $\Gamma(\mstate') = \Gamma(\mstate'')$.
-\end{theorem}
-
-\begin{theorem}[Abstract GC is sound for garbage-free states]\label{thm:gc-sound}
-  If $\mstate \stepto \mstate'$ and $\alpha(\Gamma(\mstate)) \sqsubseteq \mastate$ then there is a $\mastate'$ such that $\mastate \astepto \mastate'$ and $\alpha(\Gamma(\mstate')) \sqsubseteq \mastate'$.
-\end{theorem}
-
-This final proposition is not in the original work on abstract GC; they prove soundness with respect to a concrete semantics that performs GC after every step.
-%
-The moral correctness of the abstraction is that it never under-approximates \emph{relevant} portions of the state space --- in this case, the reachable subset of the store.
-%
-The definitions of $\alpha$, $\astepto$ and $\sqsubseteq$ are the simple pointwise abstractions of addresses through states and the reduction relation, and finally a lifted subset relation between states and their components, respectively.
-%
-Both $\alpha$ and $\sqsubseteq$ are parameterized on the choice of $\Addr$, for which the following soundness criterion should hold:
-\begin{mathpar}
-  \inferrule*[right={[Sound allocation]}]{\alpha(\mstate) \sqsubseteq \mastate}{\alpha(\alloc(\mstate)) \sqsubseteq \widehat{\alloc}(\mastate)}
-\end{mathpar}
-}
 \section{Deriving CFA2}
 \label{sec:cfa2}
 
@@ -709,8 +571,6 @@ This resulted in more than just the call/return matching of the previous section
 \item{strong updates on stack frames for resolved addresses}
 \end{enumerate}
 There are two orthogonal features of the semantics, embodied by our semantics' two metafunctions ($\bind$ and $\lookup$, respectively in \autoref{fig:frame-semantics}).
-%
-The first of these is an addition to the stack-less context.
 
 \begin{figure}
   \centering
@@ -864,7 +724,7 @@ With this proposition, we can prove that the CES$\xi$K machine that always alloc
 \begin{theorem}[Correctness of CFA2]\label{thm:cfa2}
   The widened tabular semantics reifies a relation that has a bisimulation with standard semantics.
 \end{theorem}
-This proof has the same structure as that of PDCFA.
+%This proof has the same structure as that of PDCFA.
 
 \ifwcm{
 \section{Stack inspection with continuation marks}
@@ -1059,21 +919,21 @@ The changed semantic spaces for the shift/reset semantics are as follows:
     &
     $\tpl{(\mexpr, \menv), \mstore, \kmt, \mkapp{\mkont}{\mmkont}}$
     &
-    [push prompt]
+    \textsc{[push prompt]}
     \\
 % Pop prompt
     $\tpl{\mval, \mstore, \kmt, \mkapp{\mkont}{\mmkont}}$
     &
     $\tpl{\mval, \mstore, {\mkont}, {\mmkont}}$
     &
-    [pop prompt]
+    \textsc{[pop prompt]}
     \\
 % Shift
     $\tpl{(\sshift{\mvar}{\mexpr}, \menv), \mstore, \mkont, \mmkont}$
     &
     $\tpl{(\mexpr, \extm{\menv}{\mvar}{\maddr}), \mstore',\kmt,\mmkont}$
     &
-    [capture continuation]
+    \textsc{[capture continuation]}
     \\ & where $\mstore' = \joinone{\mstore}{\maddr}{\vcomp{\mkont}}$
     \\
 % continuation call
@@ -1081,7 +941,7 @@ The changed semantic spaces for the shift/reset semantics are as follows:
     &
     $\tpl{\mval, \mstore, \mkont', \mkapp{\mkont}{\mmkont}}$
     &
-    [compose continuation]
+    \textsc{[compose continuation]}
   \end{tabular}  
   \caption{Machine semantics for shift/reset}
   \label{fig:shift-reset}
@@ -1104,7 +964,7 @@ The new semantic spaces are then
 
 \autoref{fig:shift-reset-table0} has what one might naturally write using just this information.
 %
-Unfortunately, since $\rt$ continuations contain a store, and continuations can now appear in the store, this introduces a circularity that could cause the analysis to never terminate.
+Unfortunately, since $\rt$ continuations contain a store, and continuations can now appear in the store, this introduces an unbounded data structure that could cause the analysis to never terminate.
 %
 For example, a loop that continually captures continuations would introduce unboundedly many continuation values due to the ever-growing store.
 %
@@ -1219,20 +1079,27 @@ We can't recursively map addresses to stores and continuation closures, so we fl
 %
 This operation makes lookups more costly since we have to find closures bounded above by the current closure, rather than one exact closure.
 
-\newcommand{\replacectx}{\mathit{replace}\mstore}
-\newcommand{\addstore}{\mathit{add}\mstore}
-\begin{align*}
-  \approximate(\mkont, \mmktab, \maddr) &= (\replacectx(\mkont), \addstore(\mkont)) \\
-  \text{where }
-   \replacectx(\kmt) &= \kmt \\
-   \replacectx(\krt{((\mexpr,\menv),\ldots)}) &= \krt{((\mexpr,\menv),\maddr)} \\
-   \replacectx(\kcons{\mkframe}{\mkont}) &= \kcons{\mkframe}{\replacectx(\mkont)}
-  \\[2pt]
-   \addstore(\kmt) &= \mmktab \\
-   \addstore(\krt{((\mexpr,\menv),\mstore,\mmktab')}) &= \joinone{\mmktab}{\maddr}{\mstore}\sqcup \mmktab' \\
-   \addstore(\krt{((\mexpr,\menv),\maddr')}) &= \joinm{\mmktab}{\maddr}{\mmktab(\maddr')} \\
-   \addstore(\kcons{\mkframe}{\mkont}) &= \addstore(\mkont)
-\end{align*}
+\newcommand{\replacectx}{\hat\mkont} %\mathit{replace}\mstore
+\newcommand{\addstore}{\hat\mmktab} % \mathit{add}\mstore
+\begin{center}
+  $\approximate(\mkont, \mmktab, \maddr) = (\replacectx(\mkont), \addstore(\mkont)) \text{ where}$\\
+  \begin{minipage}{0.45\linewidth}
+    \begin{align*}
+      \replacectx(\kmt) &= \kmt \\
+      \replacectx(\krt{((\mexpr,\menv),\ldots)}) &= \krt{((\mexpr,\menv),\maddr)} \\
+      \replacectx(\kcons{\mkframe}{\mkont}) &=
+      \kcons{\mkframe}{\replacectx(\mkont)}
+    \end{align*}
+  \end{minipage}
+  \begin{minipage}{0.50\linewidth}
+    \begin{align*}
+      \addstore(\kmt) &= \mmktab \\
+      \addstore(\krt{((\mexpr,\menv),\mstore,\mmktab')}) &= \joinone{\mmktab}{\maddr}{\mstore}\sqcup \mmktab' \\
+      \addstore(\krt{((\mexpr,\menv),\maddr')}) &= \joinm{\mmktab}{\maddr}{\mmktab(\maddr')} \\
+      \addstore(\kcons{\mkframe}{\mkont}) &= \addstore(\mkont)
+    \end{align*}
+  \end{minipage}
+\end{center}
 %
 If the context in an $\rt$ continuation is approximate, we must return to all the continuations known for all the contexts it approximates:
 \begin{align*}
@@ -1251,29 +1118,16 @@ At return boundaries, the memo table must add the result to all the represented 
 
 The result of this viewpoint is a sound, precise, and computable semantics for a ``pushdown approach'' to analyzing delimited, composable control.
 
-\iftr{%
-\begin{theorem}\label{thm:concrete-sr}
-  Tabular semantics simulates the standard semantics given fresh allocation.
-\end{theorem}
-\begin{proof}[Sketch]
-  We have the invariant that the continuation and meta-continuation have unique unrollings in addition to the table invariants from \autoref{sec:pdcfa},
-  since the distinct $\mstore$ at push and capture time makes entries in $\mktab$ unique, regardless of $\mmktab$.
-\end{proof}
-}
 \begin{theorem}\label{thm:sound-sr}
   Widened tabular semantics reflects a relation that simulates standard semantics.
 \end{theorem}
-\iftr{%
-\begin{proof}[Sketch]
-  This follows the same line of reasoning as the correctness of PDCFA.
-\end{proof}
-}
+
 \paragraph{Comparison to PDCFA CPS'd to remove {\tt shift} and {\tt reset}:}{
 We lose precision if we use a CPS transform to compile away {\tt shift} and {\tt reset} forms, because variables are treated less precisely than continuations.
 %
-In pushdown analysis, we track function return points with entire calling contexts rather than the $k$-CFA way of allocating the continuation in the heap at some lower-precision address, like a variable.
+%In pushdown analysis, we track function return points with entire calling contexts rather than the $k$-CFA way of allocating the continuation in the heap at some lower-precision address, like a variable.
 %
-In our summarizing analysis of delimited composable control, we get the same added precision for {\tt reset}, {\tt shift}, and continuation invocation points.
+%In our summarizing analysis of delimited composable control, we get added precision for {\tt reset}, {\tt shift}, and continuation invocation points.
 %
 Consider the following program and its CPS transform for comparison:
 % \begin{lstlisting}[mathescape]
@@ -1306,7 +1160,7 @@ Consider the following program and its CPS transform for comparison:
 
 PDCFA with a monovariant allocation strategy will predict the CPS'd version returns true or false.
 %
-Our specialized analysis for delimited control, also with a monovariant allocation strategy, will predict the non-CPS'd version returns true.}
+Our specialized analysis for delimited control, will predict the non-CPS'd version returns true.}
 
 \section{Related Work}
 
@@ -1341,7 +1195,7 @@ The expressiveness of CPDAs outweighs that of PDAs, but it is unclear how to ada
 %
 The method is strongly tied to the simply-typed call-by-name lambda calculus and depends on finite sized base-types.
 %
-HORSs are a powerful abstraction target for which monadic second order logic (MSO) is decidable, but systematic constructions of models in HORS from arbitrary programming languages are still out of reach.
+%HORSs are a powerful abstraction target for which monadic second order logic (MSO) is decidable, but systematic constructions of models in HORS from arbitrary programming languages are still out of reach.
 
 \section{Conclusion and future work}
 
@@ -1361,9 +1215,10 @@ The techniques still apply and give better precision than regular methods.
 %%
 Our goal in the future is to show that this technique is even more widely applicable than shift and reset.
 %
-We conjecture that the same recipe will apply to the most intricate control operators in production languages such as in \citet{ianjohnson:Flatt:2007:ADC:1291151.1291178}.
+We conjecture that the same framework will apply to the most intricate control operators in production languages such as in \citet{ianjohnson:Flatt:2007:ADC:1291151.1291178}.
 %
-We have an unproven prototype of the stack inspection capabilities provided by the {\tt with-continuation-mark}, {\tt current-continuation-marks} and {\tt continuation-mark-set->list} primitives, where a ``context'' then also includes what is the result of {\tt current-continuation-marks}, since functions can inspect only this amount of the stack.
+\iftr{
+We have an unproven prototype of the stack inspection capabilities provided by the {\tt with-continuation-mark}, {\tt current-continuation-marks} and {\tt continuation-mark-set->list} primitives, where a ``context'' then also includes what is the result of {\tt current-continuation-marks}, since functions can inspect only this amount of the stack.}
 %%
 
 %%

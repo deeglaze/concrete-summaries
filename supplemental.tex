@@ -1,0 +1,165 @@
+\documentclass[article]{llncs}
+
+% preprint only
+\pagestyle{plain}
+\usepackage{amsmath,stmaryrd,listings,mathpartir,amssymb,graphicx}
+
+\usepackage[usenames,dvipsnames]{color}
+
+\usepackage{pfsteps} % for appendix
+
+\newcommand{\Scribtexttt}[1]{{\texttt{#1}}}
+\newcommand{\SColorize}[2]{\color{#1}{#2}}
+\newcommand{\inColor}[2]{{\Scribtexttt{\SColorize{#1}{#2}}}}
+\definecolor{PaleBlue}{rgb}{0.90,0.90,1.0}
+\newcommand{\rackett}[1]{\inColor{black}{#1}}
+\input{local-macros}
+\usepackage[numbers,sectionbib]{natbib}
+\usepackage[english]{babel}
+% pdfpagescrop for preprint only
+%\usepackage[hidelinks,pdfpagescrop={92 62 523 728}]{hyperref}
+\usepackage[hidelinks]{hyperref}
+\usepackage{cleveref}
+\usepackage{placeins,xr}
+
+\externaldocument{paper-jfp}
+
+\input{preamble}
+\begin{document}
+\title{The Essence of Summarization\\ in Pushdown Flow Analyses\\
+       \textbf{Supplemental Material}}
+\author{J. Ian Johnson and David Van Horn}
+
+\section{PDCFA}
+\input{metatheory}
+
+\begin{theorem}\label{thm:concrete-sr}
+  Tabular semantics simulates the standard semantics given fresh allocation.
+\end{theorem}
+\begin{proof}[Sketch]
+  We have the invariant that the continuation and meta-continuation have unique unrollings in addition to the table invariants from paper's section 3,
+  since the distinct $\mstore$ at push and capture time makes entries in $\mktab$ unique, regardless of $\mmktab$.
+\end{proof}
+
+\noindent{}Proof of paper's theorem ``Correctness of PDCFA''
+\begin{proof}[Sketch]
+  The invariants on the tables still hold. 
+  The widening to share $\mmemo$ and $\mktab$ amongst all explored states reifies the search state into a $\sa{System}$. We can add a set of edges simply.
+  If we add $\mmemo$ and $\mktab$ to all states in these edges, we get a reduction relation comparable to the unwidened tabular semantics.
+  We prove that the infinite unrolling of the standard reduction relation stuttering bisimulates the relation reified from an infinite stepping of the widened tabular semantics.
+  This only holds if the state selection from the frontier is fair, since unfair choices can leave some function calls unresolved.
+  Formally,
+  \begin{equation*}
+    \setbuild{\mtrace}{\mtrace : i \le \omega, \mstate_0 \longmapsto^i \mstate} \simeq {\mathcal F}(\mstate_0)^\omega
+  \end{equation*}
+  where $\simeq$ is TODO
+by coinduction and appeals to the table invariants.
+  If a new function result is found after a call already used the memo table, the context of the memo user is used after memoizing, so it looks like that result was part of the original memo table lookup.
+  The fair selection guarantees that all function results will be eventually discovered, so the memo table appeals eventually catch up to the found results.
+\end{proof}
+
+\begin{theorem}[No dangling pointers]\label{thm:gc-pointers}
+  All addresses in $\Gamma(\mstate)$ are in the domain of $\Gamma(\mstate).\mstore$.
+\end{theorem}
+
+\begin{theorem}[Garbage is irrelevant]\label{thm:gc-concrete}
+  If $\mstate \stepto^n \mstate'$ and $\mstate \stepto^n \mstate''$ then $\Gamma(\mstate') = \Gamma(\mstate'')$.
+\end{theorem}
+
+\begin{theorem}[Abstract GC is sound for garbage-free states]\label{thm:gc-sound}
+  If $\mstate \stepto \mstate'$ and $\alpha(\Gamma(\mstate)) \sqsubseteq \mastate$ then there is a $\mastate'$ such that $\mastate \astepto \mastate'$ and $\alpha(\Gamma(\mstate')) \sqsubseteq \mastate'$.
+\end{theorem}
+
+This final proposition is not in the original work on abstract GC; they prove soundness with respect to a concrete semantics that performs GC after every step.
+%
+The moral correctness of the abstraction is that it never under-approximates \emph{relevant} portions of the state space --- in this case, the reachable subset of the store.
+%
+The definitions of $\alpha$, $\astepto$ and $\sqsubseteq$ are the simple pointwise abstractions of addresses through states and the reduction relation, and finally a lifted subset relation between states and their components, respectively.
+%
+Both $\alpha$ and $\sqsubseteq$ are parameterized on the choice of $\Addr$, for which the following soundness criterion should hold:
+\begin{mathpar}
+  \inferrule*[right={[Sound allocation]}]{\alpha(\mstate) \sqsubseteq \mastate}{\alpha(\alloc(\mstate)) \sqsubseteq \widehat{\alloc}(\mastate)}
+\end{mathpar}
+
+\section{Shift/reset}
+\noindent{}Proof of paper's theorem 4 follows the same line of reasoning as the correctness of PDCFA.
+
+
+% \noindent{}Proof of \autoref{thm:pdcfa-tabular}, which is more formally stated as (tabular $\pdstepto$, CESK $\stepto$): There is a well-founded equivalence bisimulation between $\pdstepto$ (quotiented to states satisfying $\inv$) and $\tred{\stepto}$.
+% We define equivalence ($\simeq$) as
+% \begin{mathpar}
+%   \inferrule{\mkont \in \unroll{\mktab}{\mkont'} \\ \mkont \nequiv \kcons{\kfn{\mval}}{\mkont''}}
+%             {\mtrace\tpl{\mpoint,\mstore,\mkont} \simeq \tpl{\mpoint,\mstore,\mkont,\mktab,\mmemo}} \\
+% %
+%   \inferrule{\mkont \in \unroll{\mktab}{\mkont'} \\
+%              ((\mexpr,\menv[\mvar \mapsto \maddr]), \mstore\sqcup[\maddr \mapsto \set{\mval}]) \notin \dom(\mmemo)}
+%             {\mtrace\tpl{\mval,\mstore,\kcons{\kfn{\slam{\mvar}{\mexpr}, \menv}{\mkont}}} \simeq \tpl{\mval,\mstore,\kcons{\kfn{\slam{\mvar}{\mexpr},\menv}}{\mkont'},\mktab,\mmemo}} \\
+% %
+%   \inferrule{\tpl{\mval', \mstore', \mkont} \notin \mtrace'' \\
+%              \mkont \in \unroll{\mktab}{\mkont''} \\
+%              ((\mexpr,\menv[\mvar \mapsto \maddr]), \mstore\sqcup[\maddr \mapsto \set{\mval}]) \in \dom(\mmemo)}
+%             {\mtrace'\tpl{\mval, \mstore, \kcons{\kfn{\slam{\mvar}{\mexpr}, \menv}}{\mkont}}\mtrace''
+%               \simeq \tpl{\mval, \mstore, \kcons{\kfn{\slam{\mvar}{\mexpr}, \menv}}{\mkont''}, \mktab, \mmemo}}
+% \end{mathpar}
+% This means that states which ``line up'' regardless of history are related, and that states that follow a function call that has not yet completed are related to the function call state where we already have the memoized results.
+% %
+% Each step in this case will get ``closer to'' the result to memoize, as given by the length of the path we get from the invariant on the memo table.
+% \begin{proof}
+%   Let $\mtrace,\mtrace',\mstate_\Xi$ be arbitrary such that $\mtrace \simeq \mstate_\Xi$ and $\mtrace \tred{\stepto} \mtrace'$.
+%   By cases on $\mtrace \simeq \mstate_\Xi$:
+%   \begin{byCases}
+%     \case{\text{First rule}}{One step related by simple case analysis.}
+%     \case{\text{Second rule}}{One step related by definitions of $\mathit{unroll}$, $\stepto$ and $\pdstepto$.}
+%     \case{\text{Third rule}}{
+%     By cases on $\mtrace\mstate \tred{\stepto} \mtrace\mstate\mstate'$:
+%     \begin{byCases}
+%       \case{\mtrace\tpl{(\svar\mvar, \menv), \mstore, \mkont} \stepto
+%         \mtrace\mstate\tpl{\mval,\mstore,\mkont}}{...}
+%       % application
+%       \case{\mtrace\tpl{(\sapp{\mexpri0}{\mexpri1}, \menv), \mstore,
+%           \mkont} \stepto \mtrace\mstate\tpl{(\mexpri0, \menv),
+%           \mstore, \kcons{\kar{\mexpri1,\menv}}{\mkont}}}{...}
+%       % argument evaluation
+%       \case{\mtrace\tpl{\mval, \mstore,
+%           \kcons{\kar{\mexpr,\menv}}{\mkont}} \stepto
+%         \mtrace\mstate\tpl{(\mexpr, \menv), \mstore,
+%           \kcons{\kfn{\mval}}{\mkont}}}{...}
+%       % function call
+%       \case{\mtrace\tpl{\mval,\mstore,\kcons{\kfn{\vclo{\slam{\mvar}{\mexpr}}{\menv}}}{\mkont}}
+%         \stepto \mtrace\mstate\tpl{(\mexpr,
+%           \extm{\menv}{\mvar}{\maddr}),
+%           \joinone{\mstore}{\maddr}{\mval}, \mkont}}{...}
+%     \end{byCases}}
+%   \end{byCases}
+%   By \autoref{lem:tab-inv}
+  
+%   Soundness is a corollary of \autoref{lem:tab-inv}.
+% \end{proof}
+
+% \noindent{}Proof of \autoref{thm:global}.
+% \begin{proof}
+% %% TODO
+%   The invariants of the memo and k-tables are independent of the states that carry them, so lifting them to a global position does not affect their information.
+% \end{proof}
+
+% \noindent{}Proof of \autoref{thm:refinement}.
+% \begin{proof}
+%   todo
+% \end{proof}
+
+% \noindent{}Proof of \autoref{thm:cfa2}.
+% \begin{proof}
+%   todo
+% \end{proof}
+
+% \noindent{}Proof of \autoref{thm:concrete-sr}.
+% \begin{proof}
+%   todo
+% \end{proof}
+
+% \noindent{}Proof of \autoref{thm:sound-sr}
+% \begin{proof}
+%   todo
+% \end{proof}
+
+\end{document}

@@ -1,0 +1,158 @@
+\subsection{Metatheory}
+
+Correctness follows directly from the invariants we prove of $\mktab$ and $\mmemo$ in the tabular semantics.
+%
+Allocation strategies are comparable if they produce equal addresses regardless of the differences in the state representations.
+%
+More formally, $\alloc$ and $\alloc^*$ are comparable if this implication holds:
+\begin{mathpar}
+  \inferrule{\mkont \in \unroll{\mktab}{\mkont', \emptyset}}
+            {\alloc(\tpl{\mpoint,\mstore,\mkont}) = \alloc^*(\tpl{\mpoint,\mstore,\mkont',\mktab,\mmemo})}
+\end{mathpar}
+
+The $\mathit{unroll}$ function interprets what are all the valid continuations that $\mktab$ encodes for a given continuation that contains $\krt{\mctx}$, defined as the greatest fixed point of the following rules:
+\begin{mathpar}
+  \inferrule{ }{\kmt \in \unroll{\mktab}{\kmt, G}} \quad
+  \inferrule{\mkont \in \unroll{\mktab}{\mkont', \emptyset}}{\mkframe:\mkont \in \unroll{\mktab}{\mkframe:\mkont', G}} \\
+  \inferrule{\mctx \notin G  \\
+             \mkont'' \in \mktab(\mctx) \\
+             \mkont \in \unroll{\mktab}{\mkont'', \set{\mctx}\cup G}}
+            {\mkont \in \unroll{\mktab}{\krt{\mctx}, G}}  
+\end{mathpar}
+
+We add $G$ to protect against unguarded corecursion in order for $\mathit{unroll}$ to be well-defined.
+%
+Interpreting a function with ill-founded recursion can lead to a table such that $\krt{\mctx} \in \mktab(\mctx)$.
+%
+The abstractions that we impose on our data might also cause this situation, even though the concrete execution might always terminate.
+
+%%
+The different tables we have encode information about execution history that we prove is invariant (\autoref{fig:inv}).
+%
+The first is that the memo table only contains information about previously seen contexts; we need this to infer that there was at least one call leading to the memoized context such that we can use stack irrelevance to justify skipping to the memoized result.
+%
+The second, $\phi_{\reachable}$, states that all the calling contexts in the continuation table reach some unrolling of the current state.
+%
+The final invariant, $\phi_{\memo}$, states that all paths starting at a function call either reach the memoized result, or if the path does not include a return, there is an extension that will.
+%
+The portion of these paths between call and return hal the calling context's continuation in the tail to justify using stack-irrelevance.
+
+\begin{figure}
+  \centering
+  \begin{align*}
+    \inv(\tpl{\mpoint, \mstore, \mkont, \mktab, \mmemo}) &=
+    \dom(\mmemo) \subseteq \dom(\mktab) \\
+    &\wedge \forall (\mpoint',\mstore') \in \dom(\mktab), \mkont''
+    \in \mktab(\mpoint',\mstore'),
+    \mkont' \in \unroll{\mktab}{\mkont'', \emptyset}. \\
+    &\qquad \phi_{\reachable} \wedge \phi_{\memo} \\
+    \text{where } \phi_{\reachable} &= \exists \mkont'' \in
+    \unroll{\mktab}{\mkont,\emptyset}.
+    \tpl{\mpoint', \mstore', \mkont'} \stepto^* \tpl{\mpoint, \mstore, \mkont''} \\
+    \phi_{\memo} &=
+    \forall (\mval, \mstore'') \in \mmemo(\mpoint',\mstore'). \\
+    &\qquad\exists \mtrace\equiv\tpl{\mpoint', \mstore', \mkont'} \stepto^* \tpl{\mval,\mstore'',\mkont'}. \hastail(\mtrace,\mkont')
+  \end{align*}
+  \caption{Table invariants}
+\label{fig:inv}
+\end{figure}
+\begin{lemma}[Table invariants in CESK$\mathit{\Xi{}M}$]\label{lem:tab-inv}
+  If $\inv(\mstate)$ and $\mstate \stepto \mstate'$ then $\inv(\mstate')$.
+\end{lemma}
+\begin{proof}
+  By cases on $\stepto$.
+  \begin{byCases}
+% variable lookup
+    \case{\tpl{(\svar\mvar, \menv), \mstore, \mkont, \mktab, \mmemo}
+          \stepto
+          \tpl{\mval,\mstore,\mkont, \mktab, \mmemo} \text{ if }\mval \in \mstore(\menv(\mvar))}{
+     Same continuation and tables, so holds by $\inv(\mstate)$.}
+% application
+    \case{\tpl{(\sapp{\mexpri0}{\mexpri1}, \menv), \mstore, \mkont, \mktab, \mmemo}
+          \stepto
+          \tpl{(\mexpri0, \menv), \mstore, \kcons{\kar{\mexpri1,\menv}}{\mkont}, \mktab, \mmemo}}{
+    Let $\mctx, \mkont^\circ, \mkont'$ be arbitrary.
+    Let $\mkont^*$ be the witness for $\mstate$.
+    The next witness is $\kcons{\kar{\mexpri1,\menv}}{\mkont^*}$, by definition of $\mathit{unroll}$.}
+% argument evaluation
+    \case{\tpl{\mval, \mstore, \kcons{\kar{\mexpr,\menv}}{\mkont}, \mktab, \mmemo}
+          \stepto
+          \tpl{(\mexpr, \menv), \mstore, \kcons{\kfn{\mval}}{\mkont}, \mktab, \mmemo}}{
+    Let $\mctx, \mkont^\circ, \mkont'$ be arbitrary.
+    Let $\kcons{\kar{\mexpr,\menv}}{\mkont^*}$ be the witness for $\mstate$.
+    The next witness is $\kcons{\kfn{\mval}}{\mkont^*}$, by definition of $\mathit{unroll}$.}
+% function call
+    \case{\tpl{\mval,\mstore,\kcons{\kfn{\vclo{\slam{\mvar}{\mexpr}}{\menv}}}{\mkont},\mktab,\mmemo}
+          \stepto
+          \tpl{\mpoint, \mstore', \krt{\mpoint, \mstore'}, \mktab', \mmemo}}{
+     where
+     $\begin{array}{l}
+       \mpoint = (\mexpr, \extm{\menv}{\mvar}{\maddr}) \\
+       \mstore' = \joinone{\mstore}{\maddr}{\mval} \\
+       \mktab' = \joinone{\mktab}{(\mpoint, \mstore')}{\mkont}
+     \end{array}$ \\
+
+    Let $\mctx, \mkont^\circ, \mkont'$ be arbitrary.
+    Let $\kcons{\kfn{\mval}}{\mkont^*}$ be the witness for $\mstate$.
+    The next witness is $\mkont^*$, by definition of $\mathit{unroll}$.}
+% memo-lookup
+    \case{\tpl{\mval,\mstore,\kcons{\kfn{\vclo{\slam{\mvar}{\mexpr}}{\menv}}}{\mkont},\mktab,\mmemo}
+          \stepto
+          \tpl{\mval_\mathit{result}, \mstore'', \mkont, \mktab', \mmemo}
+          \text{ if } (\mval_\mathit{result},\mstore'') \in \mmemo(\mpoint,\mstore')}{
+        same where clause as previous case.
+     
+    Let $\mctx, \mkont^\circ, \mkont'$ be arbitrary.
+    By definition of $\inv$, and since $\tpl{\mpoint',\mstore',\mkont'} \stepto^* \tpl{\mval_{\mathit{result}}, \mstore'', \mkont'}$.
+    For the memo entry to exist, there must have been at least one previous continuation in $\mktab(\mpoint',\mstore')$.
+    We use $\inv$ with this continuation, combined with stack irrelevance to produce the trace involving $\mkont'$.
+    }
+% return
+    \case{\tpl{\mval, \mstore, \krt{\mpoint,\mstore'}, \mktab, \mmemo}
+          \stepto
+          \tpl{\mval, \mstore, \mkont, \mktab, \joinone{\mmemo}{(\mpoint, \mstore')}{(\mval,\mstore)}}
+          \text{ if } \mkont \in \mktab(\mpoint, \mstore')}{
+    Let $\mctx, \mkont^\circ, \mkont'$ be arbitrary.
+    $\mkont'$ is an acceptable witness for the first property.
+    The path we construct to $\mstate'$ is sufficient for the second property.}
+  \end{byCases}
+\end{proof}
+
+In order to prove this, we need a lemma that allows us to plug in any continuation for memoized results.
+%
+When traces (sequences of states such that adjacent states are related by $\stepto$) have a common tail, we can replace it with anything.
+
+\begin{lemma}[Stack irrelevance in CESK]\label{lem:irrelevance}
+  $\hastail(\mtrace,\mkont)$ implies $\replacetail(\mtrace,\mkont,\mkont')$ is a valid trace.
+\end{lemma}
+\begin{proof}
+  By induction on $\mtrace$. Base cases trivially hold, and induction step follows from cases on $\mstate \stepto \mstate'$ and definition of $\replacetail$.
+\end{proof}
+
+\begin{mathpar}
+  \inferrule{ }{\hastail(\epsilon,\mkont)} \quad
+  \inferrule{ }{\hastail(\tpl{\mpoint,\mstore,\append{\mkont'}{\mkont}},\mkont)} \quad
+  \inferrule{\hastail(\mtrace\mstate,\mkont) \quad
+             \mstate \stepto \mstate' \quad
+             \hastail(\mstate',\mkont)}
+            {\hastail(\mtrace\mstate\mstate',\mkont)}
+\end{mathpar}
+
+\begin{align*}
+  \replacetail(\tpl{\mpoint,\mstore,\append{\mkont'}{\mkont}},\mkont,\mkont'') &= \tpl{\mpoint,\mstore,\append{\mkont'}{\mkont''}} \\
+  \replacetail(\epsilon,\mkont,\mkont'') &= \epsilon \\
+  \replacetail(\mtrace\mstate,\mkont,\mkont') &= \replacetail(\mtrace,\mkont,\mkont')\replacetail(\mstate,\mkont,\mkont') \\
+\end{align*}
+
+\begin{theorem}[Correctness of Concrete Summarization]\label{thm:concrete-tabular}
+  The standard semantics has a skipping bisimulation with the tabular semantics given comparable fresh allocation strategies.
+\end{theorem}
+\begin{proof}[Sketch]
+  The tabular semantics skipping simulates that standard semantics by appealing to the table invariants to show the long ``recomputation'' path.
+  Crucially, since the memo table is only set once before being used to bypass to the result, there must be only one possible result in the standard semantics. Otherwise, the tabular semantics would miss out on the other results for subsequent calls with the same context.
+  The fresh allocation strategy ensures that relation is deterministic and thus function calls only reduce to one result.
+
+  The standard semantics skipping simulates the tabular semantics because ``recomputing'' paths always have the calling stack as its tail, so we can step forward on the invariant's inductively built path until the result.
+\end{proof}
+
+Finally, we can show that the reductions we find between states paired with the shared tables define a sound and complete abstraction of the CESK machine with a comparable allocation strategy.
