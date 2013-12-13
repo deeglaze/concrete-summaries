@@ -51,7 +51,7 @@ This was shown for the \rackett{call/cc} operator in~\citet{ianjohnson:Vardoulak
 %
 This work illuminated the fact that we can harness the enhanced technology of pushdown analyses in non-pushdown models of computation.
 %
-Doing this sacrifices call/return matching in the general case, but in practice the precision is much better than the alternative regular model that, say, 0-CFA would provide.
+Doing this sacrifices call/return matching in the general case, but in practice the precision is much better than the alternative regular model like 0-CFA would provide.
 %%
 
 %%
@@ -559,9 +559,7 @@ More live addresses means a less effective GC, but the introspective pushdown an
 \section{Deriving CFA2}
 \label{sec:cfa2}
 
-CFA2 is the first published analysis of an untyped higher-order programming language that could properly match calls and returns.
-%
-Vardoulakis and Shivers had a clear goal of harnessing the extra information a pushdown model provides to produce a high-precision analysis that works well in practice.
+The creators of CFA2 had a clear goal of harnessing the extra information a pushdown model provides to produce a high-precision analysis that works well in practice.
 %
 This resulted in more than just the call/return matching of the previous section, which is why we are showing the two separately.
 %
@@ -609,7 +607,7 @@ There are two orthogonal features of the semantics, embodied by our semantics' t
 %
 There is a conservative pre-analysis that checks locally whether a binding will never escape, and classifies references (labeled with a distinguishing $\mlab$ from an arbitrary space of labels) as able to use the stack frame or not.
 %
-Their criteria for a binding never escaping is like the criteria of register-allocatable bindings in the Orbit Scheme compiler~\citep{ianjohnson:kranz:thesis:1988}.
+%Their criteria for a binding never escaping is like the criteria of register-allocatable bindings in the Orbit Scheme compiler~\citep{ianjohnson:kranz:thesis:1988}.
 %
 They use the information that a binding never escapes to not bother allocating it in the heap.
 %
@@ -621,17 +619,14 @@ The addition of these stack frames makes the analysis exponential in theory, tho
 %%
 The second of these is to ameliorate a problem they call ``fake rebinding.''
 %
-That is, since bindings in the abstract represent several values, we don't want to reference a variable \texttt{x} in two different places and have it resolve to two different values.
+Bindings in the abstract represent several values, but we don't want to reference a variable \texttt{x} in different places in a function and have it resolve to different values
+\footnote{In AAM, a variable reference non-deterministically steps to all possible values associated with that variable.}.
 %
-In AAM, a variable reference non-deterministically steps to all possible values associated with that variable, because there are several possible values in the store for allocated bindings.
+If subsequent variable references are not the some, it looks as if the variable was rebound; it hasn't, and thus it is a ``fake rebinding.''
 %
-Here we want to say that once \texttt{x} is considered to stand for value $v$, then all subsequent references of \texttt{x} should be $v$.
+%CFA2 does not step to all values on variable reference, but instead carries all its values around in superposition until they need to be observed at, say, a function call.
 %
-If they are not all considered $v$, it looks as if \texttt{x} was rebound; it hasn't, and thus it is a ``fake rebinding.''
-%
-CFA2 does not step to all values on variable reference, but instead carries all its values around in superposition until they need to be observed at, say, a function call.
-%
-We give a simplified semantics that is more along the AAM style, but CFA2's approach can easily be recovered from it.\footnote{Our Redex model implements the fake rebinding strategy CFA2 itself employs.}
+%We give a simplified semantics that is more along the AAM style, but CFA2's approach can easily be recovered from it.\footnote{Our Redex model implements the fake rebinding strategy CFA2 itself employs.}
 %%
 
 %%
@@ -692,9 +687,7 @@ A tabular semantics for the CES$\xi$K machine follows the previous section almos
 %%
 CFA2 also includes what they called ``transitive summaries'' to deal with tail calls.
 %
-We create an $\rt$ continuation at every function call.
-%
-This view contends with tail calls, but we can identify tail calls easily --- any call with an $\rt$ as its continuation is a tail call.
+Our memoization view contends with tail calls, but we can identify tail calls easily --- those with an $\rt$ continuation.
 %
 Tail calls are important in language implementations for space complexity reasons \citep{ianjohnson:clinger:tail-calls:1998}, but in an analysis, these concerns are less important since there is no unbounded recursion.
 %
@@ -714,11 +707,11 @@ This follows from the invariant that if a stack frame maps $\maddr$ to $\mval$, 
 %
 %That is, if we always allocated bindings in the heap.
 %
-The additional escape information that allows us to elide allocation in the heap introduces a second level of reasoning, where the burden of proof falls on the escape analysis.
+%The additional escape information that allows us to elide allocation in the heap introduces a second level of reasoning, where the burden of proof falls on the escape analysis.
 %
-The escape analysis adds information to use in the proof, that if $\mvar$ never escapes, then every reference to allocations of $\mvar$'s binding will always be able to use $\mframe$ for the lookup.
+%The escape analysis adds information to use in the proof, that if $\mvar$ never escapes, then every reference to allocations of $\mvar$'s binding will always be able to use $\mframe$ for the lookup.
 %
-With this proposition, we can prove that the CES$\xi$K machine that always allocates in the store has a bisimulation with the refined machine that exploits escape analysis to avoid unnecessary changes to the store.
+%With this proposition, we can prove that the CES$\xi$K machine that always allocates in the store has a bisimulation with the refined machine that exploits escape analysis to avoid unnecessary changes to the store.
 %
 
 \begin{theorem}[Correctness of CFA2]\label{thm:cfa2}
@@ -871,6 +864,7 @@ For this, we extend $\alloc$'s specification to allow more arguments --- the pri
 %% (thanks to ccshan): Discuss difference between CPS for shift/reset and this approach,
 %% Discuss how this does not generalize to first class prompts due to append versus cons.
 
+%% TODO: Cut here next.
 There is contention among programming language researchers whether \rackett{call/cc} should be a language primitive, since it captures the entire stack, leading to space leaks \citep{ianjohnson:kiselyov:against-callcc}.
 %
 Alternative control operators have been proposed that delimit how much of the stack to capture, such as $\%$ (read ``prompt'') and capture operator ${\mathcal F}$ (read ``control'') \citep{ianjohnson:felleisen:control:1988}, or \texttt{reset} (equivalent to $\%$) and \texttt{shift} \citep{ianjohnson:danvy:filinski:delim:1990}.
