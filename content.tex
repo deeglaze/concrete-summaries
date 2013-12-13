@@ -689,13 +689,14 @@ A tabular semantics for the CES$\xi$K machine follows the previous section, exce
 %% %
 %% The repeated popping of $\rt$ inserted by what otherwise were tail-calls is synonymous with CFA2's transitive summaries.
 
-\paragraph{Example:} if we use this semantics to run through the example of the previous section, we find that with the addition of stack frames, there is no confusion about \texttt{z}'s value either, so if the operator weren't $\le$ but instead $<$ or $+$, we could still constant fold that away.
+\paragraph{Example:} revising the earlier example, we find that with the addition of stack frames, there is no confusion about \texttt{z}'s value either.
+%
+If the operator were instead $<$ or $+$, we could still constant fold that away.
 %%
 
 %%
-The stack frame introduces a refinement over the original CESK machine, so we first prove it correct with respect to the concrete semantics.
+The stack frame introduces a refinement over the original CESK machine, so we first prove it correct with respect to the concrete semantics, in a similar fashion to PDCFA.
 %
-We follow up with a similar proof to that of PDCFA, which is that the CES$\xi$K machine has a bisimulation with its tabular semantics, with comparable allocation strategies.
 \begin{theorem}[Correctness of stack frame refinement]\label{thm:refinement}
   The CES$\xi$K machine has a bisimulation with the CESK machine with fresh allocation.
 \end{theorem}
@@ -861,19 +862,17 @@ For this, we extend $\alloc$'s specification to allow more arguments---the priva
 %% Discuss how this does not generalize to first class prompts due to append versus cons.
 
 %% TODO: Cut here next.
-There is contention among programming language researchers whether \rackett{call/cc} should be a language primitive, since it captures the entire stack, leading to space leaks \citep{ianjohnson:kiselyov:against-callcc}.
+There is contention among programming language researchers whether \rackett{call/cc} should be a language primitive\citep{ianjohnson:kiselyov:against-callcc}.
 %
-Alternative control operators have been proposed that delimit how much of the stack to capture, such as $\%$ (read ``prompt'') and capture operator ${\mathcal F}$ (read ``control'') \citep{ianjohnson:felleisen:control:1988}, or \texttt{reset} (equivalent to $\%$) and \texttt{shift} \citep{ianjohnson:danvy:filinski:delim:1990}.
+Alternative control operators have been proposed that delimit how much of the stack to capture, such as $\%$ (read ``prompt'') and capture operator ${\mathcal F}$ (read ``control'') \citep{ianjohnson:felleisen:control:1988}, or \texttt{reset} and \texttt{shift} \citep{ianjohnson:danvy:filinski:delim:1990}.
 %
 However, the stacks captured by these operators always extend the stack when invoked, rather than replace it like those captured with \rackett{call/cc}.
 %
 Continuations that have this extension behavior are called ``composable continuations.''
 %
-Stack replacement is easily modeled in a regular analysis using the AAM approach, and Vardoulakis and Shivers showed it can be done in a pushdown approach.
+Stack extension poses a new challenge for pushdown analysis, since one application of a composable continuation means pushing an unbounded amount of frames onto the stack.
 %
-Stack extension, however, poses a new challenge for pushdown analysis, since one application of a composable continuation means pushing an unbounded amount of frames onto the stack.
-%
-Vardoulakis' and Shivers' approach does not immediately apply in this situation, since their technique drops all knowledge of the stack at a continuation's invocation site; extension, however, must preserve it.
+Vardoulakis' and Shivers' technique drops all knowledge of the stack at a continuation's invocation site; extension must preserve it.
 %%
 
 %%
@@ -937,7 +936,7 @@ The changed semantic spaces for the shift/reset semantics are as follows:
   \label{fig:shift-reset}
 \end{figure}
 
-Turning this into a table-based semantics involves making prompts a point of indirection, just like function calls.
+The table-based semantics makes prompts a point of indirection, just like function calls.
 %
 Memoization also gets a new context to consider, calling a continuation, because composable continuations act like functions.
 %
@@ -954,13 +953,11 @@ The new semantic spaces are then
 
 \autoref{fig:shift-reset-table0} has what one might naturally write using just this information.
 %
-Unfortunately, since $\rt$ continuations contain a store, and continuations can now appear in the store, this introduces an unbounded data structure that could cause the analysis to never terminate.
+\paragraph{Problem:} now $\rt$ continuations contain a store, and captured continuations can appear in the store.
 %
-For example, a loop that continually captures continuations would introduce unboundedly many continuation values due to the ever-growing store.
-%
-This means the store is not finite height, and there may be no fixed point.
+This introduces an unbounded data structure that can cause the analysis to never terminate.
 
-\paragraph{A fix to non-termination:} we allow for a tunable approximation by using $\alloc$.
+\paragraph{Solution:} we allow for a tunable approximation by using $\alloc$.
 %
 Captured continuations' store component in the $\rt$ context gets replaced with an address of possible stores that it would approximate.
 
@@ -1188,7 +1185,7 @@ The method is strongly tied to the simply-typed call-by-name lambda calculus and
 %
 %HORSs are a powerful abstraction target for which monadic second order logic (MSO) is decidable, but systematic constructions of models in HORS from arbitrary programming languages are still out of reach.
 
-\section{Conclusion and future work}
+\section{Conclusion}
 
 As the programming world continues to embrace behavioral values, it becomes more important to import the powerful techniques pioneered by the first-order analysis and model-checking communities.
 %
