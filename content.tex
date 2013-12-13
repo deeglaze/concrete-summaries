@@ -7,11 +7,11 @@ Until recently, flow analyses for higher-order languages could not handle return
 %
 These works, called CFA2 and PDCFA respectively, use pushdown automata as their approximation's target model of computation.
 %
-They are hence called ``pushdown analyses.''
+They are hence called ``pushdown analyses.''%
 %
-\footnote{We will refer to the classic finite model analyses as ``regular analyses'' after regular languages.}
+\footnote{We refer to finite model analyses as ``regular analyses'' after regular languages.}
 %
-CFA2 and PDCFA have difficult details to easily apply to an off-the-shelf semantics --- especially if they feature non-local control transfer that breaks the pushdown model.
+CFA2 and PDCFA have difficult details to easily apply to an off-the-shelf semantics---especially if they feature non-local control transfer that breaks the pushdown model.
 %%
 
 %%
@@ -161,11 +161,11 @@ The semantic spaces for the machine follow.
 The $\Addr$ space is what controls the precision of the model.
 %
 For a concrete semantics, we require the allocation meta-function $\alloc :
-\State \to \Addr$ to return fresh addresses ($\alloc(\tpl{(\mexpr,\menv),\mstore,\mkont}) \notin \dom(\mstore)$), but any choice of address is sound~\citep{dvanhorn:Might2009Posteriori}.
+\State \to \Addr$ to return fresh addresses ($\alloc(\tpl{(\mexpr,\menv),\mstore,\mkont}) \notin \dom(\mstore)$), but any strategy is sound~\citep{dvanhorn:Might2009Posteriori}.
 %
 If $\alloc$ only uses addresses from a finite subset of $\Addr$, then the state space without continuations is finite, and the space of continuation frames is finite.
 %
-A finite allocation strategy makes the continuation the only unbounded data structure in the machine, which follows a stack discipline with a finite ``stack alphabet'' --- thus the pushdown system interpretation is apt.
+A finite allocation strategy makes the continuation the only unbounded data structure in the machine, which follows a stack discipline with a finite ``stack alphabet''---thus the pushdown system interpretation is apt.
 %
 The $\alloc$ meta-function along with the commitment to having no recursive data-structures is the key to the AAM technique.
 %
@@ -214,7 +214,7 @@ The tail of a continuation within a function is some $\krt{\mctx}$, which instru
 %
 A context, $\mctx$, must contain enough information for memoization to be sound, \ie, any extra components not in $\mctx$ must be irrelevant to the evaluation of the function.
 %
-In this case, the context includes the function, the environment, and the store.
+In this case, the context includes the function, environment, and store.
 %
 All the extra components at a context $\mctx$ get stored in a separate table, $\mktab$, so that updates to the memo table will propagate to all callers that depend on the result of $\mctx$.
 %%
@@ -222,7 +222,7 @@ All the extra components at a context $\mctx$ get stored in a separate table, $\
 %%
 Continuations count as ``extra'' in this semantics since functions cannot inspect the stack, so $\krt{\mctx}$ might be considered a special allocation strategy for continuations in the AAM viewpoint.
 %
-We separate the table of continuations, $\mktab$, from the store, $\mstore$, since $\rt$ continuations contain stores --- this leads to a recursive data-structure that we are trying to avoid.
+We separate the table of continuations, $\mktab$, from the store, $\mstore$, since $\rt$ continuations contain stores---this leads to a recursive data-structure that we are trying to avoid.
 %
 The store is an important ingredient to maintaining enough precision to keep a pushdown abstraction.
 %
@@ -404,58 +404,52 @@ PDCFA claims there is no loop and that the result is true.
 %
 The example evaluation is in \autoref{fig:ex-eval}.
 %
+Here $\mkont_0 = \mathbf{lt}({\tt y}, {\tt (let\ ([z\ (id\ 1)])\ (}\le\ {\tt y}\ {\tt z))}, \iota)$.
+%
 We maintain enough context to distinguish the return points of \texttt{id} to not rebind \texttt{y} to 1.
 %
 When determining control flow through the expression, we consult $\mktab$ to continue past function returns, so there is no confusion about a back edge from the second call to \texttt{id}.
 %
 
 \begin{figure}
-      \begin{tabular}{rcl}
+      \begin{tabular}{rcccl}
         $\begin{array}{l}\includegraphics[scale=0.5]{example1}\end{array}$
         & $\Rightarrow$ &
-        $\begin{array}{l}\includegraphics[scale=0.5]{example2}\end{array}$ \\
-        & & \multicolumn{1}{c}{$\Downarrow$} \\
-        \begin{minipage}{0.5\linewidth}
-          \begin{center}
-            {\small
-              \begin{tabular}{|l|c|c|c|}
-                \hline
-                \# & $\mktab$ & $\mmemo$ \\
-                \hline
-                0  & $[\mctx_0 \mapsto \set{\mkont_0}]$ & $[\mctx_0 \mapsto \set{0}]$ \\
-                1  & $\mktab_0[\mctx_1 \mapsto \set{\mkont_2}]$ & $\mmemo_0[\mctx_1 \mapsto \set{0,1}]$ \\
-                \hline
-              \end{tabular}} \\[8pt]
-            {\small
-              \begin{tabular}{|l|c|}
-                \hline
-                \# & $\mctx$ \\
-                \hline
-                0  & $(({\tt x}, \iota), \mstore_1)$ \\
-                1  & $(({\tt x}, \iota), \mstore_3)$ \\
-                \hline
-              \end{tabular}}
-          \end{center}
-
-      \end{minipage} & &
+        $\begin{array}{l}\includegraphics[scale=0.5]{example2}\end{array}$
+        & $\Rightarrow$ &
         $\begin{array}{l}\includegraphics[scale=0.5]{example3}\end{array}$
       \end{tabular}
-    \begin{center} {\small
-        \begin{tabular}{|l|c|c|}
-          \hline
-          \# & $\mstore$ & $\mkont$ \\
-          \hline
-          0 & $[{\tt id} \mapsto \set{(\slam{\mvar}{\mvar},\iota)}]$ & $\mkont_0$ \\
-          1 & $\mstore_0[{\tt \mvar} \mapsto \set{0}]$ & $\krt{\mctx_0}$ \\
-          2 & $\mstore_1[{\tt y} \mapsto \set{0}]$ & $\mathbf{lt}({\tt z}, {\tt (}\le\ {\tt y}\ {\tt z)}, \iota)$ \\
-          3 & $\mstore_2[{\tt x} \mapsto \set{0,1}]$ & $\krt{\mctx_1}$ \\
-          4 & $\mstore_3[{\tt z} \mapsto \set{0,1}]$ & $\kmt$ \\
-          \hline
-        \end{tabular}} \\[10pt]
- Where $\mkont_0 = \mathbf{lt}({\tt y}, {\tt (let\ ([z\ (id\ 1)])\ (}\le\ {\tt y}\ {\tt z))}, \iota)$
-    \end{center}
-\caption{Example analysis evaluation}
-\label{fig:ex-eval}
+      \begin{center}
+      \begin{tabular}{|l|c|c|c|}
+        \hline
+        \# & $\mktab$ & $\mmemo$ \\
+        \hline
+        0  & $[\mctx_0 \mapsto \set{\mkont_0}]$ & $[\mctx_0 \mapsto \set{0}]$ \\
+        1  & $\mktab_0[\mctx_1 \mapsto \set{\mkont_2}]$ & $\mmemo_0[\mctx_1 \mapsto \set{0,1}]$ \\
+        \hline
+        \end{tabular}
+      \begin{tabular}{|l|c|}
+        \hline
+        \# & $\mctx$ \\
+        \hline
+        0  & $(({\tt x}, \iota), \mstore_1)$ \\
+        1  & $(({\tt x}, \iota), \mstore_3)$ \\
+        \hline
+      \end{tabular}
+      \begin{tabular}{|l|c|c|}
+        \hline
+        \# & $\mstore$ & $\mkont$ \\
+        \hline
+        0 & $[{\tt id} \mapsto \set{(\slam{\mvar}{\mvar},\iota)}]$ & $\mkont_0$ \\
+        1 & $\mstore_0[{\tt \mvar} \mapsto \set{0}]$ & $\krt{\mctx_0}$ \\
+        2 & $\mstore_1[{\tt y} \mapsto \set{0}]$ & $\mathbf{lt}({\tt z}, {\tt (}\le\ {\tt y}\ {\tt z)}, \iota)$ \\
+        3 & $\mstore_2[{\tt x} \mapsto \set{0,1}]$ & $\krt{\mctx_1}$ \\
+        4 & $\mstore_3[{\tt z} \mapsto \set{0,1}]$ & $\kmt$ \\
+        \hline
+      \end{tabular}
+      \end{center}
+      \caption{Example analysis evaluation}
+      \label{fig:ex-eval}
 \end{figure}
 % %% FIXME stores in memo-table
 % \begin{enumerate}
@@ -491,7 +485,7 @@ In our view with tabular semantics, the GC story mimics the simplicity of GC in 
 %
 We follow the GC style of \citet{dvanhorn:Might:2006:GammaCFA} with a stop-and-copy collector.
 %
-Address reachability is in terms of a base ``touches'' function, $\touches$, that is different for our continuations.
+Address reachability is in terms of a base ``touches'' function, $\touches$.
 %
 Entries in $\mktab$ might be circular, so we compute the continuation frames in a fixed-point before computing touched addresses:
 \begin{center}
@@ -665,7 +659,7 @@ As soon as the non-determinism has been determined, we could extend the stack fr
 Look-up would then always try the stack frame before falling back on the heap (this must be limited to immutable addresses).
 %%
 
-A tabular semantics for the CES$\xi$K machine follows the previous section almost entirely, except that $\mktab$ now stores $(\mkont, \mframe)$ pairs, and returns reinstate the saved $\mframe$:
+A tabular semantics for the CES$\xi$K machine follows the previous section, except that $\mktab$ now stores $(\mkont, \mframe)$ pairs, and returns reinstate the saved $\mframe$:
 \begin{align*}
   \tpl{\mval,\mstore,\kcons{\kfn{\vclo{\slam{\mvar}{\mexpr}}{\menv}}}{\mkont},\mktab,\mmemo} &\stepto
   \tpl{\mpoint,
@@ -685,13 +679,15 @@ A tabular semantics for the CES$\xi$K machine follows the previous section almos
 \end{align*}
 
 %%
-CFA2 also includes what they called ``transitive summaries'' to deal with tail calls.
-%
-Our memoization view contends with tail calls, but we can identify tail calls easily --- those with an $\rt$ continuation.
-%
-Tail calls are important in language implementations for space complexity reasons \citep{ianjohnson:clinger:tail-calls:1998}, but in an analysis, these concerns are less important since there is no unbounded recursion.
-%
-The repeated popping of $\rt$ inserted by what otherwise were tail-calls is synonymous with CFA2's transitive summaries.
+%% CFA2 also includes what they called ``transitive summaries'' to deal with tail calls.
+%% %
+%% We create an $\rt$ continuation at every function call.
+%% %
+%% This view contends with tail calls, but we can identify tail calls easily---any call with an $\rt$ as its continuation is a tail call.
+%% %
+%% Tail calls are important in language implementations for space complexity reasons \citep{ianjohnson:clinger:tail-calls:1998}, but in an analysis, these concerns are less important since there is no unbounded recursion.
+%% %
+%% The repeated popping of $\rt$ inserted by what otherwise were tail-calls is synonymous with CFA2's transitive summaries.
 
 \paragraph{Example:} if we use this semantics to run through the example of the previous section, we find that with the addition of stack frames, there is no confusion about \texttt{z}'s value either, so if the operator weren't $\le$ but instead $<$ or $+$, we could still constant fold that away.
 %%
@@ -839,7 +835,7 @@ Marking a return continuation means we need to crawl through the table, which ag
 
 Second, the $\domarkset$ metafunction builds a map of keys to lists, and builds a private store for the list constructions.
 %
-For this, we extend $\alloc$'s specification to allow more arguments --- the private store, and a set of keys that need cons cells allocated for them --- and produce a map from keys to pairs of addresses.
+For this, we extend $\alloc$'s specification to allow more arguments---the private store, and a set of keys that need cons cells allocated for them---and produce a map from keys to pairs of addresses.
 %
 %% FIXME: need to crawl through qualified continuations for all extensions to build a list for each found key.
 %% Has another implicit equality check
@@ -1102,7 +1098,7 @@ If the context in an $\rt$ continuation is approximate, we must return to all th
     \bigcup\setbuild{\mktab((\mexpr,\menv),\mstore,\mmktab')}{(\mstore \in \mmktab(\maddr), \mmktab' \sqsubseteq \mmktab}
 \end{align*}
 
-At return boundaries, the memo table must add the result to all the represented contexts:
+At returns, the memo table must add the result to all represented contexts:
 \begin{align*}
   \memoize(\mmktab, \mktab, ((\mexpr,\menv), \mstore', \mmktab'), \mathit{out}) &=
   [((\mexpr,\menv), \mstore',\mmktab') \mapsto \set{{\mathit{out}}}] \\
@@ -1130,6 +1126,7 @@ Consider the following program and its CPS transform for comparison:
 %        [g ($\lambda$ (z) (reset (id (f z))))])
 %   (<= (g 0) (g 1)))
 % \end{lstlisting}
+\begin{small}
 \begin{SCodeFlow}\begin{RktBlk}\begin{SingleColumn}\RktPn{(}\RktSym{let*}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktPn{[}\RktSym{id}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\lambda$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{x}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{x}\RktPn{)}\RktPn{]}
 
 \mbox{\hphantom{\Scribtexttt{xxxxxxx}}}\RktPn{[}\RktSym{f}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\lambda$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{y}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{shift}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{k}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{k}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{k}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{y}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{]}
@@ -1151,7 +1148,7 @@ Consider the following program and its CPS transform for comparison:
 \mbox{\hphantom{\Scribtexttt{xxxxxxx}}}\RktPn{[}\RktSym{g}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\lambda$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{z}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{h}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{h}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{f}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{z}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\lambda$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{fv}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{id}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{fv}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\lambda$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{i}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{i}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{]}\RktPn{)}
 
 \mbox{\hphantom{\Scribtexttt{xx}}}\RktPn{(}\RktSym{g}\mbox{\hphantom{\Scribtexttt{x}}}\RktVal{0}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\lambda$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{g0v}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{g}\mbox{\hphantom{\Scribtexttt{x}}}\RktVal{1}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\lambda$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{g1v}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\le$}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{g0v}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{g1v}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{)}\end{SingleColumn}\end{RktBlk}\end{SCodeFlow}
-
+\end{small}
 PDCFA with a monovariant allocation strategy will predict the CPS'd version returns true or false.
 %
 Our specialized analysis for delimited control, will predict the non-CPS'd version returns true.}
@@ -1177,7 +1174,7 @@ Backward analyses for stack inspection also exist, with the same prerequisite~\c
 %%
 Pushdown models have existed in the first-order static analysis literature~\citep[Chapter 7]{local:muchnick:jones:flow-analysis:1981}\citep{ianjohnson:reps:pushdown:1995}, and the first-order model checking literature \citep{ianjohnson:bouajiani:esparza:pushdown:1997}, for some time.
 %
-The important difference when we move higher-order is that the model construction to feed these methods is an additional problem --- the one we solve here.
+The important difference when we move higher-order is that the model construction to feed these methods is an additional problem---the one we solve here.
 %%
 
 %%
@@ -1207,20 +1204,20 @@ The techniques still apply and give better precision than regular methods.
 %%
 
 %%
-Our goal in the future is to show that this technique is even more widely applicable than shift and reset.
-%
-We conjecture that the same framework will apply to the most intricate control operators in production languages such as in \citet{ianjohnson:Flatt:2007:ADC:1291151.1291178}.
-%
-\iftr{
-We have an unproven prototype of the stack inspection capabilities provided by the {\tt with-continuation-mark}, {\tt current-continuation-marks} and {\tt continuation-mark-set->list} primitives, where a ``context'' then also includes what is the result of {\tt current-continuation-marks}, since functions can inspect only this amount of the stack.}
-%%
+%% Our goal in the future is to show that this technique is even more widely applicable than shift and reset.
+%% %
+%% We conjecture that the same framework will apply to the most intricate control operators in production languages such as in \citet{ianjohnson:Flatt:2007:ADC:1291151.1291178}.
+%% %
+%% \iftr{
+%% We have an unproven prototype of the stack inspection capabilities provided by the {\tt with-continuation-mark}, {\tt current-continuation-marks} and {\tt continuation-mark-set->list} primitives, where a ``context'' then also includes what is the result of {\tt current-continuation-marks}, since functions can inspect only this amount of the stack.}
+%% %%
 
-%%
-Memoization with respect to the entire store is safe, if not a little wasteful; there are portions of the store that can change and be irrelevant to the result of a function call.
-%
-There are techniques to ignore differences in the heap when they are irrelevant, dubbed ``sparseness analysis'' that have been successful for large-scale first-order analysis~\citep{ianjohnson:DBLP:conf/pldi/OhHLLY12}, but they rely on a pre-analysis that knows the control-flow graph.
-%
-Alternatively, there is an analogous concept in concrete semantics called ``self-adjusting computation''~\citep{ianjohnson:DBLP:conf/afp/AcarL08} that has been used for higher-order programs that looks like the right starting point for systematically constructing sparse analyses.
+%% %%
+%% Memoization with respect to the entire store is safe, if not a little wasteful; there are portions of the store that can change and be irrelevant to the result of a function call.
+%% %
+%% There are techniques to ignore differences in the heap when they are irrelevant, dubbed ``sparseness analysis'' that have been successful for large-scale first-order analysis~\citep{ianjohnson:DBLP:conf/pldi/OhHLLY12}, but they rely on a pre-analysis that knows the control-flow graph.
+%% %
+%% Alternatively, there is an analogous concept in concrete semantics called ``self-adjusting computation''~\citep{ianjohnson:DBLP:conf/afp/AcarL08} that has been used for higher-order programs that looks like the right starting point for systematically constructing sparse analyses.
 %
 %% XXX: Don't show this
 %We have promising preliminary results in this direction that don't require a pre-analysis, but we leave further investigation of sparse techniques to future work.
