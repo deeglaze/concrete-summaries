@@ -36,8 +36,8 @@ Defined.
 Inductive val :=
   | closure : Name -> Expr -> Env -> val
   | adelay : Addr -> val
-  | amany : list val -> val.
-Definition AbsVal := list val.
+  | amany : set val -> val.
+Definition AbsVal := set val.
 Axiom val_eq_dec : dec_type val.
 Definition absval_eq_dec : dec_type AbsVal.
   apply list_eq_dec,val_eq_dec.
@@ -82,38 +82,55 @@ Definition cesk_eq_dec : dec_type CESK.
   decide equality; try solve [apply kont_eq_dec | apply time_eq_dec | apply ces_point_eq_dec].
 Defined.
 
-Inductive InDom {A B} : list (A * B) -> A -> Type :=
+Inductive InDom {A B} : list (A * B) -> A -> Prop :=
   | dom_fst : `{InDom ((a,b)::rst) a}
   | dom_rst : `{InDom l a -> InDom ((a',b')::l) a}.
 
-Inductive MapsTo {A B} : list (A * B) -> A -> B -> Type :=
+Inductive MapsTo {A B} : list (A * B) -> A -> B -> Prop :=
   | map_fst : `{MapsTo ((a,b)::rst) a b}
   | map_rst : `{a <> a' -> MapsTo l a b -> MapsTo ((a',b')::l) a b}.
 
-Inductive Unmapped {A B} : list (A * B) -> A -> Type :=
+Inductive Unmapped {A B} : list (A * B) -> A -> Prop :=
   | unil : forall a, Unmapped nil a
   | ucons : forall a a' b l, Unmapped l a' -> a <> a' -> Unmapped ((a,b)::l) a'.
 
-Inductive Functional {A B} : list (A * B) -> Type :=
+Inductive Functional {A B} : list (A * B) -> Prop :=
   | empty_fn : Functional nil
   | extend_fn : `{Functional l -> Unmapped l a -> Functional ((a,b)::l)}.
 
-Inductive InT {A} : A -> list A -> Type :=
-  in_fst : forall a l, InT a (a :: l)
-| in_rst : forall a l b, InT a l -> InT a (b :: l).
-
-Lemma MapsTo_In : forall A B (l : list (A * B)) a b (H: MapsTo l a b), InT (a,b) l.
+Lemma MapsTo_In : forall A B (l : list (A * B)) a b (H: MapsTo l a b), In (a,b) l.
 Proof.
   induction l as [|(a,b) l' IH];
   intros a' b' H; inversion H; (* finishes base case *)
   subst; [constructor|right; apply IH]; auto.
 Qed.
 
+Theorem InDom_is_mapped : forall A B (eq_dec : dec_type A) (l : list (A * B)) a, InDom l a <-> exists b, MapsTo l a b.
+Proof.
+  induction l as [|(a_,b_) l_ IH].
+  split; [intro H; inversion H |intros [x H]; inversion H].
+  intro a; destruct (eq_dec a_ a) as [Heq|Hneq].
+  subst; split; [exists b_|]; constructor.
+  split; intro H;
+   [inversion H as [|? ? ? ? H']; subst;
+    [contradict Hneq
+    |rewrite IH in H'; destruct H' as [b H'']; exists b; constructor]
+   |destruct H as [b H'']; inversion H''; subst; [contradict Hneq|constructor; rewrite IH; exists b]]; auto.
+Qed.
+
+Ltac inject_pair := match goal with [H: (?a, ?b) = (?c, ?d) |- _] => injection H; intros; subst end.
+
+Theorem InDom_In : forall A B (eq_dec : dec_type A) (l : list (A * B)) a, InDom l a <-> exists b, In (a,b) l.
+Proof.
+  intros; split; intro H;
+  [rewrite InDom_is_mapped in H; auto; destruct H as [b H']; apply MapsTo_In in H'; exists b
+  |destruct H as [b H']; induction l as [|(a_,b_) l_ IH]; inversion H'; [inject_pair|];constructor]; auto.
+Qed. 
+
 Theorem unmapped_not_mapped : forall A B
                                      (eq_dec : dec_type A)
                                      (l : list (A*B)) a,
-                                (Unmapped l a -> forall b, MapsTo l a b -> False) *
-                                ((forall b, (MapsTo l a b -> False)) -> Unmapped l a).
+                                (Unmapped l a <-> forall b, ~ MapsTo l a b).
 Proof.
   intros A B eq_dec l a; induction l as [|(a',b') l' [IHl'0 IHl'1]];
   split;
@@ -131,19 +148,21 @@ Proof.
      |intro Heq; subst; apply H with (b := b'); constructor]]; auto.
 Qed.
 
-Lemma in_not_unmapped : forall A B (l : list (A * B)) a b (H:InT (a,b) l), Unmapped l a -> False.
+Lemma in_not_unmapped : forall A B (l : list (A * B)) a b (H:In (a,b) l), ~ Unmapped l a.
 Proof.
-  induction l as [|(a,b) l' IH]; intros a0 b0 H bad; inversion H; subst;[
-  inversion bad; intuition
-  |inversion bad as [|? ? ? ? bad']; apply IH with (b:= b0) in bad'; auto].
+  induction l as [|(a,b) l' IH]; intros a0 b0 H bad; inversion H; subst.
+  inject_pair;
+    inversion bad; auto.
+  inversion bad as [|? ? ? ? bad']; apply IH with (b:= b0) in bad'; auto.
 Qed.
 
+
 Lemma in_functional_mapsto : forall A B (eq_dec : dec_type A) (l : list (A * B)) (F : Functional l)
-                                    a b (H : InT (a,b) l), MapsTo l a b.
+                                    a b (H : In (a,b) l), MapsTo l a b.
 Proof.
   induction l as [|(a,b) l' IH];
   intros F a' b' H; inversion H;[ (* finishes base case *)
-    subst; constructor; auto
+    inject_pair; subst; constructor; auto
   |inversion F as [|? ? ? Hfun Hunmapped]; subst;
    destruct (eq_dec a a'); [subst; contradict Hunmapped; apply in_not_unmapped with (b:=b')
                            |constructor]]; auto.
@@ -152,19 +171,12 @@ Qed.
 Remark functional_exchange : forall A B (l : list (A * B)) a b (F: Functional ((a,b)::l)) b', Functional ((a,b')::l).
 Proof. intros; inversion F; constructor; auto. Qed.
 
-Definition in_aval := In.
+Definition in_aval := @In val.
 
-Inductive exT {A} : (A -> Type) -> Type :=
-  exT_intro : forall a P, (P a) -> exT P.
-Notation "'existsT' x .. y , p" := (exT (fun x => .. (exT (fun y => p)) ..))
-  (at level 200, x binder, right associativity,
-   format "'[' 'existsT'  '/  ' x  ..  y ,  '/  ' p ']'").
+Definition in_list_list {A B} (l : list (A * (list B))) (a : A) (b : B) : Prop :=
+  exists bs, (MapsTo l a bs) /\ (set_In b bs).
 
-
-Definition in_list_list {A B} (l : list (A * (list B))) (a : A) (b : B) : Type :=
-  existsT bs, prod (MapsTo l a bs) (InT b bs).
-
-Inductive in_force (σ : Store) : forall (v v' : val), Type :=
+Inductive in_force (σ : Store) : forall (v v' : val), Prop :=
 | forced : `{in_force σ v v}
 | do_force : `{MapsTo σ a vs -> in_aval v' vs -> in_force σ v' (adelay a)}.
 
@@ -224,11 +236,11 @@ Section ListJoin_facts.
 Variables (A C : Type) (eq_dec : dec_type A)
           (combine : list (A * list C) -> list C -> C -> list C)
           (base : list (A * list C) -> C -> list C)
-          (Hextensive : (forall l b c, InT c (combine l b c)))
-          (Hsingleton : (forall l c, InT c (base l c))).
+          (Hextensive : (forall l b c, In c (combine l b c)))
+          (Hsingleton : (forall l c, In c (base l c))).
 Lemma in_list_join :
   forall l l' a c,
-    (forall ab, InT ab l -> InT ab l') ->
+    (forall ab, In ab l -> In ab l') ->
   in_list_list (list_join eq_dec combine base l' a c l) a c.
 Proof.
   intros l l' a c Hcontain.
@@ -236,9 +248,9 @@ Proof.
   exists (base l' c); split; [left| apply Hsingleton]; auto.
   destruct a0 as [a' b]; destruct (eq_dec a a') as [Heq | Hneq];
   [subst; exists (combine l' b c); split; [left|apply Hextensive]
-  |assert (IHneed : (forall ab, InT ab l -> InT ab l')) by (intros (a_,bs') Hin; apply Hcontain; right; auto);
+  |assert (IHneed : (forall ab, In ab l -> In ab l')) by (intros (a_,bs') Hin; apply Hcontain; right; auto);
     set (mumble := (IHl IHneed));
-    inversion mumble as [wit P Hwit Heq]; subst; destruct Hwit as [Hmap Hin];
+    inversion mumble as [wit Hwit]; subst; destruct Hwit as [Hmap Hin];
     exists wit; split; [apply map_rst|]]; auto.
 Qed.
 
@@ -261,7 +273,7 @@ Proof.
   |constructor; inversion F; [apply IH|apply unmapped_join]]; auto.
 Qed.
 
-Variable Hextensive' : (forall l b c c', InT c' b -> InT c' (combine l b c)).
+Variable Hextensive' : (forall l b c c', In c' b -> In c' (combine l b c)).
 Lemma in_list_join2 :
   forall l l' a a' c c',
   in_list_list l a' c' ->
@@ -269,7 +281,7 @@ Lemma in_list_join2 :
 Proof.
   intros l l' a a' c c' Hold;
   induction l; simpl;
-  inversion Hold as [bs ? Hwit]; destruct Hwit as [Hpairin Hsetin]; subst;
+  inversion Hold as [bs Hwit]; destruct Hwit as [Hpairin Hsetin]; subst;
   [(* base case *) inversion Hpairin
   |destruct a0; destruct (eq_dec a a0) as [Heq | Hneq]; subst;
    [(* Heq *)
@@ -284,7 +296,7 @@ Proof.
     |exists bs; constructor; [constructor|]; auto
     |assert (IHneed : in_list_list l a' c') by (exists bs; repeat constructor; auto);
      set (IHl_ := IHl IHneed);
-     inversion IHl_ as [x ? Hwit]; destruct Hwit as [Hmap Hin];
+     inversion IHl_ as [x Hwit]; destruct Hwit as [Hmap Hin];
      exists x; repeat constructor; auto]]].
 Qed.
 
@@ -367,31 +379,6 @@ Proof.
   constructor.
 Qed.
 Admitted.*)
-Theorem set_add_intro1T : forall (a b : A) (l : list A), InT a l -> InT a (set_add eq_dec b l).
-Proof.
-  clear; induction l as [|x l' IH]; intros H; inversion H; subst; simpl;
-  destruct (eq_dec b x); subst; constructor; auto.
-Qed.
-
-Theorem set_add_intro2T : forall (a : A) (l : list A), InT a (set_add eq_dec a l).
-Proof.
-  clear; induction l as [|x l' IH]; subst; simpl;[
-    constructor
-    |destruct (eq_dec a x); subst; constructor; auto].
-Qed.
-
-Theorem set_add_elimT : forall (a b : A) (l : list A) (H: InT a (set_add eq_dec b l)),
-          (a = b) + (InT a l).
-Proof.
-  clear.
-  induction l; intros; simpl in H; inversion H as [? l_|? l' b' Hin]; subst; try solve [intuition];
-  destruct (eq_dec b a0) as [Heq | Hneq];
-  try match goal with [H : ?a :: ?l = ?b :: ?k |- _] => injection H; intros; subst end;
-  try solve
-  [right; constructor | right; auto].
-  set (IHl_ := IHl Hin).
-  inversion IHl_; [left|right;constructor]; auto.
-Qed.
 
 End ListJoin_facts.
 Section ListJoin_morefacts.
@@ -404,21 +391,22 @@ Lemma in_list_join_set_split : forall (l l' : list (A * list C))
                                       (a a' : A)
                                       (c c' : C)
                                  (Hin : in_list_list (list_join eq_dec joiner singler l' a c l) a' c'),
-                                 sum (prod (a = a') (c = c')) (in_list_list l a' c').
+                                 ((a = a') /\ (c = c')) \/ (in_list_list l a' c').
 Proof.
   induction l as [|(a,cs) l_ IH]; [intros|intros ll' aa aa' cc cc' Hin];
   simpl in *; 
-  inversion Hin as [cs_ ? Hwit]; destruct Hwit as [map_ in_]; subst;
+  inversion Hin as [cs_ Hwit]; destruct Hwit as [map_ in_]; subst;
   [(* base case *)
   inversion map_ as [|? ? ? ? ? ? bad]; subst;
-    [inversion in_ as [|? ? ? bad]; subst; [left; split; auto|inversion bad]
+    [inversion in_ as [|bad]; subst; [left; split; auto|inversion bad]
     |inversion bad]
   |].
   destruct (eq_dec aa a) as [Heq|Hneq];
     inversion map_ as [|foo bar baz qux moo boo too];subst.
 
   (* Eq case with inversion *)
-  destruct (set_add_elimT ceq_dec _ _ in_) as [Hceq|Hinrest];
+
+  destruct (set_add_elim ceq_dec _ _ _ in_) as [Hceq|Hinrest];
        [intuition
        |subst; right; exists cs; repeat constructor; auto].
 
@@ -432,7 +420,7 @@ Proof.
   destruct IH with (l' := ll') (a := aa) (a' := aa') (c := cc) (c' := cc') as [S|S];
     [exists cs_; constructor; auto
     |left; exact S
-    |inversion S as [ccs ? Hwit]; destruct Hwit as [mmap min]; right; exists ccs; split;[constructor|];auto].
+    |inversion S as [ccs Hwit]; destruct Hwit as [mmap min]; right; exists ccs; split;[constructor|];auto].
   (* neq *)
   right.
   apply non_join_untouched with (eq_dec := eq_dec) (combine := joiner) (base := singler) in too;
@@ -458,30 +446,30 @@ Definition σ_join (σ : Store) (a : Addr) (v : val) : Store :=
             (fun σ_orig vs v => (absval_join vs (force σ_orig v)))
             force σ a v σ.
 Section StandardSemantics.
-Variable alloc : CES_point -> Store -> Addr.
-Variable tick : CES_point -> Store -> Time.
+Variable alloc : CES_point -> Addr.
+Variable tick : CES_point -> Time.
 Variable time0 : Time.
 
-Inductive red_cesk : CESK -> CESK -> Type :=
+Inductive red_cesk : CESK -> CESK -> Prop :=
   ev_var : `{let p := (ev (var x) ρ σ) in
              MapsTo ρ x a ->
-             red_cesk (shell p κ t) (shell (co (adelay a) σ) κ (tick p σ))}
+             red_cesk (shell p κ t) (shell (co (adelay a) σ) κ (tick p))}
 | ev_app : `{let p := (ev (app e0 e1) ρ σ) in
-             red_cesk (shell p κ t) (shell (ev e0 ρ σ) ((ar e1 ρ)::κ) (tick p σ))}
+             red_cesk (shell p κ t) (shell (ev e0 ρ σ) ((ar e1 ρ)::κ) (tick p))}
 | ev_lam : `{let p := (ev (lam x e) ρ σ) in
-             red_cesk (shell p κ t) (shell (co (closure x e ρ) σ) κ (tick p σ))}
+             red_cesk (shell p κ t) (shell (co (closure x e ρ) σ) κ (tick p))}
 | co_ar : `{let p := (co v σ) in
-            red_cesk (shell p ((ar e ρ)::κ) t) (shell (ev e ρ σ) ((fn v)::κ) (tick p σ))}
+            red_cesk (shell p ((ar e ρ)::κ) t) (shell (ev e ρ σ) ((fn v)::κ) (tick p))}
 | co_fn : `{let p := (co v σ) in
             in_force σ (closure x e ρ) fnv ->
-            red_cesk (shell p ((fn fnv)::κ) t) (shell (ap x e ρ v σ) κ (tick p σ))}
+            red_cesk (shell p ((fn fnv)::κ) t) (shell (ap x e ρ v σ) κ (tick p))}
 | do_ap : `{let p := (ap x e ρ v σ) in
-            let a := alloc p σ in
+            let a := alloc p in
             let ρ' := extend_ρ x a ρ in
             let σ' := σ_join σ a v in
-            red_cesk (shell p κ t) (shell (ev e ρ' σ') κ (tick p σ))}.
+            red_cesk (shell p κ t) (shell (ev e ρ' σ') κ (tick p))}.
 
-Inductive Trace {State} (s0 : State) (R : State -> State -> Type) : list State -> Type :=
+Inductive Trace {State} (s0 : State) (R : State -> State -> Prop) : list State -> Prop :=
   | initial : Trace s0 R (s0 :: nil)
   | CESK_step : `{Trace s0 R (ς :: π) ->
                   R ς ς' ->
@@ -535,12 +523,14 @@ Definition κs_join := (fun (_ : KTable) κs κ => (set_add trunkont_eq_dec κ �
 Definition κ_singleton := (fun (_ : KTable) κ => singleton trunkont_eq_dec κ).
 Definition res_join := (fun (_ : Memo) rs r => (set_add result_eq_dec r rs)).
 
-Lemma κs_join_extensive (_ : KTable) (b : TrunKonts) (tκ : TrunKont) : InT tκ (set_add trunkont_eq_dec tκ b).
-Proof. apply set_add_intro2T; auto. Qed.
+Lemma κs_join_extensive (_ : KTable) (b : TrunKonts) (tκ : TrunKont) : In tκ (set_add trunkont_eq_dec tκ b).
+Proof. apply set_add_intro2; auto. Qed.
 (*
 Lemma κs_join_extensive' (_ : KTable) (b : TrunKonts) (tκ : TrunKont) := (set_add_intro1 trunkont_eq_dec).
 *)
-Definition κ_singleton_extensive := κs_join_extensive.
+Definition κ_singleton_extensive : forall (Ξ : KTable) (tκ : TrunKont), In tκ (κ_singleton Ξ tκ).
+intros; apply κs_join_extensive; auto.
+Defined. 
 
 Definition Ξ_join (Ξ : KTable) (ctx : Context) (κ : TrunKont) : KTable :=
   list_join context_eq_dec
@@ -565,10 +555,10 @@ Definition Ms_join := map_join (fun M ctx rs => list_join context_eq_dec
                                                           (fun _ rs => rs)
                                                           M ctx rs M).
 
-Definition in_ctxs (Ξ : KTable) (ctx : Context) (κ : TrunKont) : Type :=
+Definition in_ctxs (Ξ : KTable) (ctx : Context) (κ : TrunKont) : Prop :=
   in_list_list Ξ ctx κ.
 
-Definition in_memos (M : Memo) (ctx : Context) (r : Result) : Type :=
+Definition in_memos (M : Memo) (ctx : Context) (r : Result) : Prop :=
   in_list_list M ctx r.
 
 Inductive WShell (P : Type) :=
@@ -587,145 +577,155 @@ Definition ceskmξ_eq_dec : dec_type CESKMΞ.
 Defined.
 
 Section NonStandardSemantics.
-Variable allocmk : CESKMΞ -> Addr.
-Variable tickmk : CESKMΞ -> Time.
-Variable time0mk : Time.
 
-Inductive red_ceskmk : CESKMΞ -> CESKMΞ -> Type :=
-  evmk_var : `{let s := widemk (wshell (ev (var x) ρ σ) tκ t) M Ξ in
-             MapsTo ρ x a ->
-             red_ceskmk s (widemk (wshell (co (adelay a) σ) tκ (tickmk s))  M Ξ)}
-| evmk_app : `{let s := widemk (wshell (ev (app e0 e1) ρ σ) tκ t) M Ξ in
-             red_ceskmk s (widemk (wshell (ev e0 ρ σ) (kpush (ar e1 ρ) tκ) (tickmk s)) M Ξ)}
-| evmk_lam : `{let s := widemk (wshell (ev (lam x e) ρ σ) tκ t) M Ξ in
-             red_ceskmk s (widemk (wshell (co (closure x e ρ) σ) tκ (tickmk s)) M Ξ)}
-| comk_ar : `{let s := widemk (wshell (co v σ) (kpush (ar e ρ) tκ) t) M Ξ in
-            red_ceskmk s (widemk (wshell (ev e ρ σ) (kpush (fn v) tκ) (tickmk s)) M Ξ)}
-| comk_fn : `{let s := widemk (wshell (co v σ) (kpush (fn fnv) tκ) t) M Ξ in
+Inductive red_ceskmk : CESKMΞ -> CESKMΞ -> Prop :=
+  evmk_var : forall x ρ σ a tκ t M Ξ,
+               let p := (ev (var x) ρ σ) in
+               MapsTo ρ x a ->
+               red_ceskmk (widemk (wshell p tκ t) M Ξ)
+                          (widemk (wshell (co (adelay a) σ) tκ (tick p)) M Ξ)
+| evmk_app : forall e0 e1 ρ σ tκ t M Ξ,
+               let p := (ev (app e0 e1) ρ σ) in
+               red_ceskmk (widemk (wshell p tκ t) M Ξ)
+                          (widemk (wshell (ev e0 ρ σ) (kpush (ar e1 ρ) tκ) (tick p)) M Ξ)
+| evmk_lam : forall x e ρ σ tκ t M Ξ,
+               let p := (ev (lam x e) ρ σ) in
+               red_ceskmk (widemk (wshell p tκ t) M Ξ)
+                          (widemk (wshell (co (closure x e ρ) σ) tκ (tick p)) M Ξ)
+| comk_ar : forall v σ e ρ tκ t M Ξ,
+              let p := (co v σ) in
+              red_ceskmk (widemk (wshell p (kpush (ar e ρ) tκ) t) M Ξ)
+                         (widemk (wshell (ev e ρ σ) (kpush (fn v) tκ) (tick p)) M Ξ)
+| comk_fn : forall v σ x e ρ fnv tκ t M Ξ,
+              let p := (co v σ) in
               in_force σ (closure x e ρ) fnv ->
-              red_ceskmk s (widemk (wshell (ap x e ρ v σ) tκ (tickmk s)) M Ξ)}
-| do_apmk : `{let s := widemk (wshell (ap x e ρ v σ) tκ t) M Ξ in
-              let a := allocmk s in
+              red_ceskmk (widemk (wshell p (kpush (fn fnv) tκ) t) M Ξ)
+                         (widemk (wshell (ap x e ρ v σ) tκ (tick p)) M Ξ)
+| do_apmk : forall x e ρ v σ tκ t M Ξ,
+              let p := (ap x e ρ v σ) in
+              let a := alloc p in
               let ρ' := extend_ρ x a ρ in
               let σ' := σ_join σ a v in
-              let t' := (tickmk s) in
+              let t' := (tick p) in
               let ctx := (context e ρ' σ' t') in
-              let Ξ' := Ξ_join Ξ ctx tκ in
               Unmapped M ctx ->
-              red_ceskmk s (widemk (wshell (ev e ρ' σ') (rt ctx) t') M Ξ')}
-| do_memo : `{let s := widemk (wshell (ap x e ρ v σ) tκ t) M Ξ in
-              let a := allocmk s in
+              red_ceskmk (widemk (wshell p tκ t) M Ξ)
+                         (widemk (wshell (ev e ρ' σ') (rt ctx) t') M (Ξ_join Ξ ctx tκ))
+| do_memo : forall x e ρ v σ tκ t M Ξ vm σm tm,
+              let p := (ap x e ρ v σ) in
+              let a := alloc p in
               let ρ' := extend_ρ x a ρ in
               let σ' := σ_join σ a v in
-              let ctx := (context e ρ' σ' t') in
-              let Ξ' := Ξ_join Ξ ctx tκ in
+              let ctx := (context e ρ' σ' (tick p)) in
               in_memos M ctx (res vm σm tm) ->
-              red_ceskmk s (widemk (wshell (co vm σm) tκ tm) M Ξ')} (* XXX: tick? *)
-| do_rt : `{let s := widemk (wshell (co v σ) (rt ctx) t) M Ξ in
-            let t' := (tickmk s) in
+              red_ceskmk (widemk (wshell p tκ t) M Ξ)
+                         (widemk (wshell (co vm σm) tκ tm) M (Ξ_join Ξ ctx tκ)) (* XXX: tick? *)
+| do_rt : forall v σ ctx tκ M Ξ,
+            let t' := (tick (co v σ)) in
             let M' := M_join M ctx (res v σ t') in
             in_ctxs Ξ ctx tκ ->
-            red_ceskmk s (widemk (wshell (co v σ) tκ t') M' Ξ)}.
+            red_ceskmk (widemk (wshell (co v σ) (rt ctx) t') M Ξ)
+                       (widemk (wshell (co v σ) tκ t') M' Ξ). (* XXX: tick? *)
 
-Inductive Dom_in_Dom {A B C} : list (A * B) -> list (A * C) -> Type :=
-  | no_dom : forall l, Dom_in_Dom nil l
-  | cons_dom : forall a l l' b',
-                 (existsT b, InT (a,b) l') ->
-                 Dom_in_Dom l l' ->
-                 Dom_in_Dom ((a,b')::l) l'.
+Inductive Dom_in_Dom {A B C} : list (A * B) -> list (A * C) -> Prop :=
+  | no_dom : `{Dom_in_Dom nil l}
+  | cons_dom : `{InDom l' a -> Dom_in_Dom l l' -> Dom_in_Dom ((a,b)::l) l'}.
+
+Lemma Dom_InDom : forall A (eq_dec : dec_type A) B C (l : list (A * B)) (l' : list (A * C)) (Hdom : Dom_in_Dom l l')
+                         a
+                         (Hindom : InDom l a), InDom l' a.
+Proof.
+induction l; intros; [inversion Hindom|].
+inversion Hdom; subst.
+destruct (eq_dec a1 a0) as [Heq|Hneq]; [subst; auto|inversion Hindom; [subst; contradict Hneq|apply IHl]; auto].
+Qed.
 
 Lemma In_join : forall A B C (eq_dec: dec_type A) (l l' : list (A * B))
                         (f : list (A * B) -> B -> C -> B)  g a a' b b'
-                        (Hcontain : (forall a b, InT (a,b) l -> InT (a,b) l'))
-                        (H : InT (a,b) l),
-                  (existsT b'', InT (a,b'') (list_join eq_dec f g l' a' b' l)).
+                        (Hcontain : (forall a b, In (a,b) l -> In (a,b) l'))
+                        (H : In (a,b) l),
+                  (exists b'', In (a,b'') (list_join eq_dec f g l' a' b' l)).
 Proof.
   intros A B C eq_dec l l' f g a a' b b' Hcontain Hin; induction l as [|(a0,b0) l_ IH];
-  inversion Hin as [(a1,b1) l1|(a1, b1) l1 ? Hin']; subst;
-  assert (IHneed : forall a b, InT (a,b) l_ -> InT (a,b) l') by
+  inversion Hin; subst;
+  assert (IHneed : forall a b, In (a,b) l_ -> In (a,b) l') by
       (intros; apply Hcontain; right; auto);
   pose (rec := IH IHneed);
-
-  unfold list_join;
-  destruct (eq_dec a' a0) as [Heq | Hneq];
-  try solve [subst; exists (f l' b0 b'); constructor; auto
-            |exists b; constructor; auto
-            |exists b0; constructor; auto
-            |set (rec2 := rec Hin'); inversion rec2 as [b'' ? Hin_];
-             exists b''; right; auto].
+  [injection H; intros; subst;
+   unfold list_join;
+   destruct (eq_dec a' a) as [Heq | Hneq];[
+     subst; exists (f l' b b')
+   |exists b]; constructor; auto
+  |unfold list_join;
+    destruct (eq_dec a' a0) as [Heq | Hneq];[
+      exists b; right; auto
+           |destruct rec as [b'' Hb'']; auto; exists b''; right; auto]].
 Qed.
 
 Lemma Dom_join_right : forall A B C D (eq_dec: dec_type A) (l : list (A * B)) (l' : list (A * D))
-                        (f : list (A * D) -> D -> C -> D)  g a c
-                        (Hdom : Dom_in_Dom l l'), Dom_in_Dom l (list_join eq_dec f g l' a c l').
+                        (f : list (A * D) -> D -> C -> D)  g a b,
+                   Dom_in_Dom l l' -> Dom_in_Dom l (list_join eq_dec f g l' a b l').
 Proof.
-  intros ? ? ? ? ? ? ? ? ? ? ? Hdom; induction Hdom as [|aa l' ll bb Hex]; [|inversion Hex as [dd ? Hwit]];
-  [constructor
-  |].  
-  induction ll as [|(a_,b_) l'_ IHl'_].
-  inversion Hwit.
-  simpl in *; auto.
-  inversion IHHdom; subst.
-  Admitted.
-(*
-  destruct (eq_dec a a_) as [Heq | Hneq]; [subst|].
-  constructor.
-  apply In_join with (b := dd); auto.
-  simpl in *.
-;[destruct H as [? bad]; inversion bad |]);
-  [destruct H as [b' Hb'];
-    apply In_join with (b := b')|]; auto.
+  intros A B C D eq_dec l l' f g a b Hdom; induction Hdom as [|? ? ? ? H];
+  constructor;
+  (induction l';[rewrite InDom_In in H; auto; destruct H as [? bad]; inversion bad |]);
+  [rewrite InDom_In in H; auto; destruct H as [b' Hb'];
+   rewrite InDom_In; auto; apply In_join with (b := b')|]; auto.
 Qed.
-*)
 
 Lemma Dom_join_left : forall A B C D (eq_dec: dec_type A) (l l_ : list (A * B)) (l' : list (A * D))
                         (f : list (A * B) -> B -> C -> B)  g a b
-                        (Hcontain: (forall ab, InT ab l -> InT ab l_)),
+                        (Hcontain: (forall ab, In ab l -> In ab l_)),
                    Dom_in_Dom l l' ->
-                   (existsT d, MapsTo l' a d) ->
+                   (exists d, MapsTo l' a d) ->
                    Dom_in_Dom (list_join eq_dec f g l_ a b l) l'.
 Proof.
-  intros A B C D eq_dec l l_ l' f g a b Hcontain Hdom Hex; inversion Hex as [d ? Hin]; induction Hdom as [|? ? ? ? Hex'].
-  constructor; [exists d; apply MapsTo_In |constructor];auto.
+  intros A B C D eq_dec l l_ l' f g a b Hcontain Hdom [d Hin]; induction Hdom.
+  (* base *)
+  repeat constructor; rewrite InDom_is_mapped; auto; exists d; auto.
+    (* induction step *)
   simpl; destruct (eq_dec a a0) as [Heq|Hneq]; subst; simpl;
-  [constructor; [exists d; apply MapsTo_In|]; auto
-  |inversion Hex' as [d' ? Hin']; constructor; [exists d'|]; auto].
-  apply IHHdom; try solve [intros; apply Hcontain; right; auto|auto].
+  [constructor; [rewrite InDom_is_mapped; auto; exists d|]; auto
+  |].
+  rewrite InDom_In in H; auto; destruct H as [d' Hin'].
+  constructor;
+    [rewrite InDom_In; auto; exists d'
+    |apply IHHdom; [intros; apply Hcontain; right|]]; auto.
 Qed.
 
 
-Definition TraceTo {State} (R : State -> State -> Type) (s0 s1 : State) : Type :=
-  existsT π, Trace s0 R (s1 :: π).
+Definition TraceTo {State} (R : State -> State -> Prop) (s0 s1 : State) : Prop :=
+  exists π, Trace s0 R (s1 :: π).
 
 Definition step_all (s : CESKMΞ) : set CESKMΞ :=
   match s with
     | widemk (wshell (ev (var x) ρ σ) tκ t) M Ξ  =>
       match (lookup_ρ x ρ) with
        | None => empty_set _
-       | Some a => singleton ceskmξ_eq_dec (widemk (wshell (co (adelay a) σ) tκ (tickmk s)) M Ξ)
+       | Some a => singleton ceskmξ_eq_dec (widemk (wshell (co (adelay a) σ) tκ (tick (ev (var x) ρ σ))) M Ξ)
       end
     | widemk (wshell (ev (app e0 e1) ρ σ) tκ t) M Ξ =>
-      singleton ceskmξ_eq_dec (widemk (wshell (ev e0 ρ σ) (kpush (ar e1 ρ) tκ) (tickmk s)) M Ξ)
+      singleton ceskmξ_eq_dec (widemk (wshell (ev e0 ρ σ) (kpush (ar e1 ρ) tκ) (tick (ev (app e0 e1) ρ σ))) M Ξ)
     | widemk (wshell (ev (lam x e) ρ σ) tκ t) M Ξ =>
-      singleton ceskmξ_eq_dec (widemk (wshell (co (closure x e ρ) σ) tκ (tickmk s)) M Ξ)
+      singleton ceskmξ_eq_dec (widemk (wshell (co (closure x e ρ) σ) tκ (tick (ev (lam x e) ρ σ))) M Ξ)
     | widemk (wshell (co v σ) (kpush (ar e ρ) tκ) t) M Ξ =>
-              singleton ceskmξ_eq_dec (widemk (wshell (ev e ρ σ) (kpush (fn v) tκ) (tickmk s)) M Ξ)
+              singleton ceskmξ_eq_dec (widemk (wshell (ev e ρ σ) (kpush (fn v) tκ) (tick (co v σ))) M Ξ)
     | widemk (wshell (co v σ) (kpush (fn fnv) tκ) t) M Ξ =>
       (* Append forces *)
       fold_right (fun v acc =>
                     match v with
                         closure x e ρ => set_add ceskmξ_eq_dec
-                                                 (widemk (wshell (ap x e ρ v σ) tκ (tickmk s)) M Ξ)
+                                                 (widemk (wshell (ap x e ρ v σ) tκ (tick (co v σ))) M Ξ)
                                                  acc
                       | _ => acc
                  end)
                  (empty_set _)
                  (force σ fnv)
     | widemk (wshell (ap x e ρ v σ) tκ t) M Ξ =>
-      let a := allocmk s in
+      let a := alloc (ap x e ρ v σ) in
       let ρ' := extend_ρ x a ρ in
       let σ' := σ_join σ a v in
-      let t' := (tickmk s) in
+      let t' := (tick (ap x e ρ v σ)) in
       let ctx := (context e ρ' σ' t') in
       let Ξ' := Ξ_join Ξ ctx tκ in
       (* both call and use memo table *)
@@ -742,7 +742,7 @@ Definition step_all (s : CESKMΞ) : set CESKMΞ :=
                          rs
       end
     | widemk (wshell (co v σ) (rt ctx) t) M Ξ =>
-      let t' := (tickmk s) in
+      let t' := (tick (co v σ)) in
       let M' := M_join M ctx (res v σ t') in
       match (lookup_Ξ ctx Ξ) with
           | None => (empty_set _)
@@ -773,19 +773,20 @@ Definition smush_steps (s : WCESKMΞ) (M: Memo) (Ξ: KTable) (S : set WCESKMΞ) 
      end)
     (step_all (widemk s M Ξ)) nil nil nil.
 
-Theorem finite_steps : forall s, existsT ss : set CESKMΞ, forall s',
-                          (red_ceskmk s s' -> InT s' ss) *
-                          (InT s' ss -> red_ceskmk s s').
+Theorem finite_steps : forall s, exists ss : set CESKMΞ, forall s',
+                          (red_ceskmk s s' -> In s' ss) *
+                          (In s' ss -> red_ceskmk s s').
 Proof.
   intro s; exists (step_all s); intro s'; split; [intro Hred|intro Hin].
   inversion_clear Hred; simpl; try solve [left; auto|
 rewrite lookup_mapsto with (eq_dec := name_eq_dec) in H;
 unfold lookup_ρ; rewrite H; constructor; auto].
+inversion H.
 Admitted.
 
 Check smush_steps.
 
-Inductive Wide_CESKMΞ : System -> System -> Type :=
+Inductive Wide_CESKMΞ : System -> System -> Prop :=
   | big_step : forall s M Ξ Seen F ss M' Ξ',
                  (wide_step ss M' Ξ') = (smush_steps s M Ξ Seen) ->
                  Wide_CESKMΞ (**) (system Seen (s::F) M Ξ) (**)
@@ -796,7 +797,7 @@ Inductive Wide_CESKMΞ : System -> System -> Type :=
 
 Definition WCESKMΞ_trace (e : Expr) := Trace (system ((wshell (ev e nil nil) mt time0)::nil) ((wshell (ev e nil nil) mt time0)::nil) nil nil) Wide_CESKMΞ.
 
-Inductive StackUnroll (Ξ : KTable) : Kont -> TrunKont -> Type :=
+Inductive StackUnroll (Ξ : KTable) : Kont -> TrunKont -> Prop :=
   unroll_mt : `{StackUnroll Ξ nil mt}
 | unroll_push : forall κ tκ φ, StackUnroll Ξ κ tκ -> StackUnroll Ξ (φ :: κ) (kpush φ tκ)
 | unroll_rt : forall ctx tκ κ,
@@ -805,8 +806,8 @@ Inductive StackUnroll (Ξ : KTable) : Kont -> TrunKont -> Type :=
                 StackUnroll Ξ κ (rt ctx).
 
 Ltac textend_map := apply in_list_join2;solve [
-                             intros; apply set_add_intro1T; auto
-                            | intros; apply set_add_intro2T; auto 
+                             intros; apply set_add_intro1; auto
+                            | intros; apply set_add_intro2; auto 
                             | auto].
 
 Theorem unroll_with_extension : forall
@@ -823,10 +824,10 @@ Ltac inject_push :=
   match goal with [H: kpush ?φ0 ?tκ0 = kpush ?φ1 ?tκ1 |- _] => injection H; intros;
                                                                try (subst φ1 tκ1); try subst end.
 
-Inductive Unroll_inv : KTable -> TrunKont -> Type :=
+Inductive Unroll_inv : KTable -> TrunKont -> Prop :=
   unroll_inv : forall Ξ κ tκ,
                  StackUnroll Ξ κ tκ ->
-                 (forall ctx tκ', in_ctxs Ξ ctx tκ' -> existsT κ', StackUnroll Ξ κ' tκ') ->
+                 (forall ctx tκ', in_ctxs Ξ ctx tκ' -> exists κ', StackUnroll Ξ κ' tκ') ->
                  Unroll_inv Ξ tκ.
 
 Lemma unrolling_inv : forall p p' tκ tκ' t t' M M' Ξ Ξ'
@@ -835,61 +836,57 @@ Lemma unrolling_inv : forall p p' tκ tκ' t t' M M' Ξ Ξ'
                              (Hinv : Unroll_inv Ξ tκ),
                              Unroll_inv Ξ' tκ'.
 Proof with auto.
-  intros; inversion Hstep as [? ? ? ? ? (* <- time *) ? ? ? s0 Hmap Hpeq Hs'eq |
-                      ? ? ? ? ? ? ? ? s0 Hpeq |
-                      ? ? ? ? ? ? ? ? s0 Hpeq Hs'eq |
-                      ? ? ? ? ? ? ? ? s0 Hpeq Hs'eq |
-                      ? ? ? ? ? ? ? ? ? ? s0 Hin_force Hpeq Hs'eq |
-                      ? ? ? ? ? ? ? ? ? s0 a ρ' σ' t0 ctx Ξ0 Hunmapped Hpeq Hs'eq |
-                      ? ? ? ? ? ? ? ? ? ? ? ? ? s0 a ρ' σ' ctx Ξ0 Hin_memos Hpeq Hs'eq |
-                      ? ? ? ? ? ? tκ0 s0 t0 M0 Hin_ctxs Hpeq Hs'eq];
-  inversion Hinv as [? κ ? Hunroll HΞ];
-  try solve [destruct s0; subst; apply unroll_inv with (κ := κ); auto
-            |destruct s0; subst; apply unroll_inv with (κ := ((ar e1 ρ)::κ)); [constructor|];auto
-            |destruct s0; subst; inversion Hunroll as [|κκ|]; subst; 
+  intros; inversion Hstep as [x ρ σ a tκs ts Ms Ξs ps Hmap Hpeq Hs'eq |
+                              e0 e1 ρ σ tκs ts Ms Ξs ps Hpeq |
+                              x e ρ σ tκs ts Ms Ξs ps Hpeq Hs'eq |
+                              v σ e ρ tκs ts Ms Ξs ps Hpeq Hs'eq |
+                              v σ x e ρ fnv tκs ts Ms Ξs ps Hin_force Hpeq Hs'eq |
+                              x e ρ v σ tκs ts Ms Ξs ps a ρ' σ' ts' ctx Hunmapped Hpeq Hs'eq |
+                              x e ρ v σ tκs ts Ms Ξs vm σm tm ps a ρ' σ' ctx Hinmemos Hpeq Hs'eq |
+                              v σ ctx tκs Ms Ξs t's M's Hin_ctxs Hpeq Hs'eq];
+  inversion Hinv as [? κ ? Hunroll HΞ]; subst;
+  try solve [apply unroll_inv with (κ := κ); auto
+            |apply unroll_inv with (κ := ((ar e1 ρ)::κ)); [constructor|];auto
+            |inversion Hunroll as [|κκ|]; subst; 
              solve [discriminate | apply unroll_inv with (κ := ((fn v)::κκ)); [constructor|];auto]
-            |destruct s0; subst; inversion Hunroll as [|κκ|]; subst; 
+            |inversion Hunroll as [|κκ|]; subst; 
              solve [discriminate | apply unroll_inv with (κ := ((fn fnv)::κκ)); [constructor|];auto]].
   (* fn -> ap *)
-  destruct s0; inversion Hunroll as [|κκ|]; subst;
-  solve [discriminate
-        |inject_push; exists κκ; auto].
+  inversion Hunroll as [|κκ|]; apply unroll_inv with (κ := κκ); auto.
   (* unmemoized ap *)
   apply unroll_inv with (κ := κ);[
   apply unroll_rt with (tκ := tκ);
-  [apply unroll_with_extension
-  |apply in_list_join]; try solve [auto | intros; apply set_add_intro2T; auto]
-    |].
+      [apply unroll_with_extension
+      |apply in_list_join; solve [intros; apply set_add_intro2; auto | auto]]; auto
+  |].
   intros ctx_ tκ_ Hin_.
   destruct (in_list_join_set_split context_eq_dec trunkont_eq_dec) 
        with (l := Ξ) (l' := Ξ) (a := ctx) (a' := ctx_) (c := tκ) (c' := tκ_)
     as [[? ?]|S1]; auto;
-  [exists κ; apply unroll_with_extension; subst tκ1 Ξ2 ctx_ tκ_; auto
-  |assert (HΞneed : in_ctxs Ξ ctx_ tκ_) by (unfold in_ctxs; subst tκ1 Ξ2; auto);
-    set (mer := (HΞ ctx_ tκ_ HΞneed)); inversion mer as [κ' ? Hκ'];
-    exists κ'; apply unroll_with_extension; auto].
+  [exists κ; apply unroll_with_extension; subst; auto
+  |destruct (HΞ ctx_ tκ_) as [κ' ?]; auto;
+    unfold in_ctxs; subst; exists κ'; apply unroll_with_extension; auto].
   (* memoized ap *)
-  subst Ξ0 Ξ' Ξ2 tκ1 p p' t' tκ'.
+  subst;
   apply unroll_inv with (κ := κ);
     [apply unroll_with_extension
     |intros ctx_ tκ_ Hin_;
       destruct (in_list_join_set_split context_eq_dec trunkont_eq_dec) 
-       with (l := Ξ) (l' := Ξ) (a := ctx) (a' := ctx_) (c := tκ) (c' := tκ_)
+       with (l := Ξ) (l' := Ξ) (a := ctx) (a' := ctx_) (c := tκ') (c' := tκ_)
        as [[? ?]|S1]; auto;
     [subst tκ_; exists κ; apply unroll_with_extension
-    |assert (HΞneed : in_ctxs Ξ ctx_ tκ_) by auto;
-     set (mer := HΞ ctx_ tκ_ HΞneed); inversion mer as [κ' ? HH];
-     solve [exists κ'; apply unroll_with_extension; auto
-           |auto]]]; auto.
+    |destruct (HΞ ctx_ tκ_) as [κ' ?]; solve [exists κ'; apply unroll_with_extension; auto
+                                                    |auto]]]; auto. 
   (* return and memoize *)
-  subst p p' tκ tκ' Ξ'.
-  assert (HΞneed : in_ctxs Ξ ctx tκ0) by auto;
-    set (mer := (HΞ ctx tκ0 HΞneed)); inversion mer as [κ' ? HH]; auto.
+  subst;
+  destruct (HΞ ctx tκ') as [κ' ?]; auto.
   apply unroll_inv with (κ := κ'); auto.
 Qed.  
 
+
+
 (* needs to be proof-relevant for an always-correct replacetail *)
-Inductive KontTail : Kont -> Kont -> Type :=
+Inductive KontTail : Kont -> Kont -> Prop :=
 | same_tail : `{KontTail κ κ}
 | push_tail : `{KontTail κ κ' -> KontTail κ (φ :: κ')}.
 
@@ -939,13 +936,13 @@ Proof.
   apply kont_tail_cons in H; apply IH; auto.
 Qed.
 
-Inductive hastail (κ : Kont) : list CESK -> Type :=
+Inductive hastail (κ : Kont) : list CESK -> Prop :=
   Nil_tail : hastail κ nil
 | Cons_tail : forall π p κ' t, hastail κ π -> KontTail κ κ' ->
                            hastail κ ((shell p κ' t) :: π).
 
 (* Tail_replacement κorig κtail κreplacement κresult *)
-Inductive Tail_replacement : Kont -> Kont -> Kont -> Kont -> Type :=
+Inductive Tail_replacement : Kont -> Kont -> Kont -> Kont -> Prop :=
 | tail_replacement : `{Tail_replacement κ κ κ'' κ''}
 | push_replacement : `{Tail_replacement κ κ' κ'' κ''' ->
                        Tail_replacement (φ::κ) κ' κ'' (φ::κ''')}.
@@ -971,10 +968,8 @@ Fixpoint replacetail_kont (κ κ' κ'' : Kont) : option Kont :=
                end
   end.
 
-Inductive Good_Kont : Kont -> Kont -> Kont -> Type :=
-  gkont : forall κ κ' κ'' κ''', replacetail_kont κ κ' κ'' =  Some κ''' -> Good_Kont κ κ' κ''.
-
-Definition replacetail_kont_good : forall κ κ' κ'' (Htail : KontTail κ' κ), Good_Kont κ κ' κ''.
+Definition replacetail_kont_good : forall κ κ' κ'' (Htail : KontTail κ' κ),
+                                     exists κ''', replacetail_kont κ κ' κ'' = Some κ'''.
 induction κ as [|φ κ_ IH]; intros;
 [exists κ''; inversion Htail; subst; simpl; reflexivity
 |inversion Htail as [|? ? ? Htail']; subst;
@@ -982,9 +977,9 @@ induction κ as [|φ κ_ IH]; intros;
   |destruct (kont_eq_dec (φ :: κ_) κ') as [Heq | Hneq];
     [subst; exists κ''; unfold replacetail_kont; split_refl kont_eq_dec (φ :: κ_)
     |set (mumble := IH κ' κ'' Htail');
-      inversion mumble as [? ? ? κ''' Heq]; subst;
+      inversion mumble as [κ''' Heq]; subst;
       exists (φ :: κ'''); unfold replacetail_kont; split_refl2 kont_eq_dec (φ :: κ_) κ'; fold replacetail_kont; rewrite Heq]; auto]].
-Defined.
+Qed.
 
 Definition replacetail_state (s : CESK) (κ' κ'' : Kont) :=
   match s with
@@ -995,10 +990,10 @@ Definition replacetail_state (s : CESK) (κ' κ'' : Kont) :=
   end.
 
 Lemma replacetail_state_good : forall s κ' κ'' (Htail : match s with shell p κ t => KontTail κ' κ end),
-                                 existsT s', replacetail_state s κ' κ'' = Some s'.
+                                 exists s', replacetail_state s κ' κ'' = Some s'.
 Proof.
   intros; destruct s as [p κ t]; set (good := replacetail_kont_good κ'' Htail);
-  inversion good as [? ? ? κ''' Hgood]; subst;
+  inversion good as [κ''' Hgood]; subst;
   exists (shell p κ''' t);
   unfold replacetail_state; rewrite Hgood; auto.
 Qed.
@@ -1010,7 +1005,7 @@ Fixpoint replacetail (π : list CESK) (κ' κ'' : Kont) : list (option CESK) :=
   end.
 
 Theorem replacetail_good : forall (π : list CESK) (κ' κ'' : Kont) (Htail : hastail κ' π),
-  existsT (π' : list CESK), (replacetail π κ' κ'') = (map (@Some CESK) π').
+  exists (π' : list CESK), (replacetail π κ' κ'') = (map (@Some CESK) π').
 Proof.
   induction π; intros.
   exists nil; simpl; auto.
@@ -1035,6 +1030,66 @@ Proof.
   contradict H; omega.
 Qed.
 
+Lemma no_longer_kont_tail : forall κ κmore, length κmore > 0 -> ~ KontTail (κmore ++ κ) κ.
+Proof.
+  induction κ.
+  induction κmore; intros; [inversion H|intro bad; inversion bad].
+  intros κmore H bad.
+  apply IHκ with (κmore := κmore ++ [a]).
+  rewrite app_length; omega.
+  rewrite app_assoc_reverse; simpl.
+  inversion bad as [bad0 bad1 bad2|bad0 bad1 bad2 bad3 bad4 bad5];
+                             [symmetry in bad2; apply no_circular_app in bad2; [contradiction|]
+                             |subst]; auto.
+Qed.
+
+Lemma no_conflicting_kont_tail : forall κ φ φ' (H : φ <> φ'), ~ KontTail (φ :: κ) (φ' :: κ).
+Proof.
+  induction κ; intros φ φ' H bad;
+  inversion bad as [|? ? ? bad3];
+  solve [contradiction|inversion bad3
+         |subst;
+           assert (goal : ~ KontTail ([φ] ++ (a :: κ)) (a :: κ)) by (apply no_longer_kont_tail; simpl; omega);
+           simpl in goal; auto].
+Qed.
+
+Lemma no_longer_tail_replacement : forall κ κ' κmore,
+                                      length κmore > 0 ->
+                                      replacetail_kont κ (κmore ++ κ) κ' = None.
+Proof.
+  induction κ as [|φ κ_ IH].
+  intros; simpl; rewrite app_nil_r; destruct κmore; [contradict H;simpl; omega|reflexivity].
+  intros.
+  unfold replacetail_kont.
+  destruct (kont_eq_dec (φ :: κ_) (κmore ++ φ :: κ_)) as [bad|Hneq].
+  apply no_circular_app in bad; [contradiction|auto].
+  fold replacetail_kont.
+  intros.
+  assert (R : κmore ++ φ :: κ_ = κmore ++ [φ] ++ κ_) by (simpl; reflexivity).
+  rewrite R.
+  rewrite app_assoc with (m := [φ]).
+  rewrite IH; [auto| rewrite app_length; omega].
+Qed.
+
+Lemma no_longer_tail_replacement2 : forall κ κ' φ, replacetail_kont κ (φ :: κ) κ' = None.
+Proof.
+  intros; assert (goalapp : replacetail_kont κ ([φ] ++ κ) κ' = None);
+  [apply no_longer_tail_replacement; simpl;omega|simpl].
+  simpl in goalapp; auto.
+Qed.
+
+Lemma no_conflicting_tail_replacement : forall κ κ' φ φ' (H : φ <> φ'), replacetail_kont (φ :: κ) (φ' :: κ) κ' = None.
+Proof.
+  induction κ as [|φ κ_ IH]; intros.
+  unfold replacetail_kont; destruct (kont_eq_dec [φ] [φ']) as [bad|]; [injection bad; intros; contradiction|auto].
+  unfold replacetail_kont; destruct (kont_eq_dec (φ0 :: φ :: κ_) (φ' :: φ :: κ_)) as [bad|];
+  [injection bad; intros; contradiction
+  |fold replacetail_kont].
+  destruct (kont_eq_dec (φ :: κ_) (φ' :: φ :: κ_)) as [bad|];
+    [injection bad; intros toolong;apply no_circular_cons in toolong; contradiction
+    |rewrite no_longer_tail_replacement with (κmore := [φ' ; φ]); [reflexivity | simpl; omega]].
+Qed.
+
 (*
 Require Import Setoid.
 
@@ -1051,24 +1106,6 @@ Proof.
   apply IHκ_ with (κmore := κmore ++ [φ]).
   rewrite app_length; omega.
   rewrite app_assoc_reverse in H0; simpl in H0; contradiction.
-Qed.
-
-Lemma no_longer_tail_replacement2 : forall κ κ' κmore,
-                                      length κmore > 0 ->
-                                      replacetail_kont κ (κmore ++ κ) κ' = None.
-Proof.
-  induction κ as [|φ κ_ IH].
-  intros; simpl; rewrite app_nil_r; destruct κmore; [contradict H;simpl; omega|reflexivity].
-  intros.
-  unfold replacetail_kont.
-  destruct (kont_eq_dec (φ :: κ_) (κmore ++ φ :: κ_)) as [bad|Hneq].
-  apply no_circular_app in bad; [contradiction|auto].
-  fold replacetail_kont.
-  intros.
-  assert (R : κmore ++ φ :: κ_ = κmore ++ [φ] ++ κ_) by (simpl; reflexivity).
-  rewrite R.
-  rewrite app_assoc with (m := [φ]).
-  rewrite IH; [auto| rewrite app_length; omega].
 Qed.
 
 Lemma replace_is_replacement : forall κ κ' κ'' κ''',
@@ -1123,206 +1160,188 @@ Proof.
 Qed.
 *)  
 
-Inductive ctx_of : TrunKont -> Context -> Type :=
+Inductive ctx_of : TrunKont -> Context -> Prop :=
   | push_ctx : `{ctx_of tκ ctx -> ctx_of (kpush φ tκ) ctx}
   | rt_ctx : `{ctx_of (rt ctx) ctx}.
 
 Definition ctx_in_dom (Ξ : KTable) (tκ : TrunKont) :=
-  forall ctx : Context, `{ctx_of tκ ctx -> (existsT κs, InT (ctx,κs) Ξ)}.
+  forall ctx : Context, `{ctx_of tκ ctx -> (exists κs, In (ctx,κs) Ξ)}.
 
-Inductive Tailed_Trace : forall (κ : Kont) (p : CES_point) (t : Time) (p' : CES_point) (t' : Time), Type :=
+Inductive Tailed_Trace : forall (κ : Kont) (p : CES_point) (t : Time) (p' : CES_point) (t' : Time), Prop :=
   tailt : `{Trace (shell p κ t)
                   red_cesk
                   ((shell p' κ t') :: π)
-            -> (hastail κ' π) -> Tailed_Trace κ p t p' t'}.
+            -> (hastail κ π) -> Tailed_Trace κ p t p' t'}.
+
+(* prove option versions save with hastail so this goes through *)
+
+Inductive Stack_Irrelevant : CESK -> Kont -> Kont -> list CESK -> Prop :=
+  irrelevant_intro : forall s s' π π' κ' κ'',
+                       (replacetail_state s κ' κ'') = Some s' ->
+                       (replacetail π κ' κ'') = (map (@Some CESK) π') ->
+                       Trace s' red_cesk π' ->
+                       Stack_Irrelevant s κ' κ'' π.
+
+Ltac grumble H_ := try solve [simpl; rewrite H_; reflexivity | constructor].
+Lemma stack_irrelevance : forall p κ t π κ' κ''
+                                 (orig : Trace (shell p κ t) red_cesk π)
+                                 (tail0 : KontTail κ' κ)
+                                 (Htail : hastail κ' π),
+                            Stack_Irrelevant (shell p κ t) κ' κ'' π.
+Proof.
+  intros; destruct (replacetail_kont_good κ'' tail0) as [κ_ H_]; subst.
+  induction orig as [|s0 π0 s1 HT ? Hstep].
+  apply irrelevant_intro with (s' := (shell p κ_ t)) (π' := [shell p κ_ t]); grumble H_.
+  (* Step *)
+  inversion Htail as [|? pt κt tt Htail' κtail];
+  destruct (replacetail_kont_good κ'' κtail) as [κt_ Ht_]; subst.
+  set (use := IHorig Htail'); inversion use as [? s' ? [|[p0' κ0' t0'] π'] ? ? Hreps Hrep HT'];
+    subst; clear use; try solve [inversion HT'].
+  assert (s'eq : s' = shell p κ_ t) by (simpl in Hreps; rewrite H_ in Hreps; injection Hreps; auto); subst.
+  simpl in Hrep; injection Hrep; intros πeq seq; clear Hrep.
+  Ltac ε out p0' κ0' t0' pp κt_ ts s0'eq Ht_ H_ πeq initial pfrom pto π' σ := assert (out : shell p0' κ0' t0' = shell pp κt_ ts); (subst; simpl in s0'eq; rewrite Ht_ in s0'eq; try injection s0'eq; intros; subst; subst p0'; auto);
+       apply (irrelevant_intro _ _ (s' := initial)
+              (π' := (shell pto κ0' (tick pfrom)) :: (shell pfrom κ0' t0') :: π'));
+  [grumble H_
+  |unfold replacetail,replacetail_state,map; fold replacetail; fold map; f_equal;
+   rewrite Ht_;[auto|f_equal; apply πeq]
+  |repeat constructor; auto].
+  
+  Ltac push out p0' κ0' t0' κs κ' κ'' pp φ κt_ ts seq Ht_ :=
+    assert (out : (shell p0' (φ :: κ0') t0') = shell pp κt_ ts) by
+      (subst; simpl in seq; unfold replacetail_kont in Ht_;
+       destruct (kont_eq_dec (φ :: κs) κ') as [Heq | Hneq];
+       [injection Ht_; intros; subst; rewrite (no_longer_tail_replacement2 κs κt_ φ) in seq; discriminate
+       |fold replacetail_kont in Ht_;
+         destruct (replacetail_kont κs κ' κ'') as [preκt|]; [|discriminate];
+         injection Ht_; injection seq; intros; subst; subst p0'; auto]).
+
+  inversion Hstep as [x ρ σ a κs ts (* <- time *) pp Hmap Hpeq Hs'eq | (* var *)
+                      e0 e1 ρ σ κs ts pp Hpeq | (* app *)
+                      x e ρ σ κs ts pp Hpeq Hs'eq | (* lam *)
+                      v σ e ρ κs ts pp Hpeq Hs'eq | (* arg *)
+                      v σ x e ρ fnv κs ts pp Hin_force Hpeq Hs'eq | (* fn -> ap *)
+                      x e ρ v σ κs ts pp a ρ' σ' Hpeq Hs'eq];
+    [(* var : ε*)
+      ε s0'eq p0' κ0' t0' pp κt_ ts seq Ht_ H_ πeq (shell p κ_ t) (ev (var x) ρ σ) (co (adelay a) σ) π' σ
+    |(* app : push*)
+    push s0'eq' p0' κ0' t0' κs κ' κ'' pp (ar e1 ρ) κt_ ts seq Ht_;
+  apply irrelevant_intro with (s' := (shell p κ_ t)) (π' := (shell (ev e0 ρ σ) ((ar e1 ρ)::κ0') tt) :: (shell (ev (app e0 e1) ρ σ) κ0' t0') :: π'); injection s0'eq'; intros; subst; 
+   [grumble H_
+   |unfold replacetail,replacetail_state,map; fold replacetail; fold map; f_equal; 
+    [rewrite Ht_|repeat f_equal]; auto
+   |repeat constructor; auto]
+    |(* lam : ε*)
+    ε s0'eq p0' κ0' t0' pp κt_ ts seq Ht_ H_ πeq (shell p κ_ t) (ev (lam x e) ρ σ) (co (closure x e ρ) σ) π' σ
+    |(* arg : exchange *)
+    subst;
+      assert (unf0 : exists κt_t, κt_ = fn v :: κt_t /\ replacetail_kont κs κ' κ'' = Some κt_t) by
+        (unfold replacetail_kont in Ht_; fold replacetail_kont in Ht_;
+         destruct (kont_eq_dec (fn v :: κs) κ') as [Heq | Hneq];
+         [injection Ht_; intros; subst;
+          unfold replacetail_state in seq;
+          assert (badframe : (ar e ρ) <> (fn v)) by discriminate;
+          rewrite (no_conflicting_tail_replacement κs κt_ badframe) in seq; discriminate
+         |destruct (replacetail_kont κs κ' κ'') as [κt_t|];
+           [exists κt_t; injection Ht_; intros; subst; split; auto
+                  |discriminate]]);
+      destruct unf0 as [κt_t [Hκt Hκs]];
+      
+      assert (Ht_' : replacetail_kont (ar e ρ :: κs) κ' κ'' = Some (ar e ρ :: κt_t)) by
+          (unfold replacetail_kont; fold replacetail_kont;
+           rewrite Hκs;
+           destruct (kont_eq_dec (ar e ρ :: κs) κ') as [Heq | Hneq];
+           [(* can't be equal, since then ar e ρ :: κs is a tail of fn v :: κs *)
+             inversion Htail as [bad0|bad0 bad1 bad2 bad3 bad4 bad5]; subst;
+            assert (badframe : (ar e ρ) <> (fn v)) by discriminate;
+            apply (no_conflicting_kont_tail badframe) in bad5; contradiction
+            |auto]);
+      
+      assert (unf1 : κ0' = ar e ρ :: κt_t /\ p0' = pp) by
+          (unfold replacetail_state,replacetail_kont in seq; fold replacetail_kont in seq;
+           rewrite Hκs in seq;
+           destruct (kont_eq_dec (ar e ρ :: κs) κ') as [Heq | Hneq];
+           [(* can't be equal, since then ar e ρ :: κs is a tail of fn v :: κs *)
+             inversion Htail as [bad0|bad0 bad1 bad2 bad3 bad4 bad5]; subst;
+            assert (badframe : (ar e ρ) <> (fn v)) by discriminate;
+            apply (no_conflicting_kont_tail badframe) in bad5; contradiction
+            |injection seq; intros; subst; split; auto]);
+      destruct unf1 as [Hκ0' Hpeq];
+      
+      assert (s0'eq' : (shell p0' (fn v :: κt_t) t0') = shell pp κt_ ts) by
+          (unfold replacetail_state in seq;
+           destruct (replacetail_kont (ar e ρ :: κs) κ' κ''); [|discriminate];
+           injection seq; intros; subst; auto);
+      
+      apply irrelevant_intro with (s' := (shell p κ_ t))
+                                    (π' := (shell (ev e ρ σ) (fn v :: κt_t) (tick pp)) ::
+                                           (shell pp ((ar e ρ)::κt_t) t0') :: π');
+      [grumble H_
+      |unfold replacetail, replacetail_state,map; fold replacetail; fold map; f_equal;
+       [rewrite Ht_; subst; auto
+       |f_equal; [rewrite Ht_';injection s0'eq'; intros; subst; auto
+                 |apply πeq]]
+    |subst; repeat constructor; auto]
+    |(* fn -> ap : pop*)
+    subst;
+      assert (Ht_' : replacetail_kont (fn fnv :: κt) κ' κ'' = Some (fn fnv :: κt_)) by
+        (unfold replacetail_kont; fold replacetail_kont;
+         destruct (kont_eq_dec (fn fnv :: κt) κ') as [Heq | Hneq];
+         [(* can't be equal, since then ar e ρ :: κs is a tail of fn v :: κs *)
+           inversion Htail as [bad0|bad0 bad1 bad2 bad3 bad4 bad5]; subst;
+          assert (badframe : (ar e ρ) <> (fn v)) by discriminate;
+          assert (contr : ~ KontTail ([fn fnv] ++ κt) κt) by (apply no_longer_kont_tail; simpl; omega);
+          simpl in contr; contradiction
+          |rewrite Ht_; auto]);
+      
+      unfold replacetail_state in seq; rewrite Ht_' in seq; injection seq; intros; subst;
+      apply irrelevant_intro with (s' := (shell p κ_ t))
+                                    (π' := (shell (ap x e ρ v σ) κt_ (tick p0')) ::
+                                           (shell p0' ((fn fnv)::κt_) t0') :: π');
+    [grumble H_
+    |unfold replacetail, replacetail_state,map; fold replacetail; fold map; f_equal;
+     [rewrite Ht_; subst
+     |f_equal; [rewrite Ht_'|]]; auto
+    |subst p0'; repeat constructor; auto]
+    |(* do ap : ε *)
+     ε s0'eq p0' κ0' t0' pp κt_ ts seq Ht_ H_ πeq (shell p κ_ t) (ap x e ρ v σ) (ev e ρ' σ') π' σ].
+Qed.
 
 Definition Context_inv :=
   (fun p tκ M Ξ ctx =>
      match ctx with
          context e ρ σ t =>
          forall tκ',
-             exists κ',
-               StackUnroll Ξ κ' tκ'
-               /\
+           in_ctxs Ξ (context e ρ σ t) tκ' ->
+           (forall κ',
+               StackUnroll Ξ κ' tκ' ->
                (* seems false now... *)
-               (forall κ,
-                  StackUnroll Ξ κ tκ ->
-                  (exists t', TraceTo red_cesk
-                                      (shell (ev e ρ σ) κ' t')
-                                      (shell p κ t)))
+               (exists κ,
+                  StackUnroll Ξ κ tκ 
+                  /\
+                  exists  t' t'',
+                  TraceTo red_cesk
+                          (shell (ev e ρ σ) κ' t')
+                          (shell p κ t'')))
                /\
              (forall v σ'' t',
                 in_memos M (context e ρ σ t) (res v σ'' t') ->
-                forall κ_irrelevant, Tailed_Trace κ_irrelevant (ev e ρ σ) t (co v σ'') t')
+                exists κ_irrelevant, Tailed_Trace κ_irrelevant (ev e ρ σ) t (co v σ'') t')
   end).
 
-(* prove option versions save with hastail so this goes through *)
 
-Lemma step_push_replace : forall p κ t p' φ t' κ' κ'' κ'''
-                                 (Hstep : red_cesk (shell p κ t) (shell p' (φ :: κ) t'))
-                                 (Hrep : replacetail_kont κ κ' κ'' = Some κ'''),
-                          red_cesk (shell p κ''' t) (shell p' (φ :: κ''') t').
-Proof.
-  intros; inversion Hstep;
-  try solve [match goal with [bad : ?κ = ?φ :: ?κ |- _] => apply no_circular_cons in bad; auto; contradiction end
-            |match goal with [bad : ?κ = ?φ :: ?φ0 :: ?κ |- _] =>
-                             apply no_circular_app with (l := [φ; fn fnv]) in bad; [contradiction|simpl;omega] end].
-  (* app push *)
-  subst; apply ev_app.
-Qed.  
-
-Lemma step_ε_replace : forall p κ t p' t' κ' κ'' κ'''
-                              (Hstep : red_cesk (shell p κ t) (shell p' κ t'))
-                              (Hrep : replacetail_kont κ κ' κ'' = Some κ'''),
-                          red_cesk (shell p κ''' t) (shell p' κ''' t').
-Proof.
-  intros; inversion Hstep;
-  try solve [match goal with [bad : ?κ = ?φ :: ?κ |- _] => apply no_circular_cons in bad; auto; contradiction end
-            |match goal with [bad : ?φ :: ?κ = ?κ |- _] => symmetry in bad; apply no_circular_cons in bad; auto; contradiction end
-            |subst p κ t p' t'; constructor; auto].
-Qed.
-  
-Lemma step_pop_replace : forall p κ t p' φ t' κ' κ'' κ'''
-                                 (Hstep : red_cesk (shell p (φ :: κ) t) (shell p' κ t'))
-                                 (Hrep : replacetail_kont κ κ' κ'' = Some κ'''),
-                          red_cesk (shell p (φ :: κ''') t) (shell p' κ''' t').
-Proof.
-  intros; inversion Hstep;
-  try solve [match goal with [bad : ?φ :: ?κ = ?κ |- _] => symmetry in bad; apply no_circular_cons in bad; auto; contradiction end
-            |match goal with [bad : ?φ :: ?φ0 :: ?κ = ?κ |- _] =>
-                             symmetry in bad; apply no_circular_app with (l := [ar e1 ρ; φ0]) in bad; [contradiction|simpl;omega] end
-            |constructor; auto].
-Qed.
-
-Inductive Stack_Action : Kont -> Kont -> Type :=
-  push_action : forall κ φ, Stack_Action κ (φ :: κ)
-| ε_action : forall κ, Stack_Action κ κ
-| pop_action : forall φ κ, Stack_Action (φ :: κ) κ
-| exchange_action : forall φ φ' κ, Stack_Action (φ :: κ) (φ' :: κ).
-
-Lemma step_push_ε_pop : forall p p' κ κ' t t'
-                               (Hstep : red_cesk (shell p κ t) (shell p' κ' t')),
-                          Stack_Action κ κ'.
-Proof.
-  intros; inversion Hstep;
-  [(* var: ε *)apply ε_action
-  |(* app: push (ar e1 ρ) *)apply push_action
-  |(* lam: ε *)apply ε_action
-  |(* co_ar: exchange *)apply exchange_action
-  |(* fn -> ap: pop (fn v) *)apply pop_action
-  |(* ap : ε *)apply ε_action].
-Qed.
-
-Lemma step_replace : forall p p' κ κ' t t' κtail κrep κres
-                            (Hstep : red_cesk (shell p κ t) (shell p' κ' t'))
-                            (Hrep : replacetail_kont κ κtail κrep = Some κres),
-                       match (step_push_ε_pop Hstep) with
-                           push_action κ φ => red_cesk (shell p κ t) (shell p' (φ :: κ) t')
-                         | ε_action κ => red_cesk (shell p κ t) (shell p' κ t')
-                         | pop_action φ κ => red_cesk (shell p (φ :: κ) t) (shell p' κ t')
-                         | exchange_action φ φ' κ => red_cesk (shell p (φ :: κ) t) (shell p' (φ' :: κ) t)
-                       end.
-                     
-
-Lemma stack_irrelevance : forall p κ t π κ' κ''
-                                 (orig : Trace (shell p κ t) red_cesk π)
-                                 (tail0 : KontTail κ' κ)
-                                 (Htail : hastail κ' π),
-                            exists (s : CESK) (π' : list CESK),
-                              (replacetail_state (shell p κ t) κ' κ'') = Some s /\
-                              (replacetail π κ' κ'') = (map (@Some CESK) π') /\
-                              Trace s red_cesk π'.
-Proof.
-  intros; set (use:=replacetail_kont_good κ'' tail0); inversion use as [? ? ? κ_ H_]; subst.
-  exists (shell p κ_ t);
-  induction orig as [|s0 π0 s1 HT ? Hstep].
-  (* Initial *)
-  exists [(shell p κ_ t)]; repeat split;
-  [unfold replacetail_state; rewrite H_
-  |simpl; rewrite H_
-  |constructor]; auto.
-  (* Step *)
-  inversion Htail as [|? pt κt tt Htail' κtail];
-  set (useκ := replacetail_kont_good κ'' κtail); inversion useκ as [? ? ? κt_ Ht_]; subst;
-  destruct (IHorig Htail') as [π' [Hreps [Hrep HT']]];
-  rewrite Hreps;
-  destruct π' as [|[pr κr tr] π''];
-   [inversion HT'
-   |simpl in Hrep; injection Hrep; intros Hrep0 Hrep1; subst;
-    exists ((shell pt κt_ tt) :: (shell pr κr tr) :: π'');
-    repeat split;
-    [simpl; rewrite Ht_; f_equal|constructor];auto].
-  destruct s0 as [pr' κb tr'].
-  assert (Hκrep : replacetail_kont κb κ' κ'' = Some κr) by
-    (simpl in Hrep1; destruct (replacetail_kont κb κ' κ'');[injection Hrep1; intros; subst; auto|discriminate]).
-  simpl in Hrep1; destruct (replacetail_kont κb κ' κ''); [injection Hrep1; intros; subst; clear Hrep1|discriminate].
-  inversion Hstep;
-    try solve [apply step_push_replace | apply step_pop_replace | constructor; auto].
-
-as [x ρ σ κs tx (* <- time *) a s Hmap Hpeq Hs'eq | (* var *)
-                      e0 e1 ρ σ κs ta s Hpeq | (* app *)
-                      x e ρ σ κs tl s Hpeq Hs'eq | (* lam *)
-                      v σ e ρ κs s Hpeq Hs'eq | (* arg *)
-                      v σ fnv κs tf s Hin_force Hpeq Hs'eq | (* fn -> ap *)
-                      x e ρ v σ κs ts s a ρ' σ' Hpeq Hs'eq].
-  exists ((shell (co (adelay a) σ) κt_ (tick s1)) :: π'); repeat split.
-  Focus 2.
-  
-  try solve [simpl in *; rewrite Ht_, Hrep; auto | auto].
-  simpl in *; rewrite Ht_, <- Hrep; unfold replacetail_state. rewrite Ht_; auto.
-  simpl in Hrep; rewrite <- Hrep.
-  unfold replacetail_state.
-  simpl in *. rewrite Ht_; auto.
-  exists ((shell pt κt_ tt) :: π'); repeat split; auto.
-
-  inversion HT' as [|foo bar baz qux moo boo]; subst.
-  
-  exists (
-  set (last:=replacetail_kont_good κ'' κtail); inversion last as [? ? ? κs_ Hs_];
-  exists ((shell pt κs_ tt) :: π'); repeat split;
-   [simpl in *; rewrite Hs_, Hrep; auto
-   |subst].
-  apply initial.
-  inversion Hstep as [x ρ σ κs tx (* <- time *) a s Hmap Hpeq Hs'eq | (* var *)
-                      e0 e1 ρ σ κs ta s Hpeq | (* app *)
-                      x e ρ σ κs tl s Hpeq Hs'eq | (* lam *)
-                      v σ e ρ κs s Hpeq Hs'eq | (* arg *)
-                      v σ fnv κs tf s Hin_force Hpeq Hs'eq | (* fn -> ap *)
-                      x e ρ v σ κs ts s a ρ' σ' Hpeq Hs'eq];
-
-  (* var *)
-  exists (s1 
-  cofix; intros; inversion orig as [Heq|ς H].
-  subst π.
-  inversion Htail as [|? ? ? ? Htail' κtail']; subst.
-(*  set (repd := replacetail_kont κ κ' κ''). *)
-  set (repd_eq := replacetail_kont_good κ'' κtail').
-  inversion repd_eq as [? ? ? κ''' Heq].
-  assert (seq : replacetail_state (shell p κ t) κ' κ'' tail0 = (shell p κ''' t)).
-  simpl; f_equal; auto.
-  subst.
-  destruct (replacetail_kont_good κ'' tail0).
-  rewrite Heq.
-  apply initial with (s0 := (replacetail_state (shell p κ t) κ' κ'' tail0)).
-
-Inductive Inv : CESKMΞ -> Type :=
-  inv : forall p tκ t M Ξ ctx,
+Inductive Inv : CESKMΞ -> Prop :=
+  inv : forall p tκ t M Ξ,
           Dom_in_Dom M Ξ ->
           ctx_in_dom Ξ tκ ->
-          ctx_of tκ ctx ->
-          (Context_inv p tκ t M Ξ ctx) ->
-          (forall ctx', (exists κs, InT (ctx',κs) Ξ) -> Context_inv p tκ t M Ξ ctx')
+          (forall ctx', (InDom Ξ ctx') -> Context_inv p tκ M Ξ ctx')
            ->
           Inv (widemk (wshell p tκ t) M Ξ).
-
-Axiom comparable_ticks : forall p κ tκ t M Ξ,
-                           StackUnroll Ξ κ tκ ->
-                           tick (shell p κ t) = tickmk (widemk (wshell p tκ t) M Ξ).
 
 Lemma inv_invariant : forall s s', Inv s -> red_ceskmk s s' -> Inv s'.
 Proof.
   intros s s' Hinv Hstep.
-  inversion Hinv as [? ? ? ? ? [ce cρ cσ] Hdom tκctx ctxdom Hctx Φ]; subst.
+  inversion Hinv as [? ? ? ? ? Hdom tκctx  Φ]; subst.
   Ltac doinvert Un κ tκ φ H ctx Hin :=
     inversion Un as [|κ tκ φ H|ctx tκ κ H Hin];
     try (set (ctx := (context (var 0) (@nil (Name * Addr)) (@nil (Addr * AbsVal))));
@@ -1333,7 +1352,7 @@ Proof.
                                        set (H := 0);
                                        set (ctx := (context (var 0) (@nil (Name * Addr)) (@nil (Addr * AbsVal))));
                                        set (Hin := 0).
-  Ltac part1 ctx tκctx := apply (inv _ _ (ctx := ctx)); try solve [apply unroll_push; auto
+  Ltac part1 ctx tκctx := apply inv; try solve [apply unroll_push; auto
                            |repeat constructor; auto
                            |auto
                            |apply Dom_join_left; firstorder
@@ -1342,14 +1361,153 @@ Proof.
                            |inversion Hctx; subst; try solve [discriminate
                                                               |constructor; auto
                                                              |auto]].
-  inversion Hstep as [? ρ σ ? ? (* <- time *) ? ? ? s0 Hmap Hpeq Hs'eq | (* var *)
-                      ? ? ρ σ ? ? ? ? ? Hpeq | (* app *)
-                      ? ? ρ σ ? ? ? ? s0 Hpeq Hs'eq | (* lam *)
-                      ? ? σ ? ? ? ? ? s0 Hpeq Hs'eq | (* arg *)
-                      ? ? σ ? ? ? ? ? ? ? s0 Hin_force Hpeq Hs'eq | (* fn -> ap *)
-                      ? ?  ? ? ? ? ? ? s0 a ρ' σ' ctx' Ξ' Hunmapped Hpeq Hs'eq | (* call unmemo'd *)
-                      ? ? ? ? ? ? ? ? ? ? ? s0 a ρ' σ' ctx' Ξ' Hin_memos Hpeq Hs'eq | (* call memo' *)
-                      ? ? ? ? ? ? tκ' s0 M' Hin_ctxs Hpeq Hs'eq]. (* return *)
+  set (idκ := fun κ : Kont => κ).
+  Ltac part2 p Φ M Ξ inpoint fnκ trypop :=
+    let κ' := fresh "κ'" in
+    let κ'' := fresh "κ''" in
+    let φ := fresh "φ" in
+    intros [ce cρ cσ ct] Hindom tκ' Hinctx;
+    constructor;
+    [(* reach *)
+      destruct (Φ (context ce cρ cσ ct) Hindom tκ') as [Hreach Hmemo]; auto;
+     subst p; auto;
+     intros κ' unroll'; pose (Hreach' := Hreach κ' unroll'); destruct Hreach' as [κ [eunroll [t' [t'' [π HT]]]]];
+     ((trypop;
+       match goal with
+           [H : StackUnroll Ξ ?κ (kpush (ar ?e ?ρ) ?tκ) |- _] =>
+           pose (φ := (ar e ρ)); inversion H as [|κ''|]
+       | [H : StackUnroll Ξ ?κ (kpush (fn ?v) ?tκ) |- _] =>
+         pose (φ := (fn v)); inversion H as [|κ''|]
+       end;
+       exists (fnκ κ κ'' φ))
+        || exists (fnκ κ));
+      split; [|exists t', (tick inpoint)];
+     [|exists (shell inpoint κ t'' :: π)]; subst; repeat constructor; auto
+    |(* memo *)
+    let v := fresh "v" in
+    intros v σ'' t' Hmemo;
+      assert (HindomM : InDom M (context ce cρ cσ ct)) by
+        (destruct Hmemo as [ress [Hmapress Hinress]]; rewrite InDom_is_mapped; [exists ress|exact context_eq_dec]; auto);
+      assert (HindomΞ : InDom Ξ (context ce cρ cσ ct)) by (apply Dom_InDom with (l := M); [exact context_eq_dec| | ]; auto);
+      destruct (Φ (context ce cρ cσ ct) HindomΞ tκ'); auto]. 
+
+  inversion Hstep as [x ρ σ a tκs ts Ms Ξs ps Hmap Hpeq Hs'eq |
+                      e0 e1 ρ σ tκs ts Ms Ξs ps Hpeq |
+                      x e ρ σ tκs ts Ms Ξs ps Hpeq Hs'eq |
+                      v σ e ρ tκs ts Ms Ξs ps Hpeq Hs'eq |
+                      v σ x e ρ fnv tκs ts Ms Ξs ps Hin_force Hpeq Hs'eq |
+                      x e ρ v σ tκs ts Ms Ξs ps a ρ' σ' ts' ctx Hunmapped Hpeq Hs'eq |
+                      x e ρ v σ tκs ts Ms Ξs vm σm tm ps a ρ' σ' ctx Hinmemos Hpeq Hs'eq |
+                      v σ ctx tκs Ms Ξs t's M's Hin_ctxs Hpeq Hs'eq]; subst;
+  [(* var: ε *)
+    constructor; auto; part2 p Φ M Ξ (ev (var x) ρ σ) idκ fail
+   |(* app: push *)
+   constructor; auto;
+   [(* ctx_in_dom *)
+     intros ctx Hctx; destruct (tκctx ctx); inversion Hctx; auto
+    |part2 p Φ M Ξ (ev (app e0 e1) ρ σ) (fun (κ : Kont) => (ar e1 ρ :: κ)) fail]
+   |(* lam: ε *)
+    constructor; auto; part2 p Φ M Ξ (ev (lam x e) ρ σ) idκ fail
+   |(* ar : exchange *)
+    constructor; auto;
+    [intros ctx Hctx; destruct (tκctx ctx) as [X]; inversion Hctx; subst; [constructor|exists X]; auto
+    |part2 p Φ M Ξ (co v σ) (fun (κ κ' : Kont) (φ : Frame) => (fn v :: κ')) idtac]
+   |(* fn -> ap : pop *)
+   constructor; auto;
+    [intros ctx Hctx; destruct (tκctx ctx) as [X]; inversion Hctx; subst;
+     solve [constructor; auto | exists X; auto]
+    |part2 p Φ M Ξ (co v σ) (fun (κ κ' : Kont) (φ : Frame) => κ') idtac]
+   |(* do ap : ε *)
+   constructor; auto
+   |(* ap memo : ? *)
+   |(* ret: pop *)].
+
+  apply Dom_join_right; firstorder.
+  intros ctx' Hctx'; inversion Hctx'; subst; try solve [discriminate
+                                                              |constructor; auto
+                                                             |auto].
+  Check in_list_join.
+  destruct (in_list_join context_eq_dec
+                         κs_join
+                         κ_singleton
+                         κs_join_extensive
+                         κ_singleton_extensive
+                         Ξ Ξ
+                         (context e ρ' σ' ts')
+                         tκ
+                         (fun (ab : Context * TrunKonts) (H : In ab Ξ) => H)) as [omg [? ?]];
+    exists omg; apply MapsTo_In; auto.
+    let κ' := fresh "κ'" in
+    let κ'' := fresh "κ''" in
+    let φ := fresh "φ" in
+    intros [ce cρ cσ ct] Hindom tκ' Hinctx;
+    constructor.
+    (* reach *)
+    intros κ' unroll';
+    destruct (in_list_join_set_split context_eq_dec trunkont_eq_dec Ξ Ξ ctx tκ Hinctx) as [[ctxeq tκeq]|Hinrest];
+    [subst; injection ctxeq; intros; subst ce cρ cσ ct;
+     exists κ'; split;[apply unroll_rt with (tκ := tκ'); auto |exists ts',ts',nil; constructor]
+    |].
+    assert (Hneed : InDom Ξ (context ce cρ cσ ct)).
+    destruct Hinrest as [tκs [Hmap ?]].
+    rewrite InDom_is_mapped; [exists tκs|exact context_eq_dec]; auto.
+    destruct (Φ (context ce cρ cσ ct) Hneed tκ') as [Hreach Hmemo]; auto.
+    destruct Hreach as 
+    [(* reach *)
+      
+      
+     subst p; auto;
+     intros κ' unroll'; pose (Hreach' := Hreach κ' unroll'); destruct Hreach' as [κ [t' [t'' [eunroll [π HT]]]]];
+     exists (rt ctx);
+     exists t', (tick (ap x e ρ v σ)); split;
+     [|exists (shell (ap x e ρ v σ) κ t'' :: π)]; subst; repeat constructor; auto
+    |(* memo *)
+    let v := fresh "v" in
+    intros v σ'' t' Hmemo;
+      assert (HindomM : InDom M (context ce cρ cσ ct)) by
+        (destruct Hmemo as [ress [Hmapress Hinress]]; rewrite InDom_is_mapped; [exists ress|exact context_eq_dec]; auto);
+      assert (HindomΞ : InDom Ξ (context ce cρ cσ ct)) by (apply Dom_InDom with (l := M); [exact context_eq_dec| | ]; auto);
+      destruct (Φ (context ce cρ cσ ct) HindomΞ tκ'); auto]. 
+
+  part2 p Φ M Ξ (ap x e ρ v σ) (fun (κ κ' : Kont) (φ : Frame) => (rt ctx)) fail.
+                         (*                          (l := Ξ) (l' := Ξ)
+
+(a := (context e ρ' σ' ts'))
+                         (c := tκ) *)). forall l l' a c,
+    (forall ab, In ab l -> In ab l') ->
+  in_list_list (list_join eq_dec combine base l' a c l) a c.
+
+
+  unfold
+  apply in_list_join.
+  apply Dom_in_D
+    constructor; auto; part2 p Φ M Ξ (ap x e ρ v σ) idκ fail
+  .
+    
+  part2 p Φ M Ξ (ev (app e0 e1) ρ σ) (fun (κ κ' : Kont) (φ : Frame) => (ar e1 ρ :: κ')) idtac.
+
+  constructor; auto.
+  intros ctx Hctx; destruct (tκctx ctx) as [X]; inversion Hctx; subst; [constructor|exists X];auto.
+  intros [ce cρ cσ ct] Hindom tκ' Hinctx;
+    constructor;
+    [(* reach *)
+      destruct (Φ (context ce cρ cσ ct) blarg tκ') as [Hreach Hmemo]; auto;
+     subst p; auto;
+     intros κ' unroll'; pose (Hreach' := Hreach κ' unroll'); destruct Hreach' as [κ [t' [t'' [eunroll [π HT]]]]]
+     |].
+     ;
+     exists (fnκ κ), t', (tick inpoint); split;
+     [|exists (shell inpoint κ t'' :: π)]; repeat constructor; auto
+    |(* memo *)
+    let v := fresh "v" in
+    intros v σ'' t' Hmemo;
+      assert (HindomM : InDom M (context ce cρ cσ ct)) by
+        (destruct Hmemo as [ress [Hmapress Hinress]]; rewrite InDom_is_mapped; [exists ress|exact context_eq_dec]; auto);
+      assert (HindomΞ : InDom Ξ (context ce cρ cσ ct)) by (apply Dom_InDom with (l := M); [exact context_eq_dec| | ]; auto);
+      destruct (Φ (context ce cρ cσ ct) HindomΞ tκ'); auto]. 
+
+  part2 p Φ M Ξ (co v σ) (fun κ => (fn v :: κ)).
+
   Ltac solve_inner point t reach :=
     let tκ' := fresh "tκ'" in
     let cκ := fresh "cκ" in
@@ -1458,7 +1616,7 @@ Proof.
     destruct in_list_join with (eq_dec := context_eq_dec) (combine := κs_join) (base := κ_singleton)
                                                           (l := Ξ) (l' := Ξ) (a := ctx) (c := tκ)
                                                           as [κs [? ?]];
-      [intros; apply set_add_intro2T
+      [intros; apply set_add_intro2
        |intros; simpl
        |
       |exists κs;apply MapsTo_In]; auto.    
@@ -1515,7 +1673,7 @@ match goal with [H' : mt = t
 ; specialize seenreach with κreach
  [intros;  | ]; auto.
 .: forall l l' a a' c c'
-                             (Hcontain : (forall ab, InT ab l -> InT ab l')),
+                             (Hcontain : (forall ab, In ab l -> In ab l')),
     
     destruct Φrinst as [κ' [Hunroll [Φreach Φmemo]]].
     exists (κfn1 κ').
@@ -1565,8 +1723,8 @@ match goal with [H' : mt = t
   apply Dom_join_right; auto.
   apply unroll_rt with (tκ := tκ); [apply unroll_with_extension; auto
                                    |apply in_list_join; solve [
-                                                            intros; apply set_add_intro1T; auto
-                                                          | intros; apply set_add_intro2T; auto 
+                                                            intros; apply set_add_intro1; auto
+                                                          | intros; apply set_add_intro2; auto 
                                                           | auto]];
   subst.
   intros e'' ρ'' σ'' tκ'' κ'' Htκ'' Hunroll'.
@@ -1615,14 +1773,14 @@ match goal with [H' : mt = t
   apply unroll_rt with (tκ := tκ); try solve [intro bad; inversion bad].
   unfold in_ctxs.
   apply in_list_join; auto;
-  intros; apply set_add_intro2T; auto.
+  intros; apply set_add_intro2; auto.
   pose (Φrinst := (Φ e ρ' σ' (rt ctx) κ' Htκ' Htail));
     destruct Φrinst as [Φreach Φmemo];
     destruct Φreach as [t'_ [π Φreach_path]].
 
-Inductive state_rel : CESK -> System -> Type :=
+Inductive state_rel : CESK -> System -> Prop :=
   point_rel : `{StackUnroll Ξ κ κ' nil ->
-                (InT (wshell p κ' t) Seen \/ InT (wshell p κ' t) F) ->
+                (In (wshell p κ' t) Seen \/ In (wshell p κ' t) F) ->
                 state_rel (shell p κ t) (system Seen F M Ξ)}.
 
 Theorem simulation : forall e s, CESK_trace e π -> exists s', state_rel s s' /\ WCESKMΞ_trace e π'.
