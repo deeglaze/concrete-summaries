@@ -72,6 +72,12 @@ Inductive CES_point :=
          val -> (* Argument *)
          Store -> CES_point.
 Definition CESK := Shell CES_point.
+Definition store_of (p : CES_point) : Store :=
+  match p with
+      ev _ _ σ => σ
+    | co _ σ => σ
+    | ap _ _ _ _ σ => σ
+  end.
 
 Definition ces_point_eq_dec : dec_type CES_point.
   decide equality; try solve [apply expr_eq_dec | apply env_eq_dec | apply kont_eq_dec
@@ -232,6 +238,15 @@ Fixpoint list_join  (l_orig : list (A * B))
 Definition singleton {A} (eq_dec : dec_type A) (x : A) : list A := set_add eq_dec x (empty_set _).
 End ListJoin.
 
+Definition Subset {A} (s s' : set A) := forall x (Hin : set_In x s), set_In x s'.
+Lemma subset_refl : forall A (s : set A), Subset s s.
+Proof. intros ? ? ? ?; assumption. Qed.
+Lemma subset_trans : forall A (s s' s'' : set A) (Hsub0 : Subset s s') (Hsub1 : Subset s' s''), Subset s s''.
+Proof. intros ? ? ? ? ? ? ? ?; apply Hsub1, Hsub0; assumption. Qed.
+Inductive EntryLE {A B} (s : list (A * set B)) : A -> set B -> Prop :=
+  entryle_intro : forall a vs vs' (Hmap : MapsTo s a vs') (Hsub : Subset vs vs'), EntryLE s a vs.
+Definition MappingLE {A B} (s s' : list (A * set B)) := forall a vs (Hmap : MapsTo s a vs), EntryLE s' a vs.
+
 Section ListJoin_facts.
 Variables (A C : Type) (eq_dec : dec_type A)
           (combine : list (A * list C) -> list C -> C -> list C)
@@ -254,6 +269,53 @@ Proof.
     exists wit; split; [apply map_rst|]]; auto.
 Qed.
 
+Lemma maple_refl : forall (l : list (A * set C)), MappingLE l l.
+Proof. 
+  induction l as [|(a_,b_) l_ IH]; intros a' b' Hmap;
+  [inversion Hmap
+  |apply entryle_intro with (vs' := b'); [|apply subset_refl]; auto].
+Qed.
+
+Lemma maple_trans: forall (l l' l'' : list (A * set C)) (Hmap0 : MappingLE l l') (Hmap1 : MappingLE l' l''), MappingLE l l''.
+Proof.
+  intros; intros a cs Hmap;
+  pose (mumble := Hmap0 a cs Hmap);
+  inversion mumble as [? ? cs' map' sub']; subst;
+  pose (grumble := Hmap1 a cs' map');
+  inversion grumble as [? ? cs'' map'' sub'']; subst;
+  exists cs'';[|apply subset_trans with (s' := cs')]; auto.
+Qed.
+
+Lemma maple_top : forall (l : list (A * set C)) a b b', Subset b b' -> MappingLE ((a,b) :: l) ((a,b') :: l).
+Proof.
+  intros.
+  intros a' b'' Hmap.
+  inversion Hmap as [|? ? ? ? ? Hneq Hmap']; subst.
+  apply entryle_intro with (vs' := b');[constructor|assumption].
+  apply entryle_intro with (vs' := b'');[constructor; auto|apply subset_refl].
+Qed.
+
+Lemma maple_bottom : forall (l l' : list (A * set C)) ab (Htail : MappingLE l l'), MappingLE (ab :: l) (ab :: l').
+Proof.
+  intros. 
+  intros ? ? Hmap; inversion Hmap as [|? ? ? ? ? Hneq Hmap']; subst;
+  [exists vs; [constructor|apply subset_refl]
+        |].
+  pose (mumble := Htail a vs Hmap').
+  inversion mumble as [? ? vs' Hmap_ Hsub_]; subst.
+  exists vs'; [constructor|]; auto.
+Qed.
+
+Variable Hextensive' : (forall l b c c', In c' b -> In c' (combine l b c)).
+Lemma list_join_ordering : forall l l' a c, MappingLE l (list_join eq_dec combine base l' a c l).
+Proof.
+  induction l as [|(a_,b_) l_ IH]; intros;
+  [intros ? ? bad; inversion bad
+  |simpl; destruct (eq_dec a a_) as [Heq|Hneq];
+   [subst; apply maple_top; intros ? ?; apply Hextensive'; auto
+   |apply maple_bottom, IH]].
+Qed.
+
 Lemma unmapped_join : `{Unmapped l a -> a <> a' -> Unmapped (list_join eq_dec combine base l' a' c l) a}.
 Proof.
   induction l as [|(a,b) l_ IH]; intros a0 a' l' c H ?;
@@ -273,7 +335,6 @@ Proof.
   |constructor; inversion F; [apply IH|apply unmapped_join]]; auto.
 Qed.
 
-Variable Hextensive' : (forall l b c c', In c' b -> In c' (combine l b c)).
 Lemma in_list_join2 :
   forall l l' a a' c c',
   in_list_list l a' c' ->
@@ -441,10 +502,22 @@ Definition force (σ : Store) (v:val) : AbsVal :=
 Definition absval_join (vs vs' : AbsVal) :=
   set_union val_eq_dec vs vs'.
 
+Definition σ_combine := (fun σ_orig vs v => (absval_join vs (force σ_orig v))).
 Definition σ_join (σ : Store) (a : Addr) (v : val) : Store :=
-  list_join addr_eq_dec
-            (fun σ_orig vs v => (absval_join vs (force σ_orig v)))
-            force σ a v σ.
+  list_join addr_eq_dec σ_combine force σ a v σ.
+
+Lemma σ_combine_extensive : forall (σ : Store) (vs : AbsVal) (v v' : val) (Hin : set_In v' vs), set_In v' (σ_combine σ vs v).
+Proof.
+  intros; unfold σ_combine;
+  destruct v; simpl; solve [apply set_add_intro1; auto
+                           |apply set_union_intro1; auto].
+Qed.
+
+Lemma σ_join_ordering : forall σ a v, MappingLE σ (σ_join σ a v).
+Proof.
+intros; apply (list_join_ordering addr_eq_dec σ_combine force σ_combine_extensive).
+Qed.
+
 Section StandardSemantics.
 Variable alloc : CES_point -> Addr.
 Variable tick : CES_point -> Time.
@@ -1164,6 +1237,18 @@ Inductive ctx_of : TrunKont -> Context -> Prop :=
   | push_ctx : `{ctx_of tκ ctx -> ctx_of (kpush φ tκ) ctx}
   | rt_ctx : `{ctx_of (rt ctx) ctx}.
 
+Fixpoint get_ctx (tκ : TrunKont) : option Context :=
+  match tκ with
+      mt => None
+    | kpush _ tκ => get_ctx tκ
+    | rt ctx => Some ctx
+  end.
+Theorem reflect_ctx : forall tκ ctx, ctx_of tκ ctx <-> get_ctx tκ = Some ctx.
+Proof. induction tκ; split; intro H; simpl; solve [inversion H; constructor; auto
+                                                  |constructor; rewrite IHtκ; auto
+                                                  |inversion H; subst; simpl; rewrite <- IHtκ; auto].
+Qed.
+
 Definition ctx_in_dom (Ξ : KTable) (tκ : TrunKont) :=
   forall ctx : Context, `{ctx_of tκ ctx -> (exists κs, In (ctx,κs) Ξ)}.
 
@@ -1329,6 +1414,71 @@ Definition Context_inv :=
                 exists κ_irrelevant, Tailed_Trace κ_irrelevant (ev e ρ σ) t (co v σ'') t')
   end).
 
+Definition ContextLE (ctx ctx' : Context) : Prop :=
+  match ctx, ctx' with
+      context e ρ σ t, context e' ρ' σ' t' => MappingLE σ σ'
+  end.
+Definition KTableOrd (Ξ : KTable) := forall ctx tκ (Hin : in_ctxs Ξ ctx tκ) ctx' (Hctx : ctx_of tκ ctx'), ContextLE ctx' ctx.
+Definition MTableOrd (M : Memo) := forall e ρ σ t vm σm tm (Hin : in_memos M (context e ρ σ t) (res vm σm tm)), MappingLE σ σm.
+Inductive StateOrd : CESKMΞ -> Prop :=
+  stateord_intro : forall p tκ t M Ξ
+                          (Mord : MTableOrd M)
+                          (Kord : KTableOrd Ξ)
+                          (ctxord : match (get_ctx tκ) with
+                                        None => True
+                                      | Some (context _ _ σ _) =>
+                                        MappingLE σ (store_of p) end),
+                     StateOrd (widemk (wshell p tκ t) M Ξ).
+
+Lemma ord_invariant : forall s s' (Hstep : red_ceskmk s s') (Hinv : StateOrd s), StateOrd s'.
+Proof.
+intros;
+  inversion Hinv;
+  inversion Hstep as [x ρ σ a tκs ts Ms Ξs ps Hmap Hpeq Hs'eq |
+                      e0 e1 ρ σ tκs ts Ms Ξs ps Hpeq |
+                      x e ρ σ tκs ts Ms Ξs ps Hpeq Hs'eq |
+                      v σ e ρ tκs ts Ms Ξs ps Hpeq Hs'eq |
+                      v σ x e ρ fnv tκs ts Ms Ξs ps Hin_force Hpeq Hs'eq |
+                      x e ρ v σ tκs ts Ms Ξs ps a ρ' σ' ts' ctx Hunmapped Hpeq Hs'eq |
+                      x e ρ v σ tκs ts Ms Ξs vm σm tm ps a ρ' σ' ctx Hinmemos Hpeq Hs'eq |
+                      v σ ctx tκs Ms Ξs t's M's Hin_ctxs Hpeq Hs'eq]; subst;
+  try (injection Hpeq; intros; subst; clear Hpeq); apply stateord_intro;
+  try solve [auto
+            |subst p; simpl;
+             match goal with
+               |[ctx : context[get_ctx (kpush ?φ ?tκ)] |- _] => simpl in ctx; destruct (get_ctx tκ) as [[_ _ σ'' _]|]; simpl in ctx
+               |[ctx : context[get_ctx ?tκ] |- _] => destruct (get_ctx tκ) as [[_ _ σ'' _]|]; simpl in ctx end; try solve [simpl; auto]
+            |intros ctx' tκ' Hin ctx'' Hctx;
+              subst p; destruct (in_list_join_set_split context_eq_dec trunkont_eq_dec) 
+                       with (l := Ξ) (l' := Ξ) (a := ctx) (a' := ctx') (c := tκ) (c' := tκ')
+                       as [[mum ble]|S1]; auto;
+              [subst; rewrite reflect_ctx in Hctx; rewrite Hctx in ctxord; destruct ctx',ctx''; simpl in *; auto;
+               injection mum; intros; subst t0 s e1 e0;
+               apply maple_trans with (l' := σ); [|apply σ_join_ordering]; auto
+              |apply Kord with (tκ := tκ'); auto]
+            |simpl; apply maple_refl
+            |destruct (get_ctx tκ) as [[_ _ σ_ _]|]; [|auto];
+             simpl;
+             apply maple_trans with (l' := σ');
+             [subst p; simpl in ctxord; apply maple_trans with (l' := σ);
+              [auto|apply σ_join_ordering]
+             |apply (Mord _ _ _ _ _ _ _ Hinmemos)]
+               (* stupid goal dependencies... *)
+            |injection Hpeq; intros; subst M t tκ p Ξ; auto
+            |injection Hpeq; intros; subst M t tκ p Ξ; simpl in ctxord; destruct ctx as [? ρblah σblah ?];
+             case_eq (get_ctx tκs); [intros [e_ ρ_ σ_ t_] Hctxeq; rewrite <- reflect_ctx in Hctxeq; simpl;
+                                     pose (mumble := Kord _ _ Hin_ctxs _ Hctxeq);
+                                     simpl in mumble; apply maple_trans with (l' := σblah)|];auto].
+injection Hpeq; intros; subst M t tκ p Ξ; simpl in ctxord;
+intros ce cρ cσ ct cvm cσm ctm Hinmemos.
+destruct (in_list_join_set_split context_eq_dec result_eq_dec)
+                       with (l := Ms) (l' := Ms) (a := ctx) (a' := (context ce cρ cσ ct)) (c := (res v σ t's)) (c' := (res cvm cσm ctm))
+                       as [[mum ble]|S1]; auto.
+destruct ctx as [? ρblah σblah ?];
+  injection mum; intros; subst ce cρ cσ ct;
+  injection ble; intros; subst cvm cσm ctm; auto.
+pose (grumble := Mord _ _ _ _ _ _ _ S1); auto.
+Qed.
 
 Inductive Inv : CESKMΞ -> Prop :=
   inv : forall p tκ t M Ξ,
