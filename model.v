@@ -1,4 +1,4 @@
-Require Import ZArith NArith List ListSet.
+Require Import ZArith NArith List ListSet CpdtTactics.
 Import ListNotations.
 Definition Name := nat.
 Notation "'dec_type' T" := (forall x y : T, {x=y}+{x<>y}) (at level 70, no associativity).
@@ -10,6 +10,7 @@ Ltac split_refl2 eq_dec a a' := let H:= fresh in
 Definition name_eq_dec : dec_type Name.
   decide equality.
 Defined.
+Hint Immediate name_eq_dec.
 
 Generalizable All Variables.
 Set Implicit Arguments.
@@ -20,47 +21,52 @@ Inductive Expr : Type :=
 | lam : Name -> Expr -> Expr.
 
 Definition expr_eq_dec : dec_type Expr.
-  decide equality; apply name_eq_dec.
+  decide equality.
 Defined.
+Hint Immediate expr_eq_dec.
 
 Section Data.
 Variables Addr Time : Type.
 Variable addr_eq_dec : dec_type Addr.
 Variable time_eq_dec : dec_type Time.
+Hint Immediate addr_eq_dec time_eq_dec.
 
 Definition Env := list (Name * Addr).
 Definition env_eq_dec : dec_type Env.
-  apply list_eq_dec; decide equality; try solve [apply name_eq_dec | apply addr_eq_dec].
+  apply list_eq_dec; decide equality.
 Defined.
+Hint Immediate env_eq_dec.
+
+Inductive storeable := s_closure : Name -> Expr -> Env -> storeable.
+Definition storeable_eq_dec : dec_type storeable. decide equality. Defined.
+Hint Immediate storeable_eq_dec.
+
+Definition AbsVal := set storeable.
+Definition absval_eq_dec : dec_type AbsVal. apply list_eq_dec; auto. Defined.
+Hint Immediate absval_eq_dec.
 
 Inductive val :=
   | closure : Name -> Expr -> Env -> val
   | adelay : Addr -> val
-  | amany : set val -> val.
-Definition AbsVal := set val.
-Axiom val_eq_dec : dec_type val.
-Definition absval_eq_dec : dec_type AbsVal.
-  apply list_eq_dec,val_eq_dec.
-Defined.
+  | amany : AbsVal -> val.
+Definition val_eq_dec : dec_type val. decide equality. Defined.
+Hint Immediate val_eq_dec.
 
 Definition Store := list (Addr * AbsVal).
-Definition store_eq_dec : dec_type Store.
-  apply list_eq_dec; decide equality; try solve [apply addr_eq_dec | apply absval_eq_dec].
-Defined.
+Definition store_eq_dec : dec_type Store. apply list_eq_dec; decide equality. Defined.
+Hint Immediate store_eq_dec.
 
 Inductive Frame :=
   | ar : Expr -> Env -> Frame
   | fn : val -> Frame.
 
-Definition frame_eq_dec : dec_type Frame.
-  decide equality; try solve [apply val_eq_dec | apply expr_eq_dec | apply env_eq_dec].
-Defined.
+Definition frame_eq_dec : dec_type Frame. decide equality. Defined.
+Hint Immediate frame_eq_dec.
 
 Definition Kont : Type := list Frame.
 
-Definition kont_eq_dec : dec_type Kont.
-  apply list_eq_dec,frame_eq_dec.
-Defined.
+Definition kont_eq_dec : dec_type Kont. apply list_eq_dec,frame_eq_dec. Defined.
+Hint Immediate kont_eq_dec.
 
 Inductive Shell (P : Type) :=
   shell : P -> Kont -> Time -> Shell P.
@@ -79,14 +85,11 @@ Definition store_of (p : CES_point) : Store :=
     | ap _ _ _ _ σ => σ
   end.
 
-Definition ces_point_eq_dec : dec_type CES_point.
-  decide equality; try solve [apply expr_eq_dec | apply env_eq_dec | apply kont_eq_dec
-                             | apply time_eq_dec | apply val_eq_dec | apply store_eq_dec | apply name_eq_dec].
-Defined.
+Definition ces_point_eq_dec : dec_type CES_point. decide equality. Defined.
+Hint Immediate ces_point_eq_dec.
 
-Definition cesk_eq_dec : dec_type CESK.
-  decide equality; try solve [apply kont_eq_dec | apply time_eq_dec | apply ces_point_eq_dec].
-Defined.
+Definition cesk_eq_dec : dec_type CESK. decide equality. Defined.
+Hint Immediate cesk_eq_dec.
 
 Inductive InDom {A B} : list (A * B) -> A -> Prop :=
   | dom_fst : `{InDom ((a,b)::rst) a}
@@ -177,14 +180,14 @@ Qed.
 Remark functional_exchange : forall A B (l : list (A * B)) a b (F: Functional ((a,b)::l)) b', Functional ((a,b')::l).
 Proof. intros; inversion F; constructor; auto. Qed.
 
-Definition in_aval := @In val.
+Definition in_aval := @In storeable.
 
 Definition in_list_list {A B} (l : list (A * (list B))) (a : A) (b : B) : Prop :=
   exists bs, (MapsTo l a bs) /\ (set_In b bs).
 
-Inductive in_force (σ : Store) : forall (v v' : val), Prop :=
-| forced : `{in_force σ v v}
-| do_force : `{MapsTo σ a vs -> in_aval v' vs -> in_force σ v' (adelay a)}.
+Inductive in_force (σ : Store) : forall (s : storeable) (v : val), Prop :=
+| forced : `{in_force σ (s_closure x e ρ) (closure x e ρ)}
+| do_force : `{MapsTo σ a vs -> in_aval s vs -> in_force σ s (adelay a)}.
 
 Fixpoint extend_map {A B} (eq_dec : (dec_type A)) (a : A) (b : B) (ρ : list (A * B)) :=
   match ρ with
@@ -307,14 +310,6 @@ Proof.
 Qed.
 
 Variable Hextensive' : (forall l b c c', In c' b -> In c' (combine l b c)).
-Lemma list_join_ordering : forall l l' a c, MappingLE l (list_join eq_dec combine base l' a c l).
-Proof.
-  induction l as [|(a_,b_) l_ IH]; intros;
-  [intros ? ? bad; inversion bad
-  |simpl; destruct (eq_dec a a_) as [Heq|Hneq];
-   [subst; apply maple_top; intros ? ?; apply Hextensive'; auto
-   |apply maple_bottom, IH]].
-Qed.
 
 Lemma unmapped_join : `{Unmapped l a -> a <> a' -> Unmapped (list_join eq_dec combine base l' a' c l) a}.
 Proof.
@@ -490,6 +485,21 @@ Qed.
     
 End ListJoin_morefacts.
 
+Section ListJoin_evenmorefacts.
+Variables (A B C : Type) (eq_dec : dec_type A)
+          (combine : list (A * list B) -> list B -> C -> list B)
+          (base : list (A * list B) -> C -> list B)
+          (Hextensive' : (forall l b c c', In c' b -> In c' (combine l b c))).
+Lemma list_join_ordering : forall l l' a c, MappingLE l (list_join eq_dec combine base l' a c l).
+Proof.
+  induction l as [|(a_,b_) l_ IH]; intros;
+  [intros ? ? bad; inversion bad
+  |simpl; destruct (eq_dec a a_) as [Heq|Hneq];
+   [subst; apply maple_top; intros ? ?; apply Hextensive'; auto
+   |apply maple_bottom, IH]].
+Qed.
+End ListJoin_evenmorefacts.
+
 Definition force (σ : Store) (v:val) : AbsVal :=
   match v with
       | adelay a => match lookup_σ a σ with
@@ -497,16 +507,20 @@ Definition force (σ : Store) (v:val) : AbsVal :=
                       | Some vs => vs
                     end
       | amany vs => vs
-      | v => singleton val_eq_dec v
+      | closure x e ρ => singleton storeable_eq_dec (s_closure x e ρ)
   end.
 Definition absval_join (vs vs' : AbsVal) :=
-  set_union val_eq_dec vs vs'.
+  set_union storeable_eq_dec vs vs'.
 
 Definition σ_combine := (fun σ_orig vs v => (absval_join vs (force σ_orig v))).
 Definition σ_join (σ : Store) (a : Addr) (v : val) : Store :=
   list_join addr_eq_dec σ_combine force σ a v σ.
 
-Lemma σ_combine_extensive : forall (σ : Store) (vs : AbsVal) (v v' : val) (Hin : set_In v' vs), set_In v' (σ_combine σ vs v).
+Lemma σ_combine_extensive : forall (σ : Store) (vs : AbsVal)
+                                   (v : val)
+                                   (s : storeable)
+                                   (Hin : set_In s vs),
+                              set_In s (σ_combine σ vs v).
 Proof.
   intros; unfold σ_combine;
   destruct v; simpl; solve [apply set_add_intro1; auto
@@ -586,7 +600,7 @@ Inductive red_cesk : CESK -> CESK -> Prop :=
 | co_ar : `{let p := (co v σ) in
             red_cesk (shell p ((ar e ρ)::κ) t) (shell (ev e ρ σ) ((fn v)::κ) (tick p))}
 | co_fn : `{let p := (co v σ) in
-            in_force σ (closure x e ρ) fnv ->
+            in_force σ (s_closure x e ρ) fnv ->
             red_cesk (shell p ((fn fnv)::κ) t) (shell (ap x e ρ v σ) κ (tick p))}
 | do_ap : `{let p := (ap x e ρ v σ) in
             let a := alloc p in
@@ -735,7 +749,7 @@ Inductive red_ceskmk : CESKMΞ -> CESKMΞ -> Prop :=
                          (widemk (wshell (ev e ρ σ) (kpush (fn v) tκ) (tick p)) M Ξ)
 | comk_fn : forall v σ x e ρ fnv tκ t M Ξ,
               let p := (co v σ) in
-              in_force σ (closure x e ρ) fnv ->
+              in_force σ (s_closure x e ρ) fnv ->
               red_ceskmk (widemk (wshell p (kpush (fn fnv) tκ) t) M Ξ)
                          (widemk (wshell (ap x e ρ v σ) tκ (tick p)) M Ξ)
 | do_apmk : forall x e ρ v σ tκ t M Ξ,
@@ -849,12 +863,11 @@ Definition step_all (s : CESKMΞ) : set CESKMΞ :=
               singleton ceskmξ_eq_dec (widemk (wshell (ev e ρ σ) (kpush (fn v) tκ) (tick (co v σ))) M Ξ)
     | widemk (wshell (co v σ) (kpush (fn fnv) tκ) t) M Ξ =>
       (* Append forces *)
-      fold_right (fun v acc =>
-                    match v with
-                        closure x e ρ => set_add ceskmξ_eq_dec
+      fold_right (fun fv acc =>
+                    match fv with
+                        s_closure x e ρ => set_add ceskmξ_eq_dec
                                                  (widemk (wshell (ap x e ρ v σ) tκ (tick (co v σ))) M Ξ)
                                                  acc
-                      | _ => acc
                  end)
                  (empty_set _)
                  (force σ fnv)
@@ -1576,6 +1589,13 @@ Proof.
   destruct (in_list_join_set_split context_eq_dec trunkont_eq_dec Ξ Ξ ctx tκ H) as [[ctxeq tκeq]|Hinrest].  
 
   subst; inversion Hget as [neq1 | hmatch].
+  destruct Hctx as [mum [ble grmbl]].
+  inversion grmbl; subst.
+  apply IHHunroll.
+  pose (what := Kord _ _ ble ctx0 rt_ctx).
+
+  unfold KTableOrd in Kord.
+
 
   induction tκ' as [| | ctx'']; intros κ Kord Hctx Hunroll Hget.
   inversion Hunroll; subst; constructor.
