@@ -1,13 +1,6 @@
-Require Import ZArith NArith List ListSet CpdtTactics.
+Require Import ZArith NArith List ListSet CpdtTactics stutter basic fmaplist joins.
 Import ListNotations.
 Definition Name := nat.
-Notation "'dec_type' T" := (forall x y : T, {x=y}+{x<>y}) (at level 70, no associativity).
-
-Ltac split_refl eq_dec a := let H:= fresh in destruct (eq_dec a a) as [H|bad]; [clear H|contradict bad]; auto.
-Ltac split_refl2 eq_dec a a' := let H:= fresh in
-                                destruct (eq_dec a a') as [bad|H]; [contradict bad|clear H]; auto.
-Ltac inject_pair := match goal with [H: (?a, ?b) = (?c, ?d) |- _] => injection H; intros; subst end.
-Ltac inverts H := inversion H; subst.
 
 Definition name_eq_dec : dec_type Name. decide equality. Defined.
 Hint Immediate name_eq_dec.
@@ -82,327 +75,16 @@ Hint Immediate ces_point_eq_dec.
 Definition cesk_eq_dec : dec_type CESK. decide equality. Defined.
 Hint Immediate cesk_eq_dec.
 
-Section FiniteMaps.
-Inductive InDom {A B} : list (A * B) -> A -> Prop :=
-  | dom_fst : `{InDom ((a,b)::rst) a}
-  | dom_rst : `{InDom l a -> InDom ((a',b')::l) a}.
-
-Inductive MapsTo {A B} : list (A * B) -> A -> B -> Prop :=
-  | map_fst : `{MapsTo ((a,b)::rst) a b}
-  | map_rst : `{a <> a' -> MapsTo l a b -> MapsTo ((a',b')::l) a b}.
-
-Inductive Unmapped {A B} : list (A * B) -> A -> Prop :=
-  | unil : forall a, Unmapped nil a
-  | ucons : forall a a' b l, Unmapped l a' -> a <> a' -> Unmapped ((a,b)::l) a'.
-
-Lemma MapsTo_In : forall A B (l : list (A * B)) a b (H: MapsTo l a b), In (a,b) l.
-Proof.
-  induction l; intros ? ? H; inversion H; crush.
-Qed.
-
-Theorem InDom_is_mapped : forall A B (eq_dec : dec_type A) (l : list (A * B)) a, InDom l a <-> exists b, MapsTo l a b.
-Proof.
-  induction l as [|(a_,b_) l_ IH].
-  split; [intro H; inversion H |intros [x H]; inversion H].
-  intro a; destruct (eq_dec a_ a) as [Heq|Hneq].
-  subst; split; [exists b_|]; constructor.
-  split; intro H;
-   [inversion H as [|? ? ? ? H']; subst;
-    [contradict Hneq
-    |rewrite IH in H'; destruct H' as [b H'']; exists b; constructor]
-   |destruct H as [b H'']; inversion H''; subst; [contradict Hneq|constructor; rewrite IH; exists b]]; auto.
-Qed.
-
-Theorem InDom_In : forall A B (eq_dec : dec_type A) (l : list (A * B)) a, InDom l a <-> exists b, In (a,b) l.
-Proof.
-  intros; split; intro H;
-  [rewrite InDom_is_mapped in H; auto; destruct H as [b H']; apply MapsTo_In in H'; exists b
-  |destruct H as [b H']; induction l as [|(a_,b_) l_ IH]; inversion H'; [inject_pair|];constructor]; auto.
-Qed. 
-
-Theorem unmapped_not_mapped : forall A B
-                                     (eq_dec : dec_type A)
-                                     (l : list (A*B)) a,
-                                (Unmapped l a <-> forall b, ~ MapsTo l a b).
-Proof.
-  intros A B eq_dec l a; induction l as [|(a',b') l' [IHl'0 IHl'1]];
-  split;
-  [intros H b bad; inversion bad
-  |constructor
-  |intros H b0 bad;
-    inversion H as [| ? ? ? ? Hunmapped Hbad];
-    inversion bad as [| ? ? ? ? ? ? Hbadmap]; subst;
-    [contradict Hbad; reflexivity
-    |specialize IHl'0 with Hunmapped; apply IHl'0 in Hbadmap]  
-  |intros H; constructor;
-  [apply IHl'1; intros bb bad; destruct (eq_dec a a'); subst;
-      [pose (HC := (H b')); contradict HC; constructor
-      |pose (HC := (H bb)); contradict HC; constructor; auto]
-     |intro Heq; subst; apply H with (b := b'); constructor]]; auto.
-Qed.
-
-Lemma in_not_unmapped : forall A B (l : list (A * B)) a b (H:In (a,b) l), ~ Unmapped l a.
-Proof.
-  induction l as [|(a,b) l' IH]; intros a0 b0 H bad; inverts H.
-  inject_pair;
-    inversion bad; auto.
-  inversion bad as [|? ? ? ? bad']; apply IH with (b:= b0) in bad'; auto.
-Qed.
-End FiniteMaps.
-Hint Constructors InDom MapsTo Unmapped.
-
 Definition in_aval := @In storeable.
-
-Definition in_list_list {A B} (l : list (A * (list B))) (a : A) (b : B) : Prop :=
-  exists bs, (MapsTo l a bs) /\ (set_In b bs).
 
 Inductive in_force (σ : Store) : forall (s : storeable) (v : val), Prop :=
 | forced : `{in_force σ (s_closure x e ρ) (closure x e ρ)}
 | do_force : `{MapsTo σ a vs -> in_aval s vs -> in_force σ s (adelay a)}.
 
-Fixpoint extend_map {A B} (eq_dec : (dec_type A)) (a : A) (b : B) (ρ : list (A * B)) :=
-  match ρ with
-    | nil => (a, b)::nil
-    | (a',b')::ρ' => if eq_dec a a' then
-                       (a,b)::ρ'
-                     else (a',b')::(extend_map eq_dec a b ρ')
-  end.
 Definition extend_ρ := extend_map name_eq_dec (B := Addr).
 
-Fixpoint lookup_map {A B} (eq_dec : (dec_type A)) (a : A) (ρ : list (A * B)) : option B :=
-  match ρ with
-    | nil => None
-    | (a',b)::ρ' => if eq_dec a a' then
-                       Some b
-                     else (lookup_map eq_dec a ρ')
-  end.
-
-Theorem lookup_mapsto : forall A B (eq_dec : dec_type A) (l : list (A * B)) a b,
-                          prod ((MapsTo l a b) -> (lookup_map eq_dec a l) = Some b)
-                               ((lookup_map eq_dec a l) = Some b -> (MapsTo l a b)).
-Proof.
-  induction l as [|(a,b) l' IH]; [intros a b; split; intro Hvac; inversion Hvac|].
-  intros a' b'; split; intro H; simpl in *;
-  destruct (eq_dec a' a) as [Hleft|Hright];
-  solve
-   [inversion H; 
-   try solve [contradict Hleft; auto
-             |contradict Hright; auto
-             |apply IH; auto
-             |auto]
-   |injection H; intros; subst; constructor
-   |constructor; [|apply IH];auto].
-Qed.
 Definition lookup_ρ := lookup_map name_eq_dec (B := Addr).
 Definition lookup_σ := lookup_map addr_eq_dec (B := AbsVal).
-
-Section ListJoin.
-Variables (A B C : Type) (eq_dec : dec_type A)
-          (combine : list (A * B) -> B -> C -> B)
-          (base : list (A * B) -> C -> B).
-Fixpoint list_join  (l_orig : list (A * B))
-         (a : A) (c : C)
-         (l : list (A * B)) : list (A * B) :=
-  match l with
-      | nil => (a,base l_orig c)::nil
-      | (a',b)::l' => if (eq_dec a a') then
-                        (a,(combine l_orig b c))::l'
-                      else (a',b)::(list_join l_orig a c l')
-  end.
-Definition singleton {A} (eq_dec : dec_type A) (x : A) : list A := set_add eq_dec x (empty_set _).
-End ListJoin.
-
-Definition Subset {A} (s s' : set A) := forall x (Hin : set_In x s), set_In x s'.
-Lemma subset_refl : forall A (s : set A), Subset s s.
-Proof. intros ? ? ? ?; assumption. Qed.
-Lemma subset_trans : forall A (s s' s'' : set A) (Hsub0 : Subset s s') (Hsub1 : Subset s' s''), Subset s s''.
-Proof. intros ? ? ? ? ? ? ? ?; apply Hsub1, Hsub0; assumption. Qed.
-Inductive EntryLE {A B} (s : list (A * set B)) : A -> set B -> Prop :=
-  entryle_intro : forall a vs vs' (Hmap : MapsTo s a vs') (Hsub : Subset vs vs'), EntryLE s a vs.
-Definition MappingLE {A B} (s s' : list (A * set B)) := forall a vs (Hmap : MapsTo s a vs), EntryLE s' a vs.
-
-Section ListJoin_facts.
-Variables (A C : Type) (eq_dec : dec_type A)
-          (combine : list (A * list C) -> list C -> C -> list C)
-          (base : list (A * list C) -> C -> list C)
-          (Hextensive : (forall l b c, In c (combine l b c)))
-          (Hsingleton : (forall l c, In c (base l c))).
-Lemma in_list_join :
-  forall l l' a c,
-    (forall ab, In ab l -> In ab l') ->
-  in_list_list (list_join eq_dec combine base l' a c l) a c.
-Proof.
-  intros l l' a c Hcontain.
-  induction l; simpl.
-  exists (base l' c); split; [left| apply Hsingleton]; auto.
-  destruct a0 as [a' b]; destruct (eq_dec a a') as [Heq | Hneq];
-  [subst; exists (combine l' b c); split; [left|apply Hextensive]
-  |assert (IHneed : (forall ab, In ab l -> In ab l')) by (intros (a_,bs') Hin; apply Hcontain; right; auto);
-    set (mumble := (IHl IHneed));
-    inversion mumble as [wit Hwit]; subst; destruct Hwit as [Hmap Hin];
-    exists wit; split; [apply map_rst|]]; auto.
-Qed.
-
-Lemma maple_refl : forall (l : list (A * set C)), MappingLE l l.
-Proof. 
-  induction l as [|(a_,b_) l_ IH]; intros a' b' Hmap;
-  [inversion Hmap
-  |apply entryle_intro with (vs' := b'); [|apply subset_refl]; auto].
-Qed.
-
-Lemma maple_trans: forall (l l' l'' : list (A * set C)) (Hmap0 : MappingLE l l') (Hmap1 : MappingLE l' l''), MappingLE l l''.
-Proof.
-  intros; intros a cs Hmap;
-  pose (mumble := Hmap0 a cs Hmap);
-  inversion mumble as [? ? cs' map' sub']; subst;
-  pose (grumble := Hmap1 a cs' map');
-  inversion grumble as [? ? cs'' map'' sub'']; subst;
-  exists cs'';[|apply subset_trans with (s' := cs')]; auto.
-Qed.
-
-Lemma maple_top : forall (l : list (A * set C)) a b b', Subset b b' -> MappingLE ((a,b) :: l) ((a,b') :: l).
-Proof.
-  intros.
-  intros a' b'' Hmap.
-  inversion Hmap as [|? ? ? ? ? Hneq Hmap']; subst.
-  apply entryle_intro with (vs' := b');[constructor|assumption].
-  apply entryle_intro with (vs' := b'');[constructor; auto|apply subset_refl].
-Qed.
-
-Lemma maple_bottom : forall (l l' : list (A * set C)) ab (Htail : MappingLE l l'), MappingLE (ab :: l) (ab :: l').
-Proof.
-  intros. 
-  intros ? ? Hmap; inversion Hmap as [|? ? ? ? ? Hneq Hmap']; subst;
-  [exists vs; [constructor|apply subset_refl]
-        |].
-  pose (mumble := Htail a vs Hmap').
-  inversion mumble as [? ? vs' Hmap_ Hsub_]; subst.
-  exists vs'; [constructor|]; auto.
-Qed.
-
-Variable Hextensive' : (forall l b c c', In c' b -> In c' (combine l b c)).
-
-Lemma unmapped_join : `{Unmapped l a -> a <> a' -> Unmapped (list_join eq_dec combine base l' a' c l) a}.
-Proof.
-  induction l as [|(a,b) l_ IH]; intros a0 a' l' c H ?;
-  simpl; repeat constructor; auto.
-  simpl; destruct (eq_dec a' a) as [Heq|Hneq];
-  [subst; inversion H
-  |constructor;inversion H;[apply IH|]];auto.
-Qed.
-
-Lemma in_list_join2 :
-  forall l l' a a' c c',
-  in_list_list l a' c' ->
-  in_list_list (list_join eq_dec combine base l' a c l) a' c'.
-Proof.
-  intros l l' a a' c c' Hold;
-  induction l; simpl;
-  inversion Hold as [bs Hwit]; destruct Hwit as [Hpairin Hsetin]; subst;
-  [(* base case *) inversion Hpairin
-  |destruct a0; destruct (eq_dec a a0) as [Heq | Hneq]; subst;
-   [(* Heq *)
-     subst; inverts Hpairin;
-    [exists (combine l' bs c); split; [left|apply Hextensive']; auto
-           |exists bs; split; [right|]; auto]
-   |(* Hneq *)
-    destruct (eq_dec a0 a') as [Heq' | Hneq'];
-     inversion Hpairin as [|? ? ? ? ? ? Hmap']; subst;
-    [exists bs; split; [constructor|]; auto
-    |match goal with [Hbad : ?a <> ?a |- _] => contradict Hbad; auto end
-    |exists bs; constructor; [constructor|]; auto
-    |assert (IHneed : in_list_list l a' c') by (exists bs; auto);
-     set (IHl_ := IHl IHneed);
-     inversion IHl_ as [x Hwit]; destruct Hwit as [Hmap Hin];
-     exists x; auto]]].
-Qed.
-
-Lemma non_join_untouched : forall l l' a a' c b
-                             (Hneq : a <> a')
-                             (H: MapsTo (list_join eq_dec combine base l' a c l) a' b),
-                             MapsTo l a' b.
-Proof.
-  induction l as [|(a_,b_) l_ IH]; intros;
-  [inverts H; [contradict Hneq|]; auto
-  |
-  simpl in H; inversion H as [? ? rst H'|? a'' ? ? ? Hneq'' map' Hinj]; subst;
-  destruct (eq_dec a a_) as [Heq_|Hneq_];
-  try (injection H'; intros; subst);
-  try (injection Hinj; intros; subst);
-  [
-  (* Eq *)
-  constructor; [auto
-               |apply IH with (l' := l') (a := a_) (c := c);
-                 [auto
-                 |contradict Hneq; auto]]
-  |constructor
-  |subst; constructor; auto
-  |constructor; [auto | apply IH with (l' := l') (a := a) (c := c); auto]]].
-Qed.
-
-End ListJoin_facts.
-Section ListJoin_morefacts.
-Variables (A C : Type) (eq_dec : dec_type A) (ceq_dec : dec_type C).
-Definition joiner := (fun (_ : list (A * list C)) κs κ => (set_add ceq_dec κ κs)).
-Definition singler := (fun (_ : list (A * list C)) c => (singleton ceq_dec c)).
-Hint Unfold singleton singler.
-
-Lemma in_list_join_set_split : forall (l l' : list (A * list C))
-                                      (a a' : A)
-                                      (c c' : C)
-                                 (Hin : in_list_list (list_join eq_dec joiner singler l' a c l) a' c'),
-                                 ((a = a') /\ (c = c')) \/ (in_list_list l a' c').
-Proof.
-  induction l as [|(a,cs) l_ IH]; [intros|intros ll' aa aa' cc cc' Hin];
-  simpl in *; 
-  inversion Hin as [cs_ Hwit]; destruct Hwit as [map_ in_]; subst;
-  [(* base case *)
-  inversion map_ as [|? ? ? ? ? ? bad]; subst;
-    [inversion in_ as [|bad]; subst; [left; split; auto|inversion bad]
-    |inversion bad]
-  |].
-  destruct (eq_dec aa a) as [Heq|Hneq];
-    inversion map_ as [|foo bar baz qux moo boo too];subst.
-
-  (* Eq case with inversion *)
-
-  destruct (set_add_elim ceq_dec _ _ _ in_) as [Hceq|Hinrest];
-       [intuition
-       |subst; right; exists cs; auto].
-
-  right; exists cs_; auto.
-
-  (* Neq case with inversion *)
-  right; exists cs_; auto.
-
-  destruct (eq_dec aa aa') as [Heq_|Hneq_].
-  (* eq *)
-  destruct IH with (l' := ll') (a := aa) (a' := aa') (c := cc) (c' := cc') as [S|S];
-    [exists cs_; auto
-    |left; exact S
-    |inversion S as [ccs Hwit]; destruct Hwit as [mmap min]; right; exists ccs; auto].
-  (* neq *)
-  right;
-  apply non_join_untouched with (eq_dec := eq_dec) (combine := joiner) (base := singler) in too;
-    [exists cs_|]; auto.
-Qed.
-    
-End ListJoin_morefacts.
-
-Section ListJoin_evenmorefacts.
-Variables (A B C : Type) (eq_dec : dec_type A)
-          (combine : list (A * list B) -> list B -> C -> list B)
-          (base : list (A * list B) -> C -> list B)
-          (Hextensive' : (forall l b c c', In c' b -> In c' (combine l b c))).
-Lemma list_join_ordering : forall l l' a c, MappingLE l (list_join eq_dec combine base l' a c l).
-Proof.
-  induction l as [|(a_,b_) l_ IH]; intros;
-  [intros ? ? bad; inversion bad
-  |simpl; destruct (eq_dec a a_) as [Heq|Hneq];
-   [subst; apply maple_top; intros ? ?; apply Hextensive'; auto
-   |apply maple_bottom, IH]].
-Qed.
-End ListJoin_evenmorefacts.
 
 Definition force (σ : Store) (v:val) : AbsVal :=
   match v with
@@ -513,12 +195,6 @@ Inductive red_cesk : CESK -> CESK -> Prop :=
             let σ' := σ_join σ a v in
             red_cesk (shell p κ t) (shell (ev e ρ' σ') κ (tick p))}.
 
-Inductive Trace {State} (s0 : State) (R : State -> State -> Prop) : list State -> Prop :=
-  | initial : Trace s0 R (s0 :: nil)
-  | CESK_step : `{Trace s0 R (ς :: π) ->
-                  R ς ς' ->
-                  Trace s0 R (ς' :: (ς :: π))}.
-
 Definition CESK_trace (e : Expr) := Trace (inject_cesk e) red_cesk.
 Section NonStandardData.
 Inductive Context := context : Expr -> Env -> Store -> Time -> Context.
@@ -564,6 +240,7 @@ Definition res_join := (fun (_ : Memo) rs r => (set_add result_eq_dec r rs)).
 
 Lemma κs_join_extensive (_ : KTable) (b : TrunKonts) (tκ : TrunKont) : In tκ (set_add trunkont_eq_dec tκ b).
 Proof. apply set_add_intro2; auto. Qed.
+Hint Resolve κs_join_extensive.
 (*
 Lemma κs_join_extensive' (_ : KTable) (b : TrunKonts) (tκ : TrunKont) := (set_add_intro1 trunkont_eq_dec).
 *)
@@ -675,74 +352,6 @@ Inductive red_ceskmk : CESKMΞ -> CESKMΞ -> Prop :=
             in_ctxs Ξ ctx tκ ->
             red_ceskmk (widemk (wshell (co v σ) (rt ctx) t') M Ξ)
                        (widemk (wshell (co v σ) tκ t') M' Ξ). (* XXX: tick? *)
-
-Inductive Dom_in_Dom {A B C} : list (A * B) -> list (A * C) -> Prop :=
-  | no_dom : `{Dom_in_Dom nil l}
-  | cons_dom : `{InDom l' a -> Dom_in_Dom l l' -> Dom_in_Dom ((a,b)::l) l'}.
-Hint Constructors Dom_in_Dom.
-Lemma Dom_InDom : forall A (eq_dec : dec_type A) B C (l : list (A * B)) (l' : list (A * C)) (Hdom : Dom_in_Dom l l')
-                         a
-                         (Hindom : InDom l a), InDom l' a.
-Proof.
-induction l; intros; [inversion Hindom|inverts Hdom;destruct (eq_dec a1 a0) as [Heq|Hneq]; [subst; auto|inversion Hindom; [subst; contradict Hneq|apply IHl]; auto]].
-Qed.
-
-Lemma In_join : forall A B C (eq_dec: dec_type A) (l l' : list (A * B))
-                        (f : list (A * B) -> B -> C -> B)  g a a' b b'
-                        (Hcontain : (forall a b, In (a,b) l -> In (a,b) l'))
-                        (H : In (a,b) l),
-                  (exists b'', In (a,b'') (list_join eq_dec f g l' a' b' l)).
-Proof.
-  intros A B C eq_dec l l' f g a a' b b' Hcontain Hin; induction l as [|(a0,b0) l_ IH];
-  inverts Hin;
-  assert (IHneed : forall a b, In (a,b) l_ -> In (a,b) l') by
-      (intros; apply Hcontain; right; auto);
-  pose (rec := IH IHneed);
-  [injection H; intros; subst;
-   unfold list_join;
-   destruct (eq_dec a' a) as [Heq | Hneq];[
-     subst; exists (f l' b b')
-   |exists b]; constructor; auto
-  |unfold list_join;
-    destruct (eq_dec a' a0) as [Heq | Hneq];[
-      exists b; right; auto
-           |destruct rec as [b'' Hb'']; auto; exists b''; right; auto]].
-Qed.
-
-Lemma Dom_join_right : forall A B C D (eq_dec: dec_type A) (l : list (A * B)) (l' : list (A * D))
-                        (f : list (A * D) -> D -> C -> D)  g a b,
-                   Dom_in_Dom l l' -> Dom_in_Dom l (list_join eq_dec f g l' a b l').
-Proof.
-  intros A B C D eq_dec l l' f g a b Hdom; induction Hdom as [|? ? ? ? H];
-  constructor;
-  (induction l';[rewrite InDom_In in H; auto; destruct H as [? bad]; inversion bad |]);
-  [rewrite InDom_In in H; auto; destruct H as [b' Hb'];
-   rewrite InDom_In; auto; apply In_join with (b := b')|]; auto.
-Qed.
-
-Lemma Dom_join_left : forall A B C D (eq_dec: dec_type A) (l l_ : list (A * B)) (l' : list (A * D))
-                        (f : list (A * B) -> B -> C -> B)  g a b
-                        (Hcontain: (forall ab, In ab l -> In ab l_)),
-                   Dom_in_Dom l l' ->
-                   (exists d, MapsTo l' a d) ->
-                   Dom_in_Dom (list_join eq_dec f g l_ a b l) l'.
-Proof.
-  intros A B C D eq_dec l l_ l' f g a b Hcontain Hdom [d Hin]; induction Hdom.
-  (* base *)
-  repeat constructor; rewrite InDom_is_mapped; auto; exists d; auto.
-    (* induction step *)
-  simpl; destruct (eq_dec a a0) as [Heq|Hneq]; subst; simpl;
-  [constructor; [rewrite InDom_is_mapped; auto; exists d|]; auto
-  |].
-  rewrite InDom_In in H; auto; destruct H as [d' Hin'].
-  constructor;
-    [rewrite InDom_In; auto; exists d'
-    |apply IHHdom; [intros; apply Hcontain; right|]]; auto.
-Qed.
-
-
-Definition TraceTo {State} (R : State -> State -> Prop) (s0 s1 : State) : Prop :=
-  exists π, Trace s0 R (s1 :: π).
 
 Definition step_all (s : CESKMΞ) : set CESKMΞ :=
   match s with
@@ -899,11 +508,11 @@ Proof with auto.
       [apply unroll_with_extension
       |apply in_list_join; solve [intros; apply set_add_intro2; auto | auto]]; auto
   |].
-  intros ctx_ tκ_ Hin_.
+  intros ctx_ tκ_ Hin_;
   destruct (in_list_join_set_split context_eq_dec trunkont_eq_dec) 
        with (l := Ξ) (l' := Ξ) (a := ctx) (a' := ctx_) (c := tκ) (c' := tκ_)
     as [[? ?]|S1]; auto;
-  [exists κ; apply unroll_with_extension; subst; auto
+  [exists κ; apply unroll_with_extension; subst; intuition (subst; auto)
   |destruct (HΞ ctx_ tκ_) as [κ' ?]; auto;
     unfold in_ctxs; subst; exists κ'; apply unroll_with_extension; auto].
   (* memoized ap *)
@@ -913,10 +522,9 @@ Proof with auto.
     |intros ctx_ tκ_ Hin_;
       destruct (in_list_join_set_split context_eq_dec trunkont_eq_dec) 
        with (l := Ξ) (l' := Ξ) (a := ctx) (a' := ctx_) (c := tκ') (c' := tκ_)
-       as [[? ?]|S1]; auto;
-    [subst tκ_; exists κ; apply unroll_with_extension
-    |destruct (HΞ ctx_ tκ_) as [κ' ?]; solve [exists κ'; apply unroll_with_extension; auto
-                                                    |auto]]]; auto. 
+       as [[? ?]|S1]; auto;[intuition; subst tκ_; exists κ; apply unroll_with_extension
+       |destruct (HΞ ctx_ tκ_) as [κ' ?]; solve [exists κ'; apply unroll_with_extension; auto
+                                                       |auto]]]; auto. 
   (* return and memoize *)
   subst;
   destruct (HΞ ctx tκ') as [κ' ?]; auto.
@@ -928,6 +536,7 @@ Inductive hastail (κ : Kont) : list CESK -> Prop :=
   Nil_tail : hastail κ nil
 | Cons_tail : forall π p κ' t, hastail κ π -> KontTail κ κ' ->
                            hastail κ ((shell p κ' t) :: π).
+Hint Constructors hastail.
 
 (* Tail_replacement κorig κtail κreplacement κresult *)
 Inductive Tail_replacement : Kont -> Kont -> Kont -> Kont -> Prop :=
@@ -938,10 +547,7 @@ Inductive Tail_replacement : Kont -> Kont -> Kont -> Kont -> Prop :=
 Lemma good_tailrep : forall κorig κtail κrep,
                        Tail_replacement (κorig++κtail) κtail κrep (κorig ++ κrep).
 Proof.
-  induction κorig as [|φ κ_ IH];
-  intros;[simpl; constructor
-         |].
-  simpl; constructor; apply IH.
+  induction κorig as [|φ κ_ IH]; intros;simpl; constructor; apply IH.
 Qed.
 
 Fixpoint replacetail_kont (κ κ' κ'' : Kont) : option Kont :=
@@ -1354,16 +960,17 @@ intros;
                (* stupid goal dependencies... *)
             |injection Hpeq; intros; subst M t tκ p Ξ; auto
             |(* Kord for unmapped ap *)
-intros ctx' tκ' Hin ctx'' Hctx;
+            intros ctx' tκ' Hin ctx'' Hctx;
               subst p; destruct (in_list_join_set_split context_eq_dec trunkont_eq_dec) 
                        with (l := Ξ) (l' := Ξ) (a := ctx) (a' := ctx') (c := tκ) (c' := tκ')
-                       as [[mum ble]|S1]; auto;
+                       as [[mum [? ble]]|S1]; auto;
               [subst; rewrite reflect_ctx in Hctx; rewrite Hctx in ctxord; destruct ctxord; destruct ctx',ctx''; simpl in *; auto;
                injection mum; intros; subst t0 s e1 e0;
                split;
                [apply maple_trans with (l' := σ); [|apply σ_join_ordering]; auto
                |apply InDom_join2]
               |destruct (Kord _ _ S1 ctx'' Hctx); split; [|apply InDom_join2]]; auto].
+
 (* memoized ap context ordering *)
 subst p; simpl;
 destruct (get_ctx tκ) as [[e'' ρ'' σ'' t'']|]; destruct ctxord; split; [apply InDom_join2|];auto;
@@ -1374,7 +981,7 @@ unfold MTableOrd; (* injection Hpeq; *) intros; subst; simpl in ctxord; destruct
 (* intros ce cρ cσ ct cvm cσm ctm Hinmemos. *)
 destruct (in_list_join_set_split context_eq_dec result_eq_dec)
                        with (l := M) (l' := M) (a := ctx) (a' := (context e ρ σ0 t0)) (c := (res v σ (tick (co v σ)))) (c' := (res vm σm tm))
-                       as [[mum ble]|S1]; auto.
+                       as [[mum [ble ?]]|S1]; auto.
 destruct ctx as [? ρblah σblah ?];
   injection mum; intros; subst e ρ σ0 t0;
   injection ble; intros; subst vm σm tm; auto.
