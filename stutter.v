@@ -12,6 +12,21 @@ Inductive Trace {State} (s0 : State) (step : relation State) : list State -> Pro
 Definition TraceTo {State} (step : relation State) (s0 s1 : State) : Prop :=
   exists π, Trace s0 step (s1 :: π).
 
+Inductive TraceRed {State} (s0 : State) (step : relation State) : relation (list State) :=
+  tr_eps : TraceRed s0 step nil [s0]
+| tr_take_step : `{TraceRed s0 step π (ς :: π) -> step ς ς' -> TraceRed s0 step (ς :: π) (ς' :: ς :: π)}.
+
+Lemma trace_to_tracered : forall State (s0 : State) (step : relation State) (π : list State)
+                                 (HT: Trace s0 step π),
+                            match π with
+                                nil => False
+                              | s0_ :: nil => TraceRed s0 step nil [s0_]
+                              | s' :: s :: π => TraceRed s0 step (s :: π) (s' :: s :: π)
+                            end.
+Proof.
+  intros; induction HT; [|destruct π];constructor;auto.
+Qed.  
+
 Section SingleRel.
 Variables (S : Type) (R : relation S) (step : relation S).
 Variables (W : Type) (lew : relation W) (wfW : forall w : W, Acc lew w).

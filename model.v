@@ -1077,7 +1077,7 @@ Inductive state_rel : CESK -> System -> Prop :=
                 (In (wshell p tκ t) Seen \/ In (wshell p tκ t) F) ->
                 state_rel (shell p κ t) (system Seen F M Ξ).
 
-Theorem simulation : forall e π (HT: CESK_trace e π), exists π', WCESKMΞ_trace e π' /\ Forall (fun xy => match xy with (x,y) => state_rel x y end) (combine π π').
+Theorem simulation : WEB_refinement state_rel forall e π (HT: CESK_trace e π), exists π', WCESKMΞ_trace e π' /\ Forall (fun xy => match xy with (x,y) => state_rel x y end) (combine π π').
 Proof.
   intros e π HT; induction HT.
   exists [(inject_wide_ceskmk e)];
