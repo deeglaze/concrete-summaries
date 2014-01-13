@@ -2,6 +2,10 @@ Require Import List ListSet.
 Require Import "basic".
 Generalizable All Variables.
 Set Implicit Arguments.
+Inductive PR_InDom {A B} : list (A * B) -> A -> Type :=
+  | pr_dom_fst : `{PR_InDom ((a,b)::rst) a}
+  | pr_dom_rst : `{PR_InDom l a -> PR_InDom ((a',b')::l) a}.
+
 Inductive InDom {A B} : list (A * B) -> A -> Prop :=
   | dom_fst : `{InDom ((a,b)::rst) a}
   | dom_rst : `{InDom l a -> InDom ((a',b')::l) a}.
@@ -112,8 +116,7 @@ Fixpoint lookup_map {A B} (eq_dec : (dec_type A)) (a : A) (ρ : list (A * B)) : 
   end.
 
 Theorem lookup_mapsto : forall A B (eq_dec : dec_type A) (l : list (A * B)) a b,
-                          prod ((MapsTo l a b) -> (lookup_map eq_dec a l) = Some b)
-                               ((lookup_map eq_dec a l) = Some b -> (MapsTo l a b)).
+                          (MapsTo l a b) <-> (lookup_map eq_dec a l) = Some b.
 Proof.
   induction l as [|(a,b) l' IH]; [intros a b; split; intro Hvac; inversion Hvac|].
   intros a' b'; split; intro H; simpl in *;

@@ -79,7 +79,8 @@ Definition in_aval := @In storeable.
 
 Inductive in_force (σ : Store) : forall (s : storeable) (v : val), Prop :=
 | forced : `{in_force σ (s_closure x e ρ) (closure x e ρ)}
-| do_force : `{MapsTo σ a vs -> in_aval s vs -> in_force σ s (adelay a)}.
+| do_force : `{MapsTo σ a vs -> in_aval s vs -> in_force σ s (adelay a)}
+| many_force : `{set_In s vs -> in_force σ s (amany vs)}.
 
 Definition extend_ρ := extend_map name_eq_dec (B := Addr).
 
@@ -95,6 +96,20 @@ Definition force (σ : Store) (v:val) : AbsVal :=
       | amany vs => vs
       | closure x e ρ => singleton storeable_eq_dec (s_closure x e ρ)
   end.
+
+Lemma in_force_In_force : forall σ v s, in_force σ s v <-> set_In s (force σ v).
+Proof.
+intros; split; intro H.
+inversion H as [|? ? ? Hmap|s_ Hmany]; simpl;
+[intuition
+|rewrite lookup_mapsto in Hmap; unfold lookup_σ; rewrite Hmap; auto
+|subst; auto].
+destruct v as [x e ρ | a |vs];
+simpl in H;[inversion H; [subst|contradiction]; constructor
+           |case_eq (lookup_σ a σ);[intros ss Hsseq; rewrite Hsseq in H; unfold lookup_σ in Hsseq; rewrite <- lookup_mapsto in Hsseq; apply do_force with (vs := ss); auto|intro bad; rewrite bad in H; inversion H]
+           |constructor; auto].
+Qed.
+
 Definition absval_join (vs vs' : AbsVal) :=
   set_union storeable_eq_dec vs vs'.
 
@@ -161,7 +176,7 @@ Proof.
   induction κ' as [|φ_ κ_ IH]; intros; inverts H.
   apply push_tail; constructor.
   apply push_tail,IH; auto.
-Qed.  
+Qed.
 
 Lemma kont_tail_app : forall κ κ' κ'' (H : KontTail (κ ++ κ') κ''), KontTail κ' κ''.
 Proof.
@@ -176,6 +191,7 @@ Variable tick : CES_point -> Time.
 Variable time0 : Time.
 Definition inject_cesk (e : Expr) := shell (ev e nil nil) nil time0.
 
+(* Proof relevant or not? *)
 Inductive red_cesk : CESK -> CESK -> Prop :=
   ev_var : `{let p := (ev (var x) ρ σ) in
              MapsTo ρ x a ->
@@ -194,6 +210,24 @@ Inductive red_cesk : CESK -> CESK -> Prop :=
             let ρ' := extend_ρ x a ρ in
             let σ' := σ_join σ a v in
             red_cesk (shell p κ t) (shell (ev e ρ' σ') κ (tick p))}.
+Inductive PR_red_cesk : CESK -> CESK -> Type :=
+  pr_ev_var : `{let p := (ev (var x) ρ σ) in
+             MapsTo ρ x a ->
+             PR_red_cesk (shell p κ t) (shell (co (adelay a) σ) κ (tick p))}
+| pr_ev_app : `{let p := (ev (app e0 e1) ρ σ) in
+             PR_red_cesk (shell p κ t) (shell (ev e0 ρ σ) ((ar e1 ρ)::κ) (tick p))}
+| pr_ev_lam : `{let p := (ev (lam x e) ρ σ) in
+             PR_red_cesk (shell p κ t) (shell (co (closure x e ρ) σ) κ (tick p))}
+| pr_co_ar : `{let p := (co v σ) in
+            PR_red_cesk (shell p ((ar e ρ)::κ) t) (shell (ev e ρ σ) ((fn v)::κ) (tick p))}
+| pr_co_fn : `{let p := (co v σ) in
+            in_force σ (s_closure x e ρ) fnv ->
+            PR_red_cesk (shell p ((fn fnv)::κ) t) (shell (ap x e ρ v σ) κ (tick p))}
+| pr_do_ap : `{let p := (ap x e ρ v σ) in
+            let a := alloc p in
+            let ρ' := extend_ρ x a ρ in
+            let σ' := σ_join σ a v in
+            PR_red_cesk (shell p κ t) (shell (ev e ρ' σ') κ (tick p))}.
 
 Definition CESK_trace (e : Expr) := Trace (inject_cesk e) red_cesk.
 Section NonStandardData.
@@ -246,7 +280,7 @@ Lemma κs_join_extensive' (_ : KTable) (b : TrunKonts) (tκ : TrunKont) := (set_
 *)
 Definition κ_singleton_extensive : forall (Ξ : KTable) (tκ : TrunKont), In tκ (κ_singleton Ξ tκ).
 intros; apply κs_join_extensive; auto.
-Defined. 
+Defined.
 
 Definition Ξ_join (Ξ : KTable) (ctx : Context) (κ : TrunKont) : KTable :=
   list_join context_eq_dec
@@ -304,6 +338,8 @@ Section NonStandardSemantics.
 
 Definition inject_wceskmk (e : Expr) : WCESKMΞ := (wshell (ev e nil nil) mt time0).
 Definition inject_ceskmk (e : Expr) : CESKMΞ := widemk (inject_wceskmk e) nil nil.
+
+(* Proof relevant or not? *)
 Inductive red_ceskmk : CESKMΞ -> CESKMΞ -> Prop :=
   evmk_var : forall x ρ σ a tκ t M Ξ,
                let p := (ev (var x) ρ σ) in
@@ -351,6 +387,54 @@ Inductive red_ceskmk : CESKMΞ -> CESKMΞ -> Prop :=
             let M' := M_join M ctx (res v σ t') in
             in_ctxs Ξ ctx tκ ->
             red_ceskmk (widemk (wshell (co v σ) (rt ctx) t') M Ξ)
+                       (widemk (wshell (co v σ) tκ t') M' Ξ). (* XXX: tick? *)
+Inductive PR_red_ceskmk : CESKMΞ -> CESKMΞ -> Type :=
+  pr_evmk_var : forall x ρ σ a tκ t M Ξ,
+               let p := (ev (var x) ρ σ) in
+               MapsTo ρ x a ->
+               PR_red_ceskmk (widemk (wshell p tκ t) M Ξ)
+                          (widemk (wshell (co (adelay a) σ) tκ (tick p)) M Ξ)
+| pr_evmk_app : forall e0 e1 ρ σ tκ t M Ξ,
+               let p := (ev (app e0 e1) ρ σ) in
+               PR_red_ceskmk (widemk (wshell p tκ t) M Ξ)
+                          (widemk (wshell (ev e0 ρ σ) (kpush (ar e1 ρ) tκ) (tick p)) M Ξ)
+| pr_evmk_lam : forall x e ρ σ tκ t M Ξ,
+               let p := (ev (lam x e) ρ σ) in
+               PR_red_ceskmk (widemk (wshell p tκ t) M Ξ)
+                          (widemk (wshell (co (closure x e ρ) σ) tκ (tick p)) M Ξ)
+| pr_comk_ar : forall v σ e ρ tκ t M Ξ,
+              let p := (co v σ) in
+              PR_red_ceskmk (widemk (wshell p (kpush (ar e ρ) tκ) t) M Ξ)
+                         (widemk (wshell (ev e ρ σ) (kpush (fn v) tκ) (tick p)) M Ξ)
+| pr_comk_fn : forall v σ x e ρ fnv tκ t M Ξ,
+              let p := (co v σ) in
+              in_force σ (s_closure x e ρ) fnv ->
+              PR_red_ceskmk (widemk (wshell p (kpush (fn fnv) tκ) t) M Ξ)
+                         (widemk (wshell (ap x e ρ v σ) tκ (tick p)) M Ξ)
+| pr_do_apmk : forall x e ρ v σ tκ t M Ξ,
+              let p := (ap x e ρ v σ) in
+              let a := alloc p in
+              let ρ' := extend_ρ x a ρ in
+              let σ' := σ_join σ a v in
+              let t' := (tick p) in
+              let ctx := (context e ρ' σ' t') in
+              Unmapped M ctx ->
+              PR_red_ceskmk (widemk (wshell p tκ t) M Ξ)
+                         (widemk (wshell (ev e ρ' σ') (rt ctx) t') M (Ξ_join Ξ ctx tκ))
+| pr_do_memo : forall x e ρ v σ tκ t M Ξ vm σm tm,
+              let p := (ap x e ρ v σ) in
+              let a := alloc p in
+              let ρ' := extend_ρ x a ρ in
+              let σ' := σ_join σ a v in
+              let ctx := (context e ρ' σ' (tick p)) in
+              in_memos M ctx (res vm σm tm) ->
+              PR_red_ceskmk (widemk (wshell p tκ t) M Ξ)
+                         (widemk (wshell (co vm σm) tκ tm) M (Ξ_join Ξ ctx tκ)) (* XXX: tick? *)
+| pr_do_rt : forall v σ ctx tκ M Ξ,
+            let t' := (tick (co v σ)) in
+            let M' := M_join M ctx (res v σ t') in
+            in_ctxs Ξ ctx tκ ->
+            PR_red_ceskmk (widemk (wshell (co v σ) (rt ctx) t') M Ξ)
                        (widemk (wshell (co v σ) tκ t') M' Ξ). (* XXX: tick? *)
 
 Definition step_all (s : CESKMΞ) : set CESKMΞ :=
@@ -429,10 +513,24 @@ Fixpoint smusher (S : set WCESKMΞ) (ss : set CESKMΞ) (nexts : set WCESKMΞ) (M
 Definition smush_steps (s : WCESKMΞ) (M: Memo) (Ξ: KTable) (S : set WCESKMΞ) : Wide_step :=
   smusher S (step_all (widemk s M Ξ)) nil nil nil.
 
-Theorem finite_steps : forall s, forall s', (red_ceskmk s s' <-> In s' (step_all s)).
+Inductive ForallT {A} (P:A->Type) : list A -> Type :=
+ | ForallT_nil : ForallT P nil
+ | ForallT_cons : forall x l, P x -> ForallT P l -> ForallT P (x::l).
+Hint Constructors ForallT.
+
+Theorem PR_finite_steps1 : forall s, forall s', red_ceskmk s s' -> InT s' (step_all s).
 Proof.
 Admitted.
 
+Theorem PR_finite_steps2 : forall s, forall s', InT s' (step_all s) -> red_ceskmk s s'.
+Proof.
+Admitted.
+
+Theorem finite_steps : forall s, forall s', red_ceskmk s s' <-> In s' (step_all s).
+Proof.
+Admitted.
+
+(* Proof relevant or not? *)
 Inductive Wide_CESKMΞ : System -> System -> Prop :=
   | big_step : forall s M Ξ Seen F ss M' Ξ',
                  (wide_step ss M' Ξ') = (smush_steps s M Ξ Seen) ->
@@ -443,6 +541,8 @@ Inductive Wide_CESKMΞ : System -> System -> Prop :=
                                   M' Ξ').
 
 Definition inject_wide_ceskmk (e : Expr) := (system [(inject_wceskmk e)] [(inject_wceskmk e)] nil nil).
+Definition CESKMΞ_trace (e : Expr) :=
+  Trace (inject_ceskmk e) red_ceskmk.
 Definition WCESKMΞ_trace (e : Expr) :=
   Trace (system [(inject_wceskmk e)] [(inject_wceskmk e)] nil nil) Wide_CESKMΞ.
 
@@ -456,7 +556,7 @@ Inductive StackUnroll (Ξ : KTable) : Kont -> TrunKont -> Prop :=
 
 Ltac textend_map := apply in_list_join2;solve [
                              intros; apply set_add_intro1; auto
-                            | intros; apply set_add_intro2; auto 
+                            | intros; apply set_add_intro2; auto
                             | auto].
 
 Theorem unroll_with_extension : forall
@@ -496,9 +596,9 @@ Proof with auto.
   inversion Hinv as [? κ ? Hunroll HΞ]; subst;
   try solve [apply unroll_inv with (κ := κ); auto
             |apply unroll_inv with (κ := ((ar e1 ρ)::κ)); [constructor|];auto
-            |inversion Hunroll as [|κκ|]; subst; 
+            |inversion Hunroll as [|κκ|]; subst;
              solve [discriminate | apply unroll_inv with (κ := ((fn v)::κκ)); [constructor|];auto]
-            |inversion Hunroll as [|κκ|]; subst; 
+            |inversion Hunroll as [|κκ|]; subst;
              solve [discriminate | apply unroll_inv with (κ := ((fn fnv)::κκ)); [constructor|];auto]].
   (* fn -> ap *)
   inversion Hunroll as [|κκ|]; apply unroll_inv with (κ := κκ); auto.
@@ -509,7 +609,7 @@ Proof with auto.
       |apply in_list_join; solve [intros; apply set_add_intro2; auto | auto]]; auto
   |].
   intros ctx_ tκ_ Hin_;
-  destruct (in_list_join_set_split context_eq_dec trunkont_eq_dec) 
+  destruct (in_list_join_set_split context_eq_dec trunkont_eq_dec)
        with (l := Ξ) (l' := Ξ) (a := ctx) (a' := ctx_) (c := tκ) (c' := tκ_)
     as [[? ?]|S1]; auto;
   [exists κ; apply unroll_with_extension; subst; intuition (subst; auto)
@@ -520,16 +620,16 @@ Proof with auto.
   apply unroll_inv with (κ := κ);
     [apply unroll_with_extension
     |intros ctx_ tκ_ Hin_;
-      destruct (in_list_join_set_split context_eq_dec trunkont_eq_dec) 
+      destruct (in_list_join_set_split context_eq_dec trunkont_eq_dec)
        with (l := Ξ) (l' := Ξ) (a := ctx) (a' := ctx_) (c := tκ') (c' := tκ_)
        as [[? ?]|S1]; auto;[intuition; subst tκ_; exists κ; apply unroll_with_extension
        |destruct (HΞ ctx_ tκ_) as [κ' ?]; solve [exists κ'; apply unroll_with_extension; auto
-                                                       |auto]]]; auto. 
+                                                       |auto]]]; auto.
   (* return and memoize *)
   subst;
   destruct (HΞ ctx tκ') as [κ' ?]; auto.
   apply unroll_inv with (κ := κ'); auto.
-Qed.  
+Qed.
 
 Section StackIrrelevance.
 Inductive hastail (κ : Kont) : list CESK -> Prop :=
@@ -704,6 +804,7 @@ Qed.
 Definition ctx_in_dom (Ξ : KTable) (tκ : TrunKont) :=
   forall ctx : Context, `{ctx_of tκ ctx -> (exists κs, In (ctx,κs) Ξ)}.
 
+(* Proof relevant or not? *)
 Inductive Tailed_Trace : forall (κ : Kont) (p : CES_point) (t : Time) (p' : CES_point) (t' : Time), Prop :=
   tailt : `{Trace (shell p κ t)
                   red_cesk
@@ -743,7 +844,7 @@ Proof.
   |unfold replacetail,replacetail_state,map; fold replacetail; fold map; f_equal;
    rewrite Ht_;[auto|f_equal; apply πeq]
   |repeat constructor; auto].
-  
+
   Ltac push out p0' κ0' t0' κs κ' κ'' pp φ κt_ ts seq Ht_ :=
     assert (out : (shell p0' (φ :: κ0') t0') = shell pp κt_ ts) by
       (subst; simpl in seq; unfold replacetail_kont in Ht_;
@@ -763,9 +864,9 @@ Proof.
       ε s0'eq p0' κ0' t0' pp κt_ ts seq Ht_ H_ πeq (shell p κ_ t) (ev (var x) ρ σ) (co (adelay a) σ) π' σ
     |(* app : push*)
     push s0'eq' p0' κ0' t0' κs κ' κ'' pp (ar e1 ρ) κt_ ts seq Ht_;
-  apply irrelevant_intro with (s' := (shell p κ_ t)) (π' := (shell (ev e0 ρ σ) ((ar e1 ρ)::κ0') tt) :: (shell (ev (app e0 e1) ρ σ) κ0' t0') :: π'); injection s0'eq'; intros; subst; 
+  apply irrelevant_intro with (s' := (shell p κ_ t)) (π' := (shell (ev e0 ρ σ) ((ar e1 ρ)::κ0') tt) :: (shell (ev (app e0 e1) ρ σ) κ0' t0') :: π'); injection s0'eq'; intros; subst;
    [grumble H_
-   |unfold replacetail,replacetail_state,map; fold replacetail; fold map; f_equal; 
+   |unfold replacetail,replacetail_state,map; fold replacetail; fold map; f_equal;
     [rewrite Ht_|repeat f_equal]; auto
    |repeat constructor; auto]
     |(* lam : ε*)
@@ -783,7 +884,7 @@ Proof.
            [exists κt_t; injection Ht_; intros; subst; split; auto
                   |discriminate]]);
       destruct unf0 as [κt_t [Hκt Hκs]];
-      
+
       assert (Ht_' : replacetail_kont (ar e ρ :: κs) κ' κ'' = Some (ar e ρ :: κt_t)) by
           (unfold replacetail_kont; fold replacetail_kont;
            rewrite Hκs;
@@ -793,7 +894,7 @@ Proof.
             assert (badframe : (ar e ρ) <> (fn v)) by discriminate;
             apply (no_conflicting_kont_tail badframe) in bad5; contradiction
             |auto]);
-      
+
       assert (unf1 : κ0' = ar e ρ :: κt_t /\ p0' = pp) by
           (unfold replacetail_state,replacetail_kont in seq; fold replacetail_kont in seq;
            rewrite Hκs in seq;
@@ -804,12 +905,12 @@ Proof.
             apply (no_conflicting_kont_tail badframe) in bad5; contradiction
             |injection seq; intros; subst; split; auto]);
       destruct unf1 as [Hκ0' Hpeq];
-      
+
       assert (s0'eq' : (shell p0' (fn v :: κt_t) t0') = shell pp κt_ ts) by
           (unfold replacetail_state in seq;
            destruct (replacetail_kont (ar e ρ :: κs) κ' κ''); [|discriminate];
            injection seq; intros; subst; auto);
-      
+
       apply irrelevant_intro with (s' := (shell p κ_ t))
                                     (π' := (shell (ev e ρ σ) (fn v :: κt_t) (tick pp)) ::
                                            (shell pp ((ar e ρ)::κt_t) t0') :: π');
@@ -830,7 +931,7 @@ Proof.
           assert (contr : ~ KontTail ([fn fnv] ++ κt) κt) by (apply no_longer_kont_tail; simpl; omega);
           simpl in contr; contradiction
           |rewrite Ht_; auto]);
-      
+
       unfold replacetail_state in seq; rewrite Ht_' in seq; injection seq; intros; subst;
       apply irrelevant_intro with (s' := (shell p κ_ t))
                                     (π' := (shell (ap x e ρ v σ) κt_ (tick p0')) ::
@@ -845,27 +946,33 @@ Proof.
 Qed.
 End StackIrrelevance.
 
-Definition Context_inv :=
-  (fun p tκ M Ξ ctx =>
-     match ctx with
-         context e ρ σ t =>
-         forall tκ',
-           in_ctxs Ξ (context e ρ σ t) tκ' ->
-           (forall κ',
+(* Proof relevant or not? *)
+Inductive KontUpto p tκ Ξ e ρ σ κ' : Prop:=
+  kontupto_intro : forall κ,
+                     StackUnroll Ξ κ tκ ->
+                     forall t' t'',
+                       TraceTo red_cesk (shell (ev e ρ σ) κ' t')
+                               (shell p κ t'')
+                               -> KontUpto p tκ Ξ e ρ σ κ'.
+(* Proof relevant or not? *)
+Inductive MemoTrace e ρ σ t v σ'' t' : Prop :=
+  memotrace_intro : forall κ_irrelevant,
+                      Tailed_Trace κ_irrelevant (ev e ρ σ) t (co v σ'') t' ->
+                      MemoTrace e ρ σ t v σ'' t'.
+Inductive Context_inv p tκ M Ξ ctx : Prop :=
+  context_inv_intro :
+    forall e ρ σ t tκ'
+           (ctxform : ctx = (context e ρ σ t))
+           (Hctx : in_ctxs Ξ (context e ρ σ t) tκ')
+           (Hupto :
+              (forall κ',
                StackUnroll Ξ κ' tκ' ->
-               (* seems false now... *)
-               (exists κ,
-                  StackUnroll Ξ κ tκ 
-                  /\
-                  exists  t' t'',
-                  TraceTo red_cesk
-                          (shell (ev e ρ σ) κ' t')
-                          (shell p κ t'')))
-               /\
-             (forall v σ'' t',
-                in_memos M (context e ρ σ t) (res v σ'' t') ->
-                exists κ_irrelevant, Tailed_Trace κ_irrelevant (ev e ρ σ) t (co v σ'') t')
-  end).
+               KontUpto p tκ Ξ e ρ σ κ'))
+           (Hmemo :
+              (forall v σ'' t',
+                 in_memos M (context e ρ σ t) (res v σ'' t') ->
+                 MemoTrace e ρ σ t v σ'' t')),
+              Context_inv p tκ M Ξ ctx.
 
 Definition ContextLE (ctx ctx' : Context) : Prop :=
   match ctx, ctx' with
@@ -940,7 +1047,7 @@ intros;
                                                     destruct ctx; split; auto end
            (* Kord for unmapped ap *)
             |intros ctx' tκ' Hin ctx'' Hctx;
-              subst p; destruct (in_list_join_set_split context_eq_dec trunkont_eq_dec) 
+              subst p; destruct (in_list_join_set_split context_eq_dec trunkont_eq_dec)
                        with (l := Ξ) (l' := Ξ) (a := ctx) (a' := ctx') (c := tκ) (c' := tκ')
                        as [[mum ble]|S1]; auto;
               [subst; rewrite reflect_ctx in Hctx; rewrite Hctx in ctxord; destruct ctx',ctx''; simpl in *; auto;
@@ -961,7 +1068,7 @@ intros;
             |injection Hpeq; intros; subst M t tκ p Ξ; auto
             |(* Kord for unmapped ap *)
             intros ctx' tκ' Hin ctx'' Hctx;
-              subst p; destruct (in_list_join_set_split context_eq_dec trunkont_eq_dec) 
+              subst p; destruct (in_list_join_set_split context_eq_dec trunkont_eq_dec)
                        with (l := Ξ) (l' := Ξ) (a := ctx) (a' := ctx') (c := tκ) (c' := tκ')
                        as [[mum [? ble]]|S1]; auto;
               [subst; rewrite reflect_ctx in Hctx; rewrite Hctx in ctxord; destruct ctxord; destruct ctx',ctx''; simpl in *; auto;
@@ -998,6 +1105,7 @@ intro e; apply stateord_intro;
 [intros ? ? ? ? ? ? ? H|intros ? ? H|simpl; trivial]; inversion H as [? [bad ?]]; inversion bad.
 Qed.
 
+(* Proof relevant or not? *)
 Inductive WInv : WCESKMΞ -> Memo -> KTable -> Prop :=
   winv : forall p tκ t M Ξ,
           Dom_in_Dom M Ξ ->
@@ -1005,48 +1113,92 @@ Inductive WInv : WCESKMΞ -> Memo -> KTable -> Prop :=
           (forall ctx', (InDom Ξ ctx') -> Context_inv p tκ M Ξ ctx')
            ->
           WInv (wshell p tκ t) M Ξ.
-  
+
 Inductive Inv : CESKMΞ -> Prop :=
   inv : forall s M Ξ, WInv s M Ξ -> Inv (widemk s M Ξ).
 
+Remark inject_ceskmk_inv : forall e, Inv (inject_ceskmk e) /\ StateOrd (inject_wceskmk e) nil nil.
+Proof.
+  constructor.
+  constructor.
+  constructor.
+  constructor.
+  intros ctx bad; inversion bad.
+  intros ? bad; inversion bad.
+  constructor.
+  intros ? ? ? ? ? ? ? [? [bad ?]]; inversion bad.
+  intros ? ? [? [bad ?]]; inversion bad.
+  simpl; exact I.
+Qed.
+
 Inductive WideInv : System -> Prop :=
   wideinv : forall Seen F M Ξ
-                (SeenInv : forall s, set_In s Seen -> WInv s M Ξ /\ StateOrd s M Ξ)
-                (FrontierInv : forall s, set_In s F -> WInv s M Ξ /\ StateOrd s M Ξ),
+                (SeenInv : forall s, set_In s Seen -> WInv s M Ξ * StateOrd s M Ξ)
+                (FrontierInv : forall s, set_In s F -> WInv s M Ξ * StateOrd s M Ξ),
            WideInv (system Seen F M Ξ).
 
 Lemma inv_invariant : forall s M Ξ s' M' Ξ', WInv s M Ξ -> StateOrd s M Ξ -> red_ceskmk (widemk s M Ξ) (widemk s' M' Ξ') -> WInv s' M' Ξ'.
 Proof.
 Admitted.
 
+Lemma ForallT_forall1 : forall A (P : A -> Type) x l, ForallT P l -> InT x l -> P x.
+Proof.
+induction l; intros HF H; [inversion H|inverts HF; inversion H as [? ? HH|];[inversion HH|]; auto].
+Defined.
+Lemma ForallT_forall2 : forall A (P : A -> Type) l, (forall x, InT x l -> P x) -> ForallT P l.
+Proof.
+induction l; intros H; [|constructor; [apply H; left; constructor|apply IHl; intros; apply H; right]];auto.
+Defined.
+
+Lemma PR_step_all_invariant : forall s M Ξ, WInv s M Ξ -> StateOrd s M Ξ -> ForallT Inv (step_all (widemk s M Ξ)).
+Proof.
+intros ? ? ? Hwinv Hoinv; apply ForallT_forall2; intros [? ? ?]. intro H; apply PR_finite_steps2 in H;
+exact (inv (inv_invariant Hwinv Hoinv H)).
+Qed.
+
 Lemma step_all_invariant : forall s M Ξ, WInv s M Ξ -> StateOrd s M Ξ -> Forall Inv (step_all (widemk s M Ξ)).
 Proof.
-intros ? ? ? Hwinv Hoinv; rewrite Forall_forall; intros [? ? ?]; rewrite <- finite_steps; intros;
+intros ? ? ? Hwinv Hoinv; rewrite Forall_forall; intros [? ? ?]. intro H; rewrite <- finite_steps in H;
 exact (inv (inv_invariant Hwinv Hoinv H)).
+Qed.
+
+Lemma PR_step_all_ord_invariant : forall s M Ξ, StateOrd s M Ξ -> ForallT (fun ws => match ws with widemk s' M' Ξ' => StateOrd s' M' Ξ' end) (step_all (widemk s M Ξ)).
+Proof.
+intros ? ? ? Hoinv; apply ForallT_forall2; intros [? ? ?]; intro H; apply PR_finite_steps2 in H;
+exact (ord_invariant H Hoinv).
 Qed.
 
 Lemma step_all_ord_invariant : forall s M Ξ, StateOrd s M Ξ -> Forall (fun ws => match ws with widemk s' M' Ξ' => StateOrd s' M' Ξ' end) (step_all (widemk s M Ξ)).
 Proof.
-intros ? ? ? Hoinv; rewrite Forall_forall; intros [? ? ?]; rewrite <- finite_steps; intros;
+intros ? ? ? Hoinv; rewrite Forall_forall; intros [? ? ?]; intro H; rewrite <- finite_steps in H;
 exact (ord_invariant H Hoinv).
 Qed.
 
 Definition TableContains (M : Memo) (Ξ: KTable) (ss : set CESKMΞ) :=
   Forall (fun s => match s with widemk ws M' Ξ' => MappingLE M' M /\ MappingLE Ξ' Ξ end) ss.
 
+Check filter_In.
+Lemma filter_InT1: forall (A : Type) (f : A -> bool) x l, InT x (filter f l) -> (InT x l) * (f x = true).
+Proof.
+induction l; auto; intro H; [inversion H|].
+simpl in H.
+case_eq (f a); [intro Hfatrue|intro Hfafalse];
+[rewrite Hfatrue in H; inversion H as [? ? Heq|]; [inversion Heq|destruct IHl; auto]; subst; split; auto|rewrite Hfafalse in H; destruct IHl; auto].
+Defined.
+
 Lemma smush_invariant : forall Seen ss M Ξ nexts
-                               (SeenInv : Forall (fun s => WInv s M Ξ) Seen)
+                               (SeenInv : ForallT (fun s => WInv s M Ξ) Seen)
                                (MΞinv : TableContains M Ξ ss)
-                               (ssInv : Forall Inv ss)
-                               (nextsInv : Forall (fun s => WInv s M Ξ) nexts),
+                               (ssInv : ForallT Inv ss)
+                               (nextsInv : ForallT (fun s => WInv s M Ξ) nexts),
                           match smusher Seen ss nexts M Ξ with
-                              wide_step ss M' Ξ' => Forall (fun s => WInv s M' Ξ') ss
+                              wide_step ss M' Ξ' => ForallT (fun s => WInv s M' Ξ') ss
                           end.
 Proof.
   induction ss as [|[s' M' Ξ'] ss' IH]; intros.
   (* base *)
-  simpl; rewrite Forall_forall; intros s H; rewrite filter_In in H; destruct H as [Hin feq];
-  rewrite Forall_forall in nextsInv; apply nextsInv; auto.
+  simpl; apply ForallT_forall2; intros s H; apply filter_InT1 in H; destruct H as [Hin feq].
+  apply ForallT_forall1 with (x := s) in nextsInv; auto.
   (* induction step *)
   simpl.
 apply IH.
@@ -1056,7 +1208,7 @@ unfold TableContains in MΞinv; rewrite Forall_forall in MΞinv;
 intros mum ble; assert (blahneed : In mum (widemk s' M' Ξ' :: ss')) by (right; exact ble); pose (blah := (MΞinv mum blahneed));
 destruct mum; intuition ((apply maple_trans with (l' := M) || apply maple_trans with (l' := Ξ)); solve [apply map_join_ordering2; auto | auto]).
 Focus 2.
-rewrite Forall_forall; rewrite Forall_forall in ssInv; intros mum ble; apply ssInv; right; auto;
+apply ForallT_forall2;
 pose (useIH := IH (Ms_join M' M) (Ξs_join Ξ' Ξ) (set_add wceskmξ_eq_dec s' nexts)).
 Abort.
 
@@ -1076,6 +1228,188 @@ Inductive state_rel : CESK -> System -> Prop :=
                 StackUnroll Ξ κ tκ ->
                 (In (wshell p tκ t) Seen \/ In (wshell p tκ t) F) ->
                 state_rel (shell p κ t) (system Seen F M Ξ).
+
+Print sigT.
+(*
+Definition red_cesk_dec (s s' : CESK) : option (red_cesk s s').
+destruct s as [[e ρ σ | v σ | x e ρ v σ] κ t];
+destruct s' as [[e' ρ' σ' | v' σ' | x' e' ρ' v' σ'] κ' t'].
+(* ev -> ev *)
+destruct e as [x | e0 e1 | x e];
+[exact None (* var -/-> ev *)
+|destruct (expr_eq_dec e0 e'); [destruct (env_eq_dec ρ ρ'); [destruct (store_eq_dec σ σ'); [destruct (kont_eq_dec κ' ((ar e1 ρ) :: κ)); [destruct (time_eq_dec t' (tick (ev (app e0 e1) ρ σ))); [subst; apply Some; apply ev_app |]|]|]|]|]; exact None
+|(* lam -/-> ev *)
+exact None].
+
+(* ev -> co *)
+destruct e as [x | e0 e1 | x e];
+[set (oa := lookup_ρ x ρ);
+  case_eq oa; [intros a Haeq;subst oa;unfold lookup_ρ in Haeq; rewrite <- lookup_mapsto in Haeq|intros; exact None];
+  destruct (val_eq_dec v' (adelay a)); [destruct (store_eq_dec σ σ'); [destruct (kont_eq_dec κ κ'); [destruct (time_eq_dec t' (tick (ev (var x) ρ σ))); [subst;apply Some,ev_var; assumption|]|]|]|]; exact None
+|exact None (* app -/-> co *)
+|destruct (val_eq_dec v' (closure x e ρ)); [destruct (store_eq_dec σ σ'); [destruct (kont_eq_dec κ κ'); [destruct (time_eq_dec t' (tick (ev (lam x e) ρ σ))); [subst; apply Some,ev_lam|]|]|]|]; exact None].
+
+(* ev -> ap *)
+exact None.
+
+(* co -> ev *)
+destruct κ as [|[e ρ|fnv] κ_];
+  [exact None (* mt -/> *)
+  |destruct (expr_eq_dec e e');[destruct (env_eq_dec ρ ρ'); [destruct (store_eq_dec σ σ'); [destruct (kont_eq_dec κ' (fn v :: κ_)); [destruct (time_eq_dec t' (tick (co v σ))); [subst; apply Some,co_ar|]|]|]|]|]; exact None
+  |exact None (* fn v -/-> ev *)].
+
+(* co -> co *)
+exact None.
+
+(* co -> ap *)
+destruct κ as [|[e ρ|fnv] κ_];
+  [exact None
+  |exact None
+  |destruct (set_In_dec storeable_eq_dec (s_closure x' e' ρ') (force σ fnv)) as [doable|];
+    [rewrite <- in_force_In_force in doable;
+      destruct (val_eq_dec v' v); [destruct (store_eq_dec σ σ'); [destruct (kont_eq_dec κ_ κ'); [destruct (time_eq_dec t' (tick (co v σ))); [subst; apply Some,co_fn; auto|]|]|]|]|]; exact None].
+
+(* ap -> ev *)
+set (a := alloc (ap x e ρ v σ));
+destruct (expr_eq_dec e' e); [destruct (env_eq_dec ρ' (extend_ρ x a ρ));[destruct (store_eq_dec σ' (σ_join σ a v));[destruct (kont_eq_dec κ' κ);[destruct (time_eq_dec t' (tick (ap x e ρ v σ))); [subst; apply Some, do_ap;auto|]|]|]|]|]; exact None.
+
+(* ap -> co *)
+exact None.
+(* ap -> ap *)
+exact None.
+Defined.
+*)
+
+Inductive Shallow_TrunKont_Kont_rel : TrunKont -> Kont -> Prop :=
+| mt_rel : `{Shallow_TrunKont_Kont_rel mt nil}
+| push_rel : `{Shallow_TrunKont_Kont_rel tκ κ ->
+               Shallow_TrunKont_Kont_rel (kpush φ tκ) (φ :: κ)}
+|  rt_rel : `{Shallow_TrunKont_Kont_rel (rt ctx) κ}.
+
+Inductive Relate_nonmemo : CES_point -> Memo -> Prop :=
+  rel_ev : `{Relate_nonmemo (ev e ρ σ) M}
+| rel_co : `{Relate_nonmemo (co v σ) M}
+| rel_nonmemo_ap : forall x e ρ v σ M,
+                     let p := (ap x e ρ v σ) in
+                     let a := alloc p in
+                     let ρ' := extend_ρ x a ρ in
+                     let σ' := σ_join σ a v in
+                     let t' := tick p in
+                     let ctx := (context e ρ' σ' t') in
+                     Unmapped M ctx ->
+                     Relate_nonmemo (ap x e ρ v σ) M.
+
+Inductive relate_CESK_CESKMΞ : CESK -> CESKMΞ -> Prop :=
+  relate_nonmemo_full : `{Shallow_TrunKont_Kont_rel tκ κ ->
+                          Relate_nonmemo p M ->
+                          relate_CESK_CESKMΞ (shell p κ t) (widemk (wshell p tκ t) M Ξ)}.
+
+Inductive relate_CESK_CESKMΞ_traces : list CESK -> list (nat * CESKMΞ) -> Prop :=
+| relate_inject : forall e n, relate_CESK_CESKMΞ_traces [inject_cesk e] [(n, (inject_ceskmk e))]
+| relate_nonmemo : `{relate_CESK_CESKMΞ_traces (ς :: π) ((n,ςw) :: wπ) ->
+                     red_cesk ς ς' ->
+                     relate_CESK_CESKMΞ ς' ςw' ->
+                     relate_CESK_CESKMΞ_traces (ς' :: ς :: π) ((nw,ςw') :: (n,ςw) :: wπ)}
+| relate_stutter : `{nw' < nw ->
+                     red_cesk ς ς' ->
+                     relate_CESK_CESKMΞ_traces (ς :: π) ((nw,ςw) :: wπ) ->
+                     relate_CESK_CESKMΞ_traces (ς' :: ς :: π) ((nw',ςw) :: (nw,ςw) :: wπ)}
+| relate_memo : `{relate_CESK_CESKMΞ_traces (ς :: π)
+                                            ((n', (widemk (wshell p_ tκ t_) M Ξ)) :: wπ)
+                  ->
+                  red_cesk ς (shell (ap x e ρ v σ) κ t) ->
+                  let p := (ap x e ρ v σ) in
+                  let a := alloc p in
+                  let ρ' := extend_ρ x a ρ in
+                  let σ' := σ_join σ a v in
+                  let t' := tick p in
+                  let ctx := (context e ρ' σ' t') in
+                  in_memos M ctx (res vm σm tm) ->
+                  Trace (shell (ev e ρ σ) κ t) red_cesk
+                        ((shell (co vm σm) κ tm) :: mπ) ->
+                  relate_CESK_CESKMΞ_traces ((shell (ap x e ρ v σ) κ t) :: π)
+                                            ((length mπ,(widemk (wshell (ap x e ρ v σ) tκ t) M Ξ))
+                                               :: (n',(widemk (wshell p_ tκ t_) M Ξ)) :: wπ)}.
+
+Theorem initial_trace_inv : forall e wπ,
+                              Trace (inject_ceskmk e) red_ceskmk wπ ->
+                              Forall (fun x =>
+                                        Inv x /\
+                                        match x with
+                                            widemk s M Ξ => StateOrd s M Ξ
+                                        end) wπ.
+Proof.
+  induction wπ; intros HT; [constructor|].
+  inversion HT as [| ς wπ' ? HT' Hstep Hin];
+    [constructor;[exact (inject_ceskmk_inv e)
+                 |constructor]
+    |subst;rewrite Forall_forall; intros ς' Hin; inversion Hin;
+     rewrite Forall_forall in IHwπ;
+     [subst;
+       destruct ς as [s M Ξ];
+       assert (invlast : Inv (widemk s M Ξ) /\ StateOrd s M Ξ) by
+           (apply IHwπ; [|left];auto);
+      destruct invlast as [invlast ordlast];
+        destruct ς' as [s' M' Ξ'];
+        split;
+        [inversion invlast as [? ? ? Hwinv]; subst;constructor; apply (inv_invariant Hwinv); auto
+        |apply (ord_invariant Hstep ordlast)]
+      |apply IHwπ; auto]].
+Qed.
+
+Theorem TraceRed_preserves_relation : forall e π wπ
+                                             (Hrel : relate_CESK_CESKMΞ_traces π wπ)
+                                             π' wπ'
+                                             (HMK : TraceRed_Stutter (inject_ceskmk e) red_ceskmk wπ wπ')
+                                             (Horig : TraceRed (inject_cesk e) red_cesk π π'),
+                                        relate_CESK_CESKMΞ_traces π' wπ'.
+Proof.
+  intros e_ ? ? Hrel; induction Hrel as [|ς π_ wn wς wπ_ ς' wς' wn' Hrel' IH Hstep Hsrel
+                                         |
+                                         |x e* ρ v σ κ t π_ tκ M Ξ wπ_ v_ σ_ t_ π'_ πsuff ? IH
+                                          p a ρ' σ' t' ctx Hinmemo HT Htail];
+  [intros π' wπ' HMK Horig
+  |intros π' wπ' HMK Horig
+  |intros π' wπ' HMK Horig
+  |intros Hsuff π_'].
+
+  (* injection case always not memo'd *)
+  inversion Horig as [|? ? ς' Horig' Hstep];
+  inversion HMK as [nw foo bar |nw_ nw'_ ? ? Hlew |? nw ? ? wς' HMK' Hstep']; subst;
+  [apply relate_stutter; [| |apply relate_inject]; auto
+  |apply relate_nonmemo;
+    [apply relate_inject| |
+     inversion Hstep' as [x ρ σ a tκs ts Ms Ξs ps Hmap Hpeq Hs'eq |
+                          e0 e1 ρ σ tκs ts Ms Ξs ps Hpeq |
+                          x elam ρ σ tκs ts Ms Ξs ps Hpeq Hs'eq |
+                          v σ earg ρ tκs ts Ms Ξs ps Hpeq Hs'eq |
+                          v σ x ebody ρ fnv tκs ts Ms Ξs ps Hin_force Hpeq Hs'eq |
+                          x ebody ρ v σ tκs ts Ms Ξs ps a ρ' σ' ts' ctx Hunmapped Hpeq Hs'eq |
+                          x ebody ρ v σ tκs ts Ms Ξs vm σm tm ps a ρ' σ' ctx Hinmemos Hpeq Hs'eq |
+                          v σ ctx tκs Ms Ξs t's M's Hin_ctxs Hpeq Hs'eq]; subst;
+     try solve [inversion Hmap];
+     inversion Hstep as [x_ ρ_ σ_ a_ κ_ t_ p_ Hmap_
+                        |e0_ e1_ ρ_ σ_ κ_ t_ p_ Hpeq_
+                        |x_ elam_ ρ_ σ_ κ_ t_ p_ Hpeq Hs'eq_
+                        | | | ];
+     try solve [inversion Hmap_]; subst; repeat constructor]]; auto.
+
+  inversion Horig as [|? ? ς'_ Horig' Hstep_];
+  inversion HMK as [nw foo bar |nw_ nw'_ ? ? Hlew |? nw ? ? wς'_ HMK' Hstep']; subst.
+Abort.
+
+Definition refine_CESK (e : Expr) π (T : CESK_trace e π) : sigT (fun π => CESKMΞ_trace e π).
+induction T.
+exists [(inject_ceskmk e)]; constructor.
+destruct IHT as [π' HT].
+inverts HT.
+
+Fixpoint
+  match π with
+      nil => nil
+    | [shell p κ t] => [widemk (wshell p mt t) nil nil]
+    | ς' :: ς :: π => nil
+  end.
 
 Theorem simulation : WEB_refinement state_rel forall e π (HT: CESK_trace e π), exists π', WCESKMΞ_trace e π' /\ Forall (fun xy => match xy with (x,y) => state_rel x y end) (combine π π').
 Proof.

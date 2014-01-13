@@ -3,25 +3,59 @@ Import ListNotations.
 Generalizable All Variables.
 Set Implicit Arguments.
 
-Inductive Trace {State} (s0 : State) (step : relation State) : list State -> Prop :=
+Inductive PR_Trace {State} (s0 : State) (step : State -> State -> Type) : list State -> Type :=
+  | pr_initial : PR_Trace s0 step (s0 :: nil)
+  | pr_take_step : `{PR_Trace s0 step (ς :: π) ->
+                  step ς ς' ->
+                  PR_Trace s0 step (ς' :: (ς :: π))}.
+Inductive Trace {State} (s0 : State) (step : State -> State -> Type) : list State -> Prop :=
   | initial : Trace s0 step (s0 :: nil)
   | take_step : `{Trace s0 step (ς :: π) ->
                   step ς ς' ->
                   Trace s0 step (ς' :: (ς :: π))}.
 
-Definition TraceTo {State} (step : relation State) (s0 s1 : State) : Prop :=
-  exists π, Trace s0 step (s1 :: π).
+Lemma PR_trace_app : forall State (s0 s1 : State) π step
+                         (T1 : PR_Trace s0 step (s1 :: π))
+                         π'
+                         (T2 : PR_Trace s1 step π'),
+                       PR_Trace s0 step (π' ++ π).
+Proof.
+  intros; induction T2;[|constructor]; assumption.
+Qed.
 
-Inductive TraceRed {State} (s0 : State) (step : relation State) : relation (list State) :=
+Lemma trace_app : forall State (s0 s1 : State) π step
+                         (T1 : Trace s0 step (s1 :: π))
+                         π'
+                         (T2 : Trace s1 step π'),
+                    Trace s0 step (π' ++ π).
+Proof.
+  intros; induction T2;[|constructor]; assumption.
+Qed.
+
+Inductive TraceTo {State} (step : State -> State -> Type) (s0 s1 : State) : Type :=
+  intro_traceto : forall π, Trace s0 step (s1 :: π) -> TraceTo step s0 s1.
+
+Inductive PR_TraceRed {State} (s0 : State) (step : State -> State -> Type) : (list State) -> (list State) -> Type :=
+  pr_tr_eps : PR_TraceRed s0 step nil [s0]
+| pr_tr_take_step : `{PR_TraceRed s0 step π (ς :: π) -> step ς ς' -> PR_TraceRed s0 step (ς :: π) (ς' :: ς :: π)}.
+
+Inductive TraceRed {State} (s0 : State) (step : State -> State -> Prop) : (list State) -> (list State) -> Prop :=
   tr_eps : TraceRed s0 step nil [s0]
 | tr_take_step : `{TraceRed s0 step π (ς :: π) -> step ς ς' -> TraceRed s0 step (ς :: π) (ς' :: ς :: π)}.
 
-Lemma trace_to_tracered : forall State (s0 : State) (step : relation State) (π : list State)
-                                 (HT: Trace s0 step π),
-                            match π with
-                                nil => False
-                              | s0_ :: nil => TraceRed s0 step nil [s0_]
-                              | s' :: s :: π => TraceRed s0 step (s :: π) (s' :: s :: π)
+Inductive TraceRed_Stutter {State} (s0 : State) (step : State -> State -> Prop) : (list (nat * State)) -> (list (nat * State)) -> Prop :=
+  str_eps : forall n, TraceRed_Stutter s0 step nil [(n, s0)]
+| str_stutter : forall n n' ς π, n' < n -> TraceRed_Stutter s0 step ((n, ς) :: π) ((n', ς) :: (n, ς) :: π)
+| str_take_step : forall n n' ς π ς',
+                   TraceRed_Stutter s0 step π ((n,ς) :: π) -> step ς ς' ->
+                   TraceRed_Stutter s0 step ((n,ς) :: π) ((n',ς') :: (n,ς) :: π).
+
+Lemma PR_trace_to_tracered : forall State (s0 : State) (step : State -> State -> Type) (π : list State)
+                                 (HT: PR_Trace s0 step π),
+                            match π return Type with
+                              | nil => False
+                              | s0_ :: nil => PR_TraceRed s0 step nil [s0_]
+                              | s' :: s :: π => PR_TraceRed s0 step (s :: π) (s' :: s :: π)
                             end.
 Proof.
   intros; induction HT; [|destruct π];constructor;auto.
