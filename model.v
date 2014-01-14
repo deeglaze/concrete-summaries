@@ -288,8 +288,8 @@ Definition alloc_fresh (alloc : CES_point -> Addr) :=
   forall p, Unmapped (store_of p) (alloc p).
 
 (* if not stuck, then all steps are the same *)
-Definition deterministic {S} (R : S -> S -> Prop) : Prop :=
-  forall s s', R s s' -> forall s'', R s s'' -> s' = s''.
+Definition deterministic_modulo {S} (R : S -> S -> Prop) (P : S -> Prop) : Prop :=
+  forall s s', P s -> R s s' -> forall s'', R s s'' -> s' = s''.
 
 Theorem CESK_fresh_inv : forall s s' (fresh : (alloc_fresh alloc))
                                 (Hinv : fresh_inv s)
@@ -365,6 +365,67 @@ Proof.
             (apply (@extend_map_old _ _ name_eq_dec ρ x x_ a a_ Hneq); auto);
           apply InDom_join2'; apply freshρ in Hmap'; auto]]].
 Qed.
+
+Remark fresh_inject_cesk : forall e, fresh_inv (inject_cesk e).
+Proof.
+intros; constructor; constructor; intros ? ? vac; inversion vac.
+Qed.
+
+Theorem fresh_CESK_deterministic : (alloc_fresh alloc) -> deterministic_modulo red_cesk fresh_inv.
+Proof.
+  intros fresh s s' freshs Hstep s'' Hstep';
+  pose (freshs' := CESK_fresh_inv fresh freshs Hstep);
+  pose (freshs'' := CESK_fresh_inv fresh freshs Hstep');
+  inversion Hstep as [x ρ σ a κ t p Hmap Hpeq Hseq
+                     |e0 e1 ρ σ κ t p Hpeq Hseq
+                     |x e ρ σ κ t p Hpeq Hseq
+                     |v σ e ρ κ t p Hpeq Hseq
+                     |v σ x e ρ fnv κ t p Hin_force Hpeq Hseq
+                     |x e ρ v σ κ t p a ρ' σ' Hpeq Hseq];
+  inversion Hstep' as [x_ ρ_ σ_ a_ κ_ t_ p_ Hmap_ Hpeq_ Hseq_
+                      |e0_ e1_ ρ_ σ_ κ_ t_ p_ Hpeq_ Hseq_
+                      |x_ e_ ρ_ σ_ κ_ t_ p_ Hpeq_ Hseq_
+                      |v_ σ_ e_ ρ_ κ_ t_ p_ Hpeq_ Hseq_
+                      |v_ σ_ x_ e_ ρ_ fnv_ κ_ t_ p_ Hin_force_ Hpeq_ Hseq_
+                      |x_ e_ ρ_ v_ σ_ κ_ t_ p_ a_ ρ'_ σ'_ Hpeq_ Hseq_];
+    try (subst s s'; (injection Hpeq_ || discriminate Hpeq_); intros; try subst p_; try subst p;
+         try subst ρ' ρ'_ a a_ σ' σ'_; subst);
+    auto;
+    destruct freshs as [freshκ freshp].
+
+  rewrite (MapsTo_same Hmap Hmap_); reflexivity.
+
+  inversion Hin_force as [xf ef ρf xeq inj
+                         |af vs s Hmap Hin seq inj
+                         |vsf vs Hin seq inj];
+  inversion Hin_force_ as [xf_ ef_ ρf_ xeq_ inj_
+                          |af_ vs_ s_ Hmap_ Hin_ seq_ inj_
+                          |vsf_ vs_ Hin_ seq_ inj_];
+  try solve [subst; ((injection inj_; intros; subst; reflexivity) || discriminate inj_)];
+  inversion freshp as [|? ? freshv freshσ|]; subst.
+  
+  (* same delays *)
+  subst; injection inj_; intros; subst;
+  rewrite (MapsTo_same Hmap Hmap_) in Hin;
+  apply freshσ in Hmap_;
+  destruct Hmap_ as [s [seq freshs]]; repeat rewrite seq in *;
+  inversion Hin as [Heq | bad];
+    inversion Hin_ as [Heq_ | bad_];
+    solve [subst s; injection Heq_; intros; subst; auto
+          |inversion bad | inversion bad_].
+  remember freshκ as mumble.
+  clear Heqmumble.
+  rewrite Forall_forall in freshκ.
+  specialize (freshκ (fn (amany vs)) (or_introl (eq_refl _))).
+  simpl in freshκ.
+  destruct freshκ as [s [seq freshs]].
+  subst; injection inj_; intros; subst.
+  repeat rewrite seq in *.
+  inversion Hin as [Heq | bad];
+  inversion Hin_ as [Heq_ | bad_];
+  solve [subst s; injection Heq_; intros; subst; auto
+        |inversion bad | inversion bad_].
+Qed. 
 
 Definition CESK_trace (e : Expr) := Trace (inject_cesk e) red_cesk.
 Section NonStandardData.
