@@ -229,6 +229,143 @@ Inductive PR_red_cesk : CESK -> CESK -> Type :=
             let σ' := σ_join σ a v in
             PR_red_cesk (shell p κ t) (shell (ev e ρ' σ') κ (tick p))}.
 
+Definition fresh_ρ_inv (σ : Store) (ρ : Env) : Prop :=
+  forall x a, MapsTo ρ x a -> InDom σ a.
+
+Lemma fresh_ρ_inv_join : forall σ ρ a v, fresh_ρ_inv σ ρ -> fresh_ρ_inv (σ_join σ a v) ρ.
+Proof.
+  intros σ ρ a v freshρ x a' Hmap; apply InDom_join2'; apply freshρ with (x := x); auto.
+Qed.
+
+Definition fresh_storeable_inv (σ : Store) (s : storeable) :=
+  match s with
+      s_closure x e ρ => fresh_ρ_inv σ ρ
+  end.
+
+Lemma fresh_storeable_inv_join : forall σ a s v, fresh_storeable_inv σ s -> fresh_storeable_inv (σ_join σ a v) s.
+Proof.
+  intros; destruct s; apply fresh_ρ_inv_join; auto.
+Qed.
+
+Definition fresh_σ_inv (σ : Store) : Prop :=
+  forall a vs, MapsTo σ a vs -> exists s, vs = (singleton storeable_eq_dec s) /\ fresh_storeable_inv σ s.
+
+Definition fresh_val_inv (σ : Store) (v : val) : Prop :=
+  match v with
+      closure x e ρ => fresh_ρ_inv σ ρ
+    | (adelay a) => InDom σ a
+    | (amany vs) => exists s, vs = (singleton storeable_eq_dec s) /\ fresh_storeable_inv σ s
+  end.
+
+Lemma fresh_val_inv_join : forall σ a v v', fresh_val_inv σ v -> fresh_val_inv (σ_join σ a v') v.
+Proof.
+  intros; destruct v; simpl;
+  [apply fresh_ρ_inv_join
+  |apply InDom_join2'
+  |destruct H as [s [Heq freshs]];
+   exists s; split; [|apply fresh_storeable_inv_join]];auto.
+Qed.
+
+Definition fresh_φ_inv (σ : Store) (φ : Frame) : Prop :=
+  match φ with
+      | ar e ρ => fresh_ρ_inv σ ρ
+      | fn v => fresh_val_inv σ v
+  end.
+
+Inductive fresh_point_inv : CES_point -> Prop :=
+  fresh_ev : `{fresh_σ_inv σ -> fresh_ρ_inv σ ρ -> fresh_point_inv (ev e ρ σ)}
+| fresh_co : `{fresh_val_inv σ v -> fresh_σ_inv σ -> fresh_point_inv (co v σ)}
+| fresh_ap : `{fresh_val_inv σ v -> fresh_ρ_inv σ ρ -> fresh_σ_inv σ -> fresh_point_inv (ap x e ρ v σ)}.
+Hint Constructors fresh_point_inv.
+Hint Unfold fresh_φ_inv fresh_val_inv fresh_ρ_inv fresh_σ_inv. 
+(* what do we know of states when the allocation function gives fresh allocations? *)
+Definition fresh_inv (s : CESK) : Prop :=
+  match s with
+      shell p κ t => Forall (fresh_φ_inv (store_of p)) κ /\ fresh_point_inv p
+  end.
+
+Definition alloc_fresh (alloc : CES_point -> Addr) :=
+  forall p, Unmapped (store_of p) (alloc p).
+
+(* if not stuck, then all steps are the same *)
+Definition deterministic {S} (R : S -> S -> Prop) : Prop :=
+  forall s s', R s s' -> forall s'', R s s'' -> s' = s''.
+
+Theorem CESK_fresh_inv : forall s s' (fresh : (alloc_fresh alloc))
+                                (Hinv : fresh_inv s)
+                                (Hstep : red_cesk s s'), fresh_inv s'.
+Proof.
+  Ltac subgoal Hall :=
+    repeat split; 
+    try (rewrite Forall_forall);
+    try solve [auto
+              |intros φ Hin; ((inversion Hin; [subst; simpl; auto|]) || idtac); apply Hall; (right || idtac); auto].
+  intros; inversion Hstep as [x ρ σ a κ t p Hmap
+                        |e0 e1 ρ σ κ t p Hpeq
+                        |x elam ρ σ κ t p Hpeq Hs'eq
+                        |v σ e ρ κ t p Hpeq Hs'eq
+                        |v σ x e ρ fnv κ t p Hin_force Hpeq Hs'eq
+                        |x e ρ v σ κ t p a ρ' σ' Hpeq Hs'eq]; 
+  subst; subst p; destruct Hinv as [Hall Hfpoint];
+  inversion_clear Hfpoint as [? ? ? freshσ freshρ|? ? freshv freshσ|? ? ? ? ? freshv freshρ freshσ];
+  rewrite Forall_forall in Hall; subst;
+  try solve [subgoal Hall].
+
+  split; [subgoal Hall
+         |constructor; [apply freshρ with (x := x)|]; auto].
+
+  split; [subgoal Hall
+         |constructor; [|specialize (Hall (ar e ρ) (or_introl (eq_refl _))); simpl in Hall]; assumption].
+
+  split; [subgoal Hall
+         |constructor;
+    [|specialize (Hall (fn fnv) (or_introl (eq_refl _)));
+       inversion Hin_force as [|a vs ? Hmap Hin|]; subst; simpl in Hall;
+       [|apply freshσ in Hmap; destruct Hmap as [s [Heq freshs]]; subst;
+         inversion Hin as [|bad]; [subst|inversion bad]; auto
+        |destruct Hall as [s [Heq freshs]];
+          inversion Hin_force as [| |? ? Hin]; subst; inversion Hin as [|bad]; [subst|inversion bad]]|]; auto].
+  
+  assert (subgoal' : fresh_σ_inv σ') by
+      (intros a' vs Hmap;
+  destruct (addr_eq_dec a a') as [Heq|Hneq];
+    [(* eq case tricky *)
+      assert (Hmap' : MapsTo σ' a' (force σ v))
+      by (subst a'; apply join_an_unmapped'; apply (fresh (ap x e ρ v σ)));
+     assert (feq : vs = (force σ v)) by exact (MapsTo_same Hmap Hmap');
+     destruct v as [x_ e_ ρ_ | a_ | vs_];
+       [exists (s_closure x_ e_ ρ_); split; [|simpl; apply fresh_ρ_inv_join]; auto
+              |apply (InDom_lookup addr_eq_dec) in freshv;
+                destruct freshv as [vs' vs'eq];
+                remember vs'eq as vs'eq_;
+                clear Heqvs'eq_; rewrite <- lookup_mapsto in vs'eq;
+                simpl in feq; unfold lookup_σ in feq; rewrite vs'eq_ in feq; subst;
+                apply freshσ in vs'eq;
+                destruct vs'eq as [s [seq freshs]];
+                exists s; split; [|apply fresh_storeable_inv_join]; auto
+              |destruct freshv as [s [seq freshs]];
+                exists s; split; [subst σ' ρ'; subst; exact (MapsTo_same Hmap Hmap')|apply fresh_storeable_inv_join]; auto]
+     |assert (Hmap' : MapsTo σ a' vs) by
+         (apply (@non_join_untouched' _ _ _ addr_eq_dec σ_combine force σ σ a a' v vs); auto);
+       apply freshσ in Hmap';
+       destruct Hmap' as [s [seq freshs]]; exists s; split; [|apply fresh_storeable_inv_join]; auto]).
+
+  split;
+    [rewrite Forall_forall; intros φ Hin;
+     destruct φ as [κe κρ | κv]; simpl;
+     [apply fresh_ρ_inv_join
+     |apply fresh_val_inv_join]; apply (Hall _ Hin); auto
+    |constructor;
+      [auto
+      |intros x_ a_ Hmap;
+        destruct (name_eq_dec x x_) as [Heq|Hneq];
+        [subst x_; subst ρ'; unfold extend_ρ in Hmap; rewrite <- (@extend_map_MapsTo_eq _ _ name_eq_dec x a a_ ρ Hmap);
+         apply InDom_join'
+        |assert (Hmap' : MapsTo ρ x_ a_) by
+            (apply (@extend_map_old _ _ name_eq_dec ρ x x_ a a_ Hneq); auto);
+          apply InDom_join2'; apply freshρ in Hmap'; auto]]].
+Qed.
+
 Definition CESK_trace (e : Expr) := Trace (inject_cesk e) red_cesk.
 Section NonStandardData.
 Inductive Context := context : Expr -> Env -> Store -> Time -> Context.

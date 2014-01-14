@@ -100,23 +100,48 @@ Proof.
    subst; inversion H0; subst; solve [reflexivity | bad_eq | apply IH with (a := a); auto].
 Qed. 
 
-Fixpoint extend_map {A B} (eq_dec : (dec_type A)) (a : A) (b : B) (ρ : list (A * B)) :=
+Section ExtendLookup.
+Variables (A B : Type) (eq_dec : (dec_type A)).
+Fixpoint extend_map (a : A) (b : B) (ρ : list (A * B)) :=
   match ρ with
     | nil => (a, b)::nil
     | (a',b')::ρ' => if eq_dec a a' then
                        (a,b)::ρ'
-                     else (a',b')::(extend_map eq_dec a b ρ')
+                     else (a',b')::(extend_map a b ρ')
   end.
-Fixpoint lookup_map {A B} (eq_dec : (dec_type A)) (a : A) (ρ : list (A * B)) : option B :=
+Fixpoint lookup_map (a : A) (ρ : list (A * B)) : option B :=
   match ρ with
     | nil => None
     | (a',b)::ρ' => if eq_dec a a' then
                        Some b
-                     else (lookup_map eq_dec a ρ')
+                     else (lookup_map a ρ')
   end.
 
-Theorem lookup_mapsto : forall A B (eq_dec : dec_type A) (l : list (A * B)) a b,
-                          (MapsTo l a b) <-> (lookup_map eq_dec a l) = Some b.
+Theorem extend_map_MapsTo : forall a b (ρ : list (A * B)), MapsTo (extend_map a b ρ) a b.
+Proof.
+  induction ρ as [|(a_,b_) ρ_ IH];
+  [constructor
+  |simpl; destruct (eq_dec a a_); constructor; auto].
+Qed.
+
+Theorem extend_map_MapsTo_eq : forall a b c (ρ : list (A * B)), MapsTo (extend_map a b ρ) a c -> b = c.
+Proof.
+  intros a b c ρ Hmap.
+  assert (Hmap' : MapsTo (extend_map a b ρ) a b) by apply extend_map_MapsTo.
+  exact (MapsTo_same Hmap' Hmap).
+Qed.
+
+Theorem extend_map_old : forall (ρ : list (A * B)) a a' b c , a <> a' -> MapsTo (extend_map a b ρ) a' c -> MapsTo ρ a' c.
+Proof.
+  induction ρ as [|(a_,b_) ρ_ IH]; intros a a' b c Hneq Hmap;
+  [inversion Hmap as [|? ? ? ? ? ? bad]; [subst; bad_eq |inversion bad]
+  |simpl in Hmap; destruct (eq_dec a a_);
+    [subst; constructor; [|inversion Hmap; subst; [bad_eq |]]
+    |inversion Hmap; subst; [constructor|constructor; [|apply (IH a a' b)]]]; auto].
+Qed.
+
+Theorem lookup_mapsto : forall (l : list (A * B)) a b,
+                          (MapsTo l a b) <-> (lookup_map a l) = Some b.
 Proof.
   induction l as [|(a,b) l' IH]; [intros a b; split; intro Hvac; inversion Hvac|].
   intros a' b'; split; intro H; simpl in *;
@@ -131,3 +156,12 @@ Proof.
    |constructor; [|apply IH];auto].
 Qed.
 
+Theorem InDom_lookup : forall (l : list (A * B)) a,
+                         InDom l a -> exists b, lookup_map a l = Some b.
+Proof.
+  intros l a H; rewrite InDom_is_mapped in H;
+                [destruct H as [b Hmap]; rewrite lookup_mapsto in Hmap;
+                 exists b; auto
+                |exact eq_dec].
+Qed.
+End ExtendLookup.

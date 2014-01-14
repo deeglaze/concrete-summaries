@@ -6,6 +6,11 @@ Set Implicit Arguments.
 Definition in_list_list {A B} (l : list (A * (list B))) (a : A) (b : B) : Prop :=
   exists bs, (MapsTo l a bs) /\ (set_In b bs).
 
+Definition Subset {A} (s s' : set A) := forall x, In x s -> In x s'.
+
+Definition subset_list_list {A B} (l : list (A * (list B))) (a : A) (b : list B) : Prop :=
+  exists bs, (MapsTo l a bs) /\ (Subset b bs).
+
 Section ListJoin.
 Variables (A B C : Type) (eq_dec : dec_type A)
           (combine : list (A * B) -> B -> C -> B)
@@ -22,7 +27,6 @@ Fixpoint list_join  (l_orig : list (A * B))
 Definition singleton {A} (eq_dec : dec_type A) (x : A) : list A := set_add eq_dec x (empty_set _).
 End ListJoin.
 
-Definition Subset {A} (s s' : set A) := forall x, In x s -> In x s'.
 Lemma subset_refl : forall A (s : set A), Subset s s.
 Proof. intros A s x Hin; auto. Qed.
 
@@ -34,10 +38,13 @@ Inductive EntryLE {A B} (s : list (A * set B)) : A -> set B -> Prop :=
 Definition MappingLE {A B} (s s' : list (A * set B)) := forall a vs (Hmap : MapsTo s a vs), EntryLE s' a vs.
 
 Section ListJoin_facts.
-Variables (A C : Type) (eq_dec : dec_type A)
+Variables (A B C : Type) (eq_dec : dec_type A)
           (combine : list (A * list C) -> list C -> C -> list C)
           (base : list (A * list C) -> C -> list C)
+          (combine' : list (A * list C) -> list C -> B -> list C)
+          (base' : list (A * list C) -> B -> list C)
           (Hextensive : (forall l b c, In c (combine l b c)))
+          (Hextensive' : (forall l cs b, Subset (base' l b) (combine' l cs b)))
           (Hsingleton : (forall l c, In c (base l c))).
 Lemma in_list_join :
   forall l l' a c,
@@ -55,6 +62,22 @@ Proof.
      exists wit; split; [apply map_rst|]]; auto].
 Qed.
 
+Lemma in_list_join' :
+  forall l l' a c,
+    (forall ab, In ab l -> In ab l') ->
+  subset_list_list (list_join eq_dec combine' base' l' a c l) a (base' l' c).
+Proof.
+  intros l l' a c Hcontain;
+  induction l as [|(a',b) l_ IH]; simpl;[
+  exists (base' l' c); split; [left|]; apply subset_refl
+  |destruct (eq_dec a a') as [Heq | Hneq];
+   [subst; exists (combine' l' b c); split; [left|apply Hextensive']
+   |assert (IHneed : (forall ab, In ab l_ -> In ab l')) by (intros (a_,bs') Hin; apply Hcontain; right; auto);
+     set (mumble := (IH IHneed));
+     inversion mumble as [wit Hwit]; subst; destruct Hwit as [Hmap Hin];
+     exists wit; split; [apply map_rst|]]; auto].
+Qed.
+
 Lemma unmapped_join : `{Unmapped l a -> a <> a' -> Unmapped (list_join eq_dec combine base l' a' c l) a}.
 Proof.
   induction l as [|(a,b) l_ IH]; intros a0 a' l' c H ?;
@@ -63,6 +86,31 @@ Proof.
             [subst; inversion H; constructor
             |constructor;inversion H;[apply IH|]]]; auto.
 Qed.
+
+Lemma unmapped_join' : `{Unmapped l a -> a <> a' -> Unmapped (list_join eq_dec combine' base' l' a' c l) a}.
+Proof.
+  induction l as [|(a,b) l_ IH]; intros a0 a' l' c H ?;
+   simpl; [repeat constructor
+          |destruct (eq_dec a' a) as [Heq|Hneq];
+            [subst; inversion H; constructor
+            |constructor;inversion H;[apply IH|]]]; auto.
+Qed.
+
+Lemma join_an_unmapped : `{Unmapped l a -> MapsTo (list_join eq_dec combine base l' a c l) a (base l' c)}.
+Proof.
+  induction l as [|(a,b) l_ IH]; intros; simpl;[constructor|].
+  destruct (eq_dec a0 a) as [Heq | Hneq];
+    [subst; inversion H; bad_eq
+    |constructor; [|apply IH; inversion H]; auto].
+Qed.  
+
+Lemma join_an_unmapped' : `{Unmapped l a -> MapsTo (list_join eq_dec combine' base' l' a c l) a (base' l' c)}.
+Proof.
+  induction l as [|(a,b) l_ IH]; intros; simpl;[constructor|].
+  destruct (eq_dec a0 a) as [Heq | Hneq];
+    [subst; inversion H; bad_eq
+    |constructor; [|apply IH; inversion H]; auto].
+Qed.  
 
 Lemma functional_join : `{Functional l -> Functional (list_join eq_dec combine base l' a c l)}.
 Proof.
@@ -112,7 +160,7 @@ Proof.
   exists vs'; [constructor|]; auto.
 Qed.
 
-Variable Hextensive' : (forall l b c c', In c' b -> In c' (combine l b c)).
+Variable Hextensive2 : (forall l b c c', In c' b -> In c' (combine l b c)).
 Lemma in_list_join2 :
   forall l l' a a' c c',
   in_list_list l a' c' ->
@@ -125,7 +173,7 @@ Proof.
   |destruct a0; destruct (eq_dec a a0) as [Heq | Hneq]; subst;
    [(* Heq *)
      subst; inversion Hpairin; subst;
-    [exists (combine l' bs c); split; [left|apply Hextensive']; auto
+    [exists (combine l' bs c); split; [left|apply Hextensive2]; auto
            |exists bs; split; [right|]; auto]
    |(* Hneq *)
     destruct (eq_dec a0 a') as [Heq' | Hneq'];
@@ -162,6 +210,59 @@ Proof.
   |constructor; [auto | apply IH with (l' := l') (a := a) (c := c); auto]]].
 Qed.
 
+Lemma non_join_untouched' : forall l l' a a' c b
+                             (Hneq : a <> a')
+                             (H: MapsTo (list_join eq_dec combine' base' l' a c l) a' b),
+                             MapsTo l a' b.
+Proof.
+  induction l as [|(a_,b_) l_ IH]; intros;
+  [inversion H; subst; [contradict Hneq|]; auto
+  |
+  simpl in H; inversion H as [? ? rst H'|? a'' ? ? ? Hneq'' map' Hinj]; subst;
+  destruct (eq_dec a a_) as [Heq_|Hneq_];
+  try (injection H'; intros; subst);
+  try (injection Hinj; intros; subst);
+  [
+  (* Eq *)
+  constructor; [auto
+               |apply IH with (l' := l') (a := a_) (c := c);
+                 [auto
+                 |contradict Hneq; auto]]
+  |constructor
+  |subst; constructor; auto
+  |constructor; [auto | apply IH with (l' := l') (a := a) (c := c); auto]]].
+Qed.
+
+Lemma InDom_join : `{InDom (list_join eq_dec combine base l' a c l) a}.
+Proof.
+  induction l as [|(a_,b_) l_ IH];[constructor|simpl; destruct (eq_dec a a_); constructor; auto].
+Qed.
+
+Lemma InDom_join' : `{InDom (list_join eq_dec combine' base' l' a c l) a}.
+Proof.
+  induction l as [|(a_,b_) l_ IH];[constructor|simpl; destruct (eq_dec a a_); constructor; auto].
+Qed.
+
+Lemma InDom_join2 : `{InDom l a -> InDom (list_join eq_dec combine base l' a' c l) a}.
+Proof.
+  intros.
+  induction H;
+    [simpl; destruct (eq_dec a' a) as [Heq|Hneq];
+     [subst; constructor
+     |constructor]
+    |simpl; destruct (eq_dec a' a'0) as [Heq|Hneq]; constructor; auto].
+Qed.  
+
+Lemma InDom_join2' : `{InDom l a -> InDom (list_join eq_dec combine' base' l' a' c l) a}.
+Proof.
+  intros.
+  induction H;
+    [simpl; destruct (eq_dec a' a) as [Heq|Hneq];
+     [subst; constructor
+     |constructor]
+    |simpl; destruct (eq_dec a' a'0) as [Heq|Hneq]; constructor; auto].
+Qed.  
+  
 (*
   
 Lemma unmapped_join2 : forall l a a' b c l'
@@ -378,4 +479,3 @@ Proof.
     [rewrite InDom_In; auto; exists d'
     |apply IHHdom; [intros; apply Hcontain; right|]]; auto.
 Qed.
-
