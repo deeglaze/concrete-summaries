@@ -78,6 +78,53 @@ Proof.
      exists wit; split; [apply map_rst|]]; auto].
 Qed.
 
+Hint Constructors MapsTo Unmapped.
+Theorem list_join_mapsto_elim : forall l l' a c a' cs,
+                           MapsTo (list_join eq_dec combine base l' a c l) a' cs ->
+                           (a = a' /\ ((Unmapped l a /\ cs = (base l' c))
+                                       \/
+                                       (exists cs', MapsTo l a cs' /\ cs = (combine l' cs' c))))
+                             \/
+                           (a <> a' /\ MapsTo l a' cs).
+Proof.
+  induction l as [|(a_,b_) l_ IH]; intros.
+  inversion H; subst; auto.
+
+  simpl in H;
+  destruct (eq_dec a a_) as [Heq|Hneq];
+  [inversion H as [|? ? ? Hrest]; subst;
+   [subst a_; left; split; [|right; exists b_]
+   |right; inversion H; subst]; auto
+  |].
+  inversion H as [|? ? ? ? ? Hneq' Hmap]; subst;
+  [auto
+  |destruct (IH l' a c a' cs Hmap) as [[Haeq [[Hunmapped csbase]|[cs' [Hmap' cscombine]]]]|[Haneq Hmap']];
+   [left|left; split; [|right; exists cs'] |]]; auto.
+Qed.
+ 
+Theorem list_join_mapsto_elim' : forall l l' a c a' cs,
+                           MapsTo (list_join eq_dec combine' base' l' a c l) a' cs ->
+                           (a = a' /\ ((Unmapped l a /\ cs = (base' l' c))
+                                       \/
+                                       (exists cs', MapsTo l a cs' /\ cs = (combine' l' cs' c))))
+                             \/
+                           (a <> a' /\ MapsTo l a' cs).
+Proof.
+  induction l as [|(a_,b_) l_ IH]; intros.
+  inversion H; subst; auto.
+
+  simpl in H;
+  destruct (eq_dec a a_) as [Heq|Hneq];
+  [inversion H as [|? ? ? Hrest]; subst;
+   [subst a_; left; split; [|right; exists b_]
+   |right; inversion H; subst]; auto
+  |].
+  inversion H as [|? ? ? ? ? Hneq' Hmap]; subst;
+  [auto
+  |destruct (IH l' a c a' cs Hmap) as [[Haeq [[Hunmapped csbase]|[cs' [Hmap' cscombine]]]]|[Haneq Hmap']];
+   [left|left; split; [|right; exists cs'] |]]; auto.
+Qed.
+
 Lemma unmapped_join : `{Unmapped l a -> a <> a' -> Unmapped (list_join eq_dec combine base l' a' c l) a}.
 Proof.
   induction l as [|(a,b) l_ IH]; intros a0 a' l' c H ?;
@@ -231,6 +278,28 @@ Proof.
   |constructor
   |subst; constructor; auto
   |constructor; [auto | apply IH with (l' := l') (a := a) (c := c); auto]]].
+Qed.
+
+Theorem join_mapsto_elim : forall l l' a a' c b
+                                  (Hcontain : forall ab, In ab l -> In ab l')
+                                  (H : MapsTo (list_join eq_dec combine base l' a c l) a' b),
+                                  (a = a' /\ set_In c b) \/ (a <> a' /\ MapsTo l a' b).
+Proof.
+  intros; destruct (eq_dec a a') as [Heq|Hneq];
+  [subst; left; split; [|destruct (in_list_join l l' a' c Hcontain) as [b' [Hmap' Hin']];
+                          rewrite (MapsTo_same H Hmap')]
+  |right; split; [|apply (non_join_untouched _ _ _ Hneq H)]]; auto.
+Qed.
+
+Theorem join_mapsto_elim' : forall l l' a a' c b
+                                   (Hcontain : forall ab, In ab l -> In ab l')
+                                   (H : MapsTo (list_join eq_dec combine' base' l' a c l) a' b),
+                                  (a = a' /\ Subset (base' l' c) b) \/ (a <> a' /\ MapsTo l a' b).
+Proof.
+  intros; destruct (eq_dec a a') as [Heq|Hneq];
+  [subst; left; split; [|destruct (in_list_join' l l' a' c Hcontain) as [b' [Hmap' Hin']];
+                          rewrite (MapsTo_same H Hmap')]
+  |right; split; [|apply (non_join_untouched' _ _ _ Hneq H)]]; auto.
 Qed.
 
 Lemma InDom_join : `{InDom (list_join eq_dec combine base l' a c l) a}.
@@ -425,6 +494,12 @@ Lemma Dom_InDom : forall A B C (eq_dec : dec_type A) (l : list (A * B)) (l' : li
                          (Hindom : InDom l a), InDom l' a.
 Proof.
 induction l; intros; [inversion Hindom|inverts Hdom;destruct (eq_dec a1 a0) as [Heq|Hneq]; [subst; auto|inversion Hindom; [subst; contradict Hneq|apply IHl]; auto]].
+Qed.
+
+Theorem did_mapsto : forall A B C (eq_dec : dec_type A) (l : list (A * B)) (l' : list (A * C)) (Hdom : Dom_in_Dom l l') a b (Hmap : MapsTo l a b), exists c, MapsTo l' a c.
+Proof.
+  intros; assert (InDom l a) by (rewrite (InDom_In eq_dec); exists b; apply MapsTo_In; assumption).
+  rewrite <- (InDom_is_mapped eq_dec); apply (Dom_InDom eq_dec (l := l)); auto.
 Qed.
 
 Lemma In_join : forall A B C (eq_dec : dec_type A) (l l' : list (A * B))

@@ -74,6 +74,9 @@ Definition ces_point_eq_dec : dec_type CES_point. decide equality. Defined.
 Hint Immediate ces_point_eq_dec.
 Definition cesk_eq_dec : dec_type CESK. decide equality. Defined.
 Hint Immediate cesk_eq_dec.
+Definition CESK_edge := (CESK * CESK)%type.
+Definition cesk_edge_eq_dec : dec_type CESK_edge. decide equality. Defined.
+Hint Immediate cesk_edge_eq_dec.
 
 Definition in_aval := @In storeable.
 
@@ -228,6 +231,7 @@ Inductive PR_red_cesk : CESK -> CESK -> Type :=
             let ρ' := extend_ρ x a ρ in
             let σ' := σ_join σ a v in
             PR_red_cesk (shell p κ t) (shell (ev e ρ' σ') κ (tick p))}.
+Hint Constructors red_cesk PR_red_cesk in_force.
 
 Definition fresh_ρ_inv (σ : Store) (ρ : Env) : Prop :=
   forall x a, MapsTo ρ x a -> InDom σ a.
@@ -247,8 +251,13 @@ Proof.
   intros; destruct s; apply fresh_ρ_inv_join; auto.
 Qed.
 
-Definition fresh_σ_inv (σ : Store) : Prop :=
-  forall a vs, MapsTo σ a vs -> exists s, vs = (singleton storeable_eq_dec s) /\ fresh_storeable_inv σ s.
+Definition fresh_setmap_inv {A B}
+           (Beq_dec : dec_type B)
+           (l : list (A * list B))
+           (Bprop : list (A * list B) -> B -> Prop) : Prop :=
+  forall a bs, MapsTo l a bs -> exists b, bs = (singleton Beq_dec b) /\ Bprop l b.
+
+Definition fresh_σ_inv (σ : Store) := fresh_setmap_inv storeable_eq_dec σ fresh_storeable_inv.
 
 Definition fresh_val_inv (σ : Store) (v : val) : Prop :=
   match v with
@@ -272,6 +281,11 @@ Definition fresh_φ_inv (σ : Store) (φ : Frame) : Prop :=
       | fn v => fresh_val_inv σ v
   end.
 
+Lemma fresh_φ_inv_join : forall σ a v φ, fresh_φ_inv σ φ -> fresh_φ_inv (σ_join σ a v) φ.
+Proof.
+  intros ? ? ? [e ρ|fnv] H; simpl; [apply fresh_ρ_inv_join|apply fresh_val_inv_join]; auto.
+Qed.
+
 Inductive fresh_point_inv : CES_point -> Prop :=
   fresh_ev : `{fresh_σ_inv σ -> fresh_ρ_inv σ ρ -> fresh_point_inv (ev e ρ σ)}
 | fresh_co : `{fresh_val_inv σ v -> fresh_σ_inv σ -> fresh_point_inv (co v σ)}
@@ -290,6 +304,60 @@ Definition alloc_fresh (alloc : CES_point -> Addr) :=
 (* if not stuck, then all steps are the same *)
 Definition deterministic_modulo {S} (R : S -> S -> Prop) (P : S -> Prop) : Prop :=
   forall s s', P s -> R s s' -> forall s'', R s s'' -> s' = s''.
+
+Lemma σ_join_mapsto_elim : forall σ a v a' ss, MapsTo (σ_join σ a v) a' ss ->
+                                               (a = a' /\ Subset (force σ v) ss) \/
+                                               (a <> a' /\ MapsTo σ a' ss).
+Proof.
+  intros; apply (join_mapsto_elim' addr_eq_dec σ_combine); auto; intros.
+  unfold σ_combine; destruct b as [x e ρ | a_ | ss']; simpl;
+  [intros ? Hin; apply set_add_intro2; inversion Hin as [|bad]; [|destruct bad]; auto
+  |destruct (lookup_σ a_ l); [intros ? ?; apply set_union_intro2|simpl; intros ? bad; destruct bad]
+  |intros ? ?; apply set_union_intro2]; auto.
+Qed.
+
+Lemma fresh_force_singleton : forall σ v, fresh_σ_inv σ -> fresh_val_inv σ v ->
+                                          exists s, (singleton storeable_eq_dec s) = (force σ v) /\ (fresh_storeable_inv σ s).
+Proof.
+  intros σ [x e ρ|a|ss] freshσ freshv;
+  [exists (s_closure x e ρ)
+  |simpl in freshv;
+    rewrite (InDom_is_mapped addr_eq_dec) in freshv;
+    destruct freshv as [? Hmap];
+    remember Hmap as Hmap'; clear HeqHmap';
+    apply freshσ in Hmap;
+    destruct Hmap as [ss' [? ?]];
+    exists ss'; simpl;
+    rewrite (lookup_mapsto addr_eq_dec) in Hmap'; unfold lookup_σ; rewrite Hmap'
+  |destruct freshv as [s [? ?]]; exists s]; auto.
+Qed.
+
+Lemma fresh_σ_join : forall (fresh : alloc_fresh alloc) p v
+                            (freshσ : fresh_σ_inv (store_of p))
+                            (freshv : fresh_val_inv (store_of p) v),
+                       fresh_σ_inv (σ_join (store_of p) (alloc p) v).
+Proof.
+  intros; intros a' ss Hmap.
+  destruct (σ_join_mapsto_elim _ _ _ Hmap) as [[Haeq Hsub]|[Haneq Hmap']].
+
+  subst a';
+  assert (Hmap' : MapsTo (σ_join (store_of p) (alloc p) v) (alloc p) (force (store_of p) v))
+    by (apply join_an_unmapped'; apply (fresh p));
+  destruct v as [x_ e_ ρ_ | a_ | ss_];
+    [exists (s_closure x_ e_ ρ_); split; [rewrite (MapsTo_same Hmap Hmap')|simpl; apply fresh_ρ_inv_join]
+    |apply (InDom_lookup addr_eq_dec) in freshv;
+      destruct freshv as [ss' ss'eq];
+      remember ss'eq as ss'eq_;
+      clear Heqss'eq_; rewrite <- lookup_mapsto in ss'eq;
+      apply freshσ in ss'eq; destruct ss'eq as [s [seq freshs]];
+      exists s; split; [rewrite (MapsTo_same Hmap Hmap'); simpl; unfold lookup_σ; rewrite ss'eq_
+                       |apply fresh_storeable_inv_join]
+    |destruct freshv as [s [seq freshs]];
+      exists s; split;[rewrite (MapsTo_same Hmap Hmap')|apply fresh_storeable_inv_join]]; auto.
+
+  apply freshσ in Hmap';
+    destruct Hmap' as [s [seq freshs]]; exists s; split; [|apply fresh_storeable_inv_join]; auto.
+Qed.  
 
 Theorem CESK_fresh_inv : forall s s' (fresh : (alloc_fresh alloc))
                                 (Hinv : fresh_inv s)
@@ -326,29 +394,7 @@ Proof.
         |destruct Hall as [s [Heq freshs]];
           inversion Hin_force as [| |? ? Hin]; subst; inversion Hin as [|bad]; [subst|inversion bad]]|]; auto].
   
-  assert (subgoal' : fresh_σ_inv σ') by
-      (intros a' vs Hmap;
-  destruct (addr_eq_dec a a') as [Heq|Hneq];
-    [(* eq case tricky *)
-      assert (Hmap' : MapsTo σ' a' (force σ v))
-      by (subst a'; apply join_an_unmapped'; apply (fresh (ap x e ρ v σ)));
-     assert (feq : vs = (force σ v)) by exact (MapsTo_same Hmap Hmap');
-     destruct v as [x_ e_ ρ_ | a_ | vs_];
-       [exists (s_closure x_ e_ ρ_); split; [|simpl; apply fresh_ρ_inv_join]; auto
-              |apply (InDom_lookup addr_eq_dec) in freshv;
-                destruct freshv as [vs' vs'eq];
-                remember vs'eq as vs'eq_;
-                clear Heqvs'eq_; rewrite <- lookup_mapsto in vs'eq;
-                simpl in feq; unfold lookup_σ in feq; rewrite vs'eq_ in feq; subst;
-                apply freshσ in vs'eq;
-                destruct vs'eq as [s [seq freshs]];
-                exists s; split; [|apply fresh_storeable_inv_join]; auto
-              |destruct freshv as [s [seq freshs]];
-                exists s; split; [subst σ' ρ'; subst; exact (MapsTo_same Hmap Hmap')|apply fresh_storeable_inv_join]; auto]
-     |assert (Hmap' : MapsTo σ a' vs) by
-         (apply (@non_join_untouched' _ _ _ addr_eq_dec σ_combine force σ σ a a' v vs); auto);
-       apply freshσ in Hmap';
-       destruct Hmap' as [s [seq freshs]]; exists s; split; [|apply fresh_storeable_inv_join]; auto]).
+  assert (subgoal' : fresh_σ_inv σ') by (subst σ' a; apply fresh_σ_join with (p := (ap x e ρ v σ)); auto).
 
   split;
     [rewrite Forall_forall; intros φ Hin;
@@ -426,6 +472,139 @@ Proof.
   solve [subst s; injection Heq_; intros; subst; auto
         |inversion bad | inversion bad_].
 Qed. 
+
+Definition cesk_step_all (s : CESK) : set CESK :=
+  match s with
+    | (shell (ev (var x) ρ σ) κ t)  =>
+      match (lookup_ρ x ρ) with
+       | None => empty_set _
+       | Some a => singleton cesk_eq_dec (shell (co (adelay a) σ) κ (tick (ev (var x) ρ σ)))
+      end
+    | (shell (ev (app e0 e1) ρ σ) κ t) =>
+      singleton cesk_eq_dec (shell (ev e0 ρ σ) ((ar e1 ρ)::κ) (tick (ev (app e0 e1) ρ σ)))
+    | (shell (ev (lam x e) ρ σ) κ t) =>
+      singleton cesk_eq_dec (shell (co (closure x e ρ) σ) κ (tick (ev (lam x e) ρ σ)))
+    | (shell (co v σ) ((ar e ρ)::κ) t) =>
+              singleton cesk_eq_dec (shell (ev e ρ σ) ((fn v)::κ) (tick (co v σ)))
+    | (shell (co v σ) ((fn fnv)::κ) t) =>
+      (* Append forces *)
+      set_fold_right (fun fv acc =>
+                        match fv with
+                            s_closure x e ρ => set_add cesk_eq_dec
+                                                       (shell (ap x e ρ v σ) κ (tick (co v σ)))
+                                                       acc
+                        end)
+                     (force σ fnv)
+                     (empty_set _)
+    | (shell (ap x e ρ v σ) κ t) =>
+      let a := alloc (ap x e ρ v σ) in
+      let ρ' := extend_ρ x a ρ in
+      let σ' := σ_join σ a v in
+      let t' := (tick (ap x e ρ v σ)) in
+      singleton cesk_eq_dec (shell (ev e ρ' σ') κ t')
+    | (shell (co v σ) nil t) => empty_set _
+  end.
+
+Theorem CESK_finite_steps : forall s s', red_cesk s s' <-> set_In s' (cesk_step_all s).
+Proof.
+  intros s s'; split; [intro Hstep|intro Hin].
+  inversion Hstep as [x ρ σ a κ t p Hmap Hpeq Hseq
+                     |e0 e1 ρ σ κ t p Hpeq Hseq
+                     |x e ρ σ κ t p Hpeq Hseq
+                     |v σ e ρ κ t p Hpeq Hseq
+                     |v σ x e ρ fnv κ t p Hin_force Hpeq Hseq
+                     |x e ρ v σ κ t p a ρ' σ' Hpeq Hseq]; subst; subst p; simpl; auto.
+  rewrite lookup_mapsto in Hmap; unfold lookup_ρ; rewrite Hmap; left; auto.
+
+  unfold set_fold_right, fold_right;
+  induction Hin_force as [|a_ vs_ st Hmap_ Hin_|s ss Hin]; simpl;
+  inversion Hstep as [| | | |? ? ? ? ? ? ? ? ? Hin_force_ |];
+    [inversion Hin_force_; auto
+    |inversion Hin_force_ as [|a_' vs_' st' Hmap_' Hin_'|]; subst st' a_';
+      remember Hmap_ as Hmaprem; clear HeqHmaprem;
+      rewrite (lookup_mapsto addr_eq_dec) in Hmap_; unfold lookup_σ; rewrite Hmap_;
+      rewrite (MapsTo_same Hmaprem Hmap_');
+      clear Hmap_'; (* buggers up the IH *)
+      induction vs_' as [|v_ vs_' IH]; (inversion Hin_' as [Heq|Hrest] || inversion Hin_');
+      [rewrite Heq; apply set_add_intro2
+      |specialize (IH Hrest); destruct v_; apply set_add_intro1]; auto
+    |inversion Hin_force_ as [| |st sts Hins Hseq]; subst sts st;
+     clear Hstep Hin_force_ Hin;
+     match goal with [H : fnv = _ |- _] => clear H end;
+     induction ss as [|v_ vs_' IH]; (inversion Hins as [Heq|Hrest] || inversion Hins);
+     [rewrite Heq; apply set_add_intro2
+     |specialize (IH Hrest); destruct v_; apply set_add_intro1]; auto].
+  
+  Ltac only_one := solve [inversion Hin as [seq|bad]; [rewrite <- seq; auto|destruct bad]].
+  destruct s as [[e ρ σ | v σ | x e ρ v σ] κ t];
+    try only_one;
+    [destruct e as [x | e0 e1 | x e];
+      simpl in Hin;
+      [case_eq (lookup_ρ x ρ);
+        [intros a Heq; rewrite Heq in Hin; inversion Hin as [seq|bad];
+         [rewrite <- seq; unfold lookup_ρ in Heq; rewrite <- lookup_mapsto in Heq; apply ev_var|inversion bad]
+        |intro Hbad; rewrite Hbad in Hin; inversion Hin]; auto
+      |only_one
+      |only_one]
+    |destruct κ as [|[e ρ|fnv] κ_];
+      simpl in Hin; try (contradiction || only_one)].  
+  destruct fnv as [x e ρ | a | ss]; simpl in Hin; 
+    [only_one
+    |case_eq (lookup_σ a σ);
+      [intros ss Hins; rewrite Hins in Hin;
+       destruct s' as [[| |x0 e0 ρ0 v0 σ0] κ0 t0];
+       try solve
+           [elimtype False;
+             clear Hins; induction ss as [|[x1 e1 ρ1] ss IH];
+             [contradiction
+             |simpl in Hin;apply set_add_elim in Hin; inversion Hin as [seq|Hrest];
+              [discriminate seq|apply IH; auto]]];
+       assert (cut : in_force σ (s_closure x0 e0 ρ0) (adelay a) /\ v0 = v /\ σ0 = σ /\ κ0 = κ_ /\ t0 = (tick (co v σ)))
+         by (unfold lookup_σ in Hins; rewrite <- lookup_mapsto in Hins;
+             repeat split;
+             try (eapply (do_force Hins));
+             clear Hins;
+             induction ss as [|[x1 e1 ρ1] ss IH];
+             solve [contradiction
+                   |simpl in Hin; apply set_add_elim in Hin;
+                    inversion Hin as [seq | Hrest];
+                    [injection seq; intros; subst; repeat split; solve [left; auto|auto]
+                    |try right; apply IH; auto]]);
+       destruct cut as [Hin_force [veq [σeq [κeq teq]]]];
+         subst; constructor; auto
+      |intro Hnone;rewrite Hnone in Hin; contradiction]
+    |destruct s' as [[| |x0 e0 ρ0 v0 σ0] κ0 t0];
+      try solve [elimtype False;
+                  induction ss as [|[x1 e1 ρ1] ss IH];
+                  [contradiction
+                  |simpl in Hin;apply set_add_elim in Hin; inversion Hin as [seq|Hrest];
+                   [discriminate seq|apply IH; auto]]];
+      assert (cut : in_force σ (s_closure x0 e0 ρ0) (amany ss) /\ v0 = v /\ σ0 = σ /\ κ0 = κ_ /\ t0 = (tick (co v σ)));
+      try apply many_force;
+      induction ss as [|[x1 e1 ρ1] ss IH];
+      try solve [contradiction
+                |simpl in Hin; apply set_add_elim in Hin;
+                 inversion Hin as [seq | Hrest];
+               [injection seq; intros; subst; repeat split; solve [constructor; left; auto|auto]
+               |specialize (IH Hrest);
+                 destruct IH as [Hin_force [veq [σeq [κeq teq]]]];
+                 repeat split; solve [auto | constructor; right; inversion Hin_force; auto]]];
+      destruct cut as [Hin_force [veq [σeq [κeq teq]]]]; subst; constructor; auto].
+Qed.
+  
+Inductive CESK_System :=
+  cesk_system : set CESK -> set CESK -> set CESK_edge -> CESK_System.
+
+Inductive red_CESK_frontier : CESK_System -> CESK_System -> Prop :=
+  cesk_sys_step : `{cesk_steps ss = cesk_step_all s ->
+                    red_CESK_frontier (cesk_system Seen (s::F) E)
+                                      (cesk_system (set_union cesk_eq_dec Seen ss)
+                                                   (set_union cesk_eq_dec F ss)
+                                                   (set_union cesk_edge_eq_dec E
+                                                              (set_map cesk_edge_eq_dec (fun s' => (s,s')) ss)))}.
+
+Definition CESK_System_to_reduction_relation (S : CESK_System) : CESK -> CESK -> Prop :=
+  match S with cesk_system _ _ E => fun s s' => In (s,s') E end.
 
 Definition CESK_trace (e : Expr) := Trace (inject_cesk e) red_cesk.
 Section NonStandardData.
@@ -530,6 +709,9 @@ Inductive CESKMΞ :=
 
 Definition wceskmξ_eq_dec : dec_type WCESKMΞ. decide equality. Defined.
 Hint Immediate wceskmξ_eq_dec.
+Definition WCESKMΞ_edge := (WCESKMΞ * WCESKMΞ)%type.
+Definition wceskmξ_edge_eq_dec : dec_type WCESKMΞ_edge. decide equality. Defined.
+Hint Immediate wceskmξ_edge_eq_dec.
 Definition ceskmξ_eq_dec : dec_type CESKMΞ. decide equality. Defined.
 Hint Immediate ceskmξ_eq_dec.
 Section NonStandardSemantics.
@@ -634,6 +816,7 @@ Inductive PR_red_ceskmk : CESKMΞ -> CESKMΞ -> Type :=
             in_ctxs Ξ ctx tκ ->
             PR_red_ceskmk (widemk (wshell (co v σ) (rt ctx) t') M Ξ)
                        (widemk (wshell (co v σ) tκ t') M' Ξ). (* XXX: tick? *)
+Hint Constructors red_ceskmk PR_red_ceskmk.
 
 Definition step_all (s : CESKMΞ) : set CESKMΞ :=
   match s with
@@ -694,22 +877,295 @@ Definition step_all (s : CESKMΞ) : set CESKMΞ :=
   end.
 
 Inductive Wide_step :=
-  wide_step : set WCESKMΞ -> Memo -> KTable -> Wide_step.
+  wide_step : set WCESKMΞ -> set WCESKMΞ_edge -> Memo -> KTable -> Wide_step.
 
 Inductive System :=
-  system : set WCESKMΞ -> set WCESKMΞ -> Memo -> KTable -> System.
+  system : set WCESKMΞ -> set WCESKMΞ -> set WCESKMΞ_edge -> Memo -> KTable -> System.
 
-
-Fixpoint smusher (S : set WCESKMΞ) (ss : set CESKMΞ) (nexts : set WCESKMΞ) (M : Memo) (Ξ : KTable) :=
+Fixpoint smusher
+         (start : WCESKMΞ) (S : set WCESKMΞ) (ss : set CESKMΞ) (nexts : set WCESKMΞ)
+         (edges : set WCESKMΞ_edge) (M : Memo) (Ξ : KTable) :=
   match ss with
-      nil => wide_step (filter (fun s => if In_dec wceskmξ_eq_dec s S then false else true) nexts) M Ξ
-    | (widemk s M' Ξ')::ss' => smusher S ss' (set_add wceskmξ_eq_dec s nexts)
-                                     (Ms_join M' M)
-                                     (Ξs_join Ξ' Ξ)
+      nil => wide_step (filter (fun s => if In_dec wceskmξ_eq_dec s S then false else true) nexts) edges M Ξ
+    | (widemk s M' Ξ')::ss' => smusher start S ss'
+                                       (set_add wceskmξ_eq_dec s nexts)
+                                       (set_add wceskmξ_edge_eq_dec (start, s) edges)
+                                       (Ms_join M' M)
+                                       (Ξs_join Ξ' Ξ)
   end.
 
-Definition smush_steps (s : WCESKMΞ) (M: Memo) (Ξ: KTable) (S : set WCESKMΞ) : Wide_step :=
-  smusher S (step_all (widemk s M Ξ)) nil nil nil.
+Definition smush_steps
+           (s : WCESKMΞ) (E : set WCESKMΞ_edge) (M: Memo)
+           (Ξ: KTable) (S : set WCESKMΞ) : Wide_step :=
+  smusher s S (step_all (widemk s M Ξ)) nil E nil nil.
+
+Definition fresh_ctx (Ξ : KTable) (ctx : Context) : Prop :=
+  InDom Ξ ctx /\
+  match ctx with
+      context e ρ σ t => fresh_ρ_inv σ ρ /\ fresh_σ_inv σ
+  end.
+
+Definition fresh_result (r : Result) : Prop :=
+  match r with res v σ t => fresh_val_inv σ v /\ fresh_σ_inv σ end.
+Definition fresh_memo (M : Memo) (Ξ : KTable) : Prop :=
+  forall ctx rs, MapsTo M ctx rs -> fresh_ctx Ξ ctx /\ exists r, rs = (singleton result_eq_dec r) /\ fresh_result r.
+
+Inductive fresh_TrunKont (σ : Store) (Ξ : KTable) : TrunKont -> Prop :=
+  mt_fresh : fresh_TrunKont σ Ξ mt
+| push_fresh : `{fresh_φ_inv σ φ -> fresh_TrunKont σ Ξ tκ -> fresh_TrunKont σ Ξ (kpush φ tκ)}
+| ctx_fresh : `{fresh_ctx Ξ ctx -> fresh_TrunKont σ Ξ (rt ctx)}.
+
+Definition fresh_ktable (σ : Store) (Ξ : KTable) : Prop :=
+  forall ctx tκs, MapsTo Ξ ctx tκs ->
+                  (* not necessarily a singleton set, since infinite loops will add rt konts of the same context *)
+                  fresh_ctx Ξ ctx /\ exists tκ,
+                                     (* if singleton, it cannot be (rt ctx) *)
+                                     ((tκs = (singleton trunkont_eq_dec tκ) /\ tκ <> (rt ctx))
+                                      \/
+                                      tκs = (set_add trunkont_eq_dec (rt ctx) (singleton trunkont_eq_dec tκ)))
+                                     /\ fresh_TrunKont σ Ξ tκ.
+
+Definition fresh_inv_wceskmξ (s : WCESKMΞ) (Ξ : KTable) : Prop :=
+  match s with
+      wshell p tκ t => fresh_TrunKont (store_of p) Ξ tκ /\ fresh_point_inv p
+  end.
+
+Definition fresh_inv_ceskmk (s : CESKMΞ) : Prop :=
+  match s with
+      widemk (wshell p tκ t) M Ξ =>
+      fresh_inv_wceskmξ (wshell p tκ t) Ξ /\
+      fresh_memo M Ξ /\ 
+      Dom_in_Dom M Ξ /\
+      fresh_ktable (store_of p) Ξ
+  end.
+
+Lemma fresh_extend_ρ_with_σ_join : forall p ρ x v (fresh : alloc_fresh alloc)
+                                          (freshp : fresh_point_inv p)
+                                          (freshρ : fresh_ρ_inv (store_of p) ρ)
+                                          (freshv : fresh_val_inv (store_of p) v),
+                                          fresh_ρ_inv (σ_join (store_of p) (alloc p) v)
+                                                      (extend_ρ x (alloc p) ρ).
+Proof.
+  intros; intros x' a' Hmap; destruct (extend_mapsto_elim name_eq_dec _ _ _ Hmap) as [[Hxeq Haeq]|[Hxneq Hrest]];
+  [subst; apply InDom_join'
+  |apply freshρ in Hrest; apply InDom_join2']; auto.
+Qed.
+
+Lemma fresh_tκ_inv_join : forall σ a v tκ Ξ, fresh_TrunKont σ Ξ tκ -> fresh_TrunKont (σ_join σ a v) Ξ tκ.
+Proof.
+  intros ? ? ? ? ? H; induction H; try solve [constructor; auto |constructor; [apply fresh_φ_inv_join|]; auto].
+Qed.
+
+Lemma fresh_ctx_inv_join : forall Ξ ctx ctx' tκ, fresh_ctx Ξ ctx -> fresh_ctx (Ξ_join Ξ ctx' tκ) ctx.
+Proof.
+  intros ? [ce cρ cσ ct] ? ? H; destruct H as [Hindom [huh wuh]]; constructor;
+  [apply InDom_join2'|]; auto.
+Qed.
+
+Lemma fresh_tκ_inv_join2 : forall σ a v tκ Ξ ctx tκ', fresh_TrunKont σ Ξ tκ ->
+                                              fresh_TrunKont (σ_join σ a v) (Ξ_join Ξ ctx tκ') tκ.
+Proof.
+  intros ? ? ? ? ? ? ? H; induction H; try solve [constructor; auto |constructor; [apply fresh_φ_inv_join|]; auto].
+  constructor; apply fresh_ctx_inv_join; auto.
+Qed.
+
+Theorem CESKMΞ_fresh_inv : forall s s' (fresh : (alloc_fresh alloc)) 
+                                  (Hinv : fresh_inv_ceskmk s)
+                                  (Hstep : red_ceskmk s s'),
+                             fresh_inv_ceskmk s'.
+Proof.
+  intros; inversion Hstep as [x ρ σ a tκs ts Ms Ξs ps Hmap Hpeq Hs'eq |
+                              e0 e1 ρ σ tκs ts Ms Ξs ps Hpeq |
+                              x e ρ σ tκs ts Ms Ξs ps Hpeq Hs'eq |
+                              v σ e ρ tκs ts Ms Ξs ps Hpeq Hs'eq |
+                              v σ x e ρ fnv tκs ts Ms Ξs ps Hin_force Hpeq Hs'eq |
+                              x e ρ v σ tκs ts Ms Ξs ps a ρ' σ' ts' ctx Hunmapped Hpeq Hs'eq |
+                              x e ρ v σ tκs ts Ms Ξs vm σm tm ps a ρ' σ' ctx Hinmemos Hpeq Hs'eq |
+                              v σ ctx tκs Ms Ξs t's M's Hin_ctxs Hpeq Hs'eq]; subst; try subst ps;
+  inversion_clear Hinv as [[freshtκ freshp] [freshM [Hdom freshΞ]]]; simpl in *;
+  inversion_clear freshp as [? ? ? freshσ freshρ | ? ? freshv freshσ | ? ? ? ? ? freshv freshρ freshσ]; subst;
+  repeat split; auto;
+  try solve [inversion freshtκ; auto
+            |match goal with [H : MapsTo ?Ms ?ctx ?rs |- _] => apply freshM in H; destruct H; auto end
+            |match goal with [H : MapsTo ?Ξ ?ctx ?tκ |- _] =>  apply freshΞ in H; destruct H as [[? ?] ?]; auto end
+            |inversion freshtκ; constructor; auto
+            |constructor; auto
+            |apply MapsTo_In in H;
+              assert (Hneed : exists rs, In (ctx,rs) Ms) by (exists rs; auto);
+              rewrite <- (InDom_In context_eq_dec) in Hneed;
+              apply (Dom_InDom context_eq_dec Hdom Hneed)
+            |constructor;
+              [apply freshρ in Hmap; unfold fresh_σ_inv,fresh_setmap_inv in freshσ|]; auto
+            |match goal with [H : MapsTo ?Ms ?ctx ?rs |- _] =>
+                destruct (did_mapsto context_eq_dec Hdom H) as [Tκ Hmaptκ];
+                destruct (freshΞ _ _ Hmaptκ) as [[indom mum] ble]; destruct ctx; auto
+             end
+            |destruct (freshΞ _ _ H) as [[indom mum] ble]; destruct ctx; auto
+            |match goal with [H : MapsTo ?Ξs ?ctx ?tκs |- InDom ?Ξs ?ctx] => rewrite (InDom_is_mapped context_eq_dec); exists tκs; auto end
+            |match goal with
+                 [H : MapsTo ?Ms ?ctx ?rs |- _] =>
+                 apply InDom_join2; 
+                   rewrite (InDom_is_mapped context_eq_dec);
+                   apply (did_mapsto context_eq_dec Hdom H)
+             end
+            |apply Dom_join_right; auto].
+
+  constructor;
+    solve [auto
+          |inversion Hin_force as [? ? ?|a ss ? Hmap Hin|? ss Hin]; subst;
+           inversion freshtκ as [|? ? freshφ|]; subst; auto;
+           [apply freshσ in Hmap; destruct Hmap as [s [seq freshs]];
+            subst; inversion Hin as [Heq|bad]; [subst;auto|destruct bad]
+           |destruct freshφ as [s [seq freshs]]; subst; inversion Hin as [Heq|bad];[subst; auto|destruct bad]]].
+
+  constructor; subst ctx; constructor;
+  [apply InDom_join
+  |split;[intros x' a' Hmap;
+           subst ρ'; unfold extend_ρ in Hmap;
+           destruct (extend_mapsto_elim name_eq_dec _ _ _ Hmap) as [[Hxeq Haeq]|[Hxneq Hmap']];
+           [subst σ' ts' a' a; subst; apply InDom_join'
+           |apply freshρ in Hmap'; apply InDom_join2']
+         |subst σ'; apply fresh_σ_join with (p := (ap x e ρ v σ))]]; auto.
+  
+  constructor; [subst σ'; apply fresh_σ_join with (p := (ap x e ρ v σ))
+               |apply fresh_extend_ρ_with_σ_join with (p := (ap x e ρ v σ))]; auto.
+  
+  unfold Ξ_join in H;
+    destruct (join_mapsto_elim context_eq_dec κs_join κ_singleton κs_join_extensive κ_singleton_extensive
+                               _ _ _ _ (fun ab H => H) H) as [[Hctxeq Hin]|[Hctxneq Hrest]];
+    [subst ctx; subst; split;
+     [subst σ' ρ'; apply fresh_extend_ρ_with_σ_join with (p := (ap x e ρ v σ))
+     |subst σ' ρ' a ts'; apply fresh_σ_join with (p := (ap x e ρ v σ))]
+    |apply freshΞ in Hrest; destruct Hrest as [[? ?] ?]]; auto.
+
+  Ltac bad_fresh_context H Hunmapped :=
+    destruct H as [bad' ?];
+    rewrite (InDom_is_mapped context_eq_dec) in bad';
+    destruct bad' as [badtκs Hbadmap];
+    rewrite (unmapped_not_mapped context_eq_dec) in Hunmapped;
+    apply Hunmapped in Hbadmap; destruct Hbadmap.
+
+  unfold Ξ_join in H;
+    destruct (join_mapsto_elim context_eq_dec κs_join κ_singleton κs_join_extensive κ_singleton_extensive
+                               _ _ _ _ (fun ab H => H) H) as [[Hctxeq Hin]|[Hctxneq Hrest]];
+    [destruct (list_join_mapsto_elim context_eq_dec κs_join κ_singleton _ _ _ _ H)
+      as [[ctxeq [[Hunmapped' Hsingle]|[tκs' [Hmap Hjoin]]]]|[ctxneq Hrest]];
+      [subst; exists tκs; split;
+       [left; split;
+        [|subst ctx0; subst; intro bad; subst; inversion freshtκ as [| |? freshctx];
+          subst; bad_fresh_context freshctx Hunmapped']
+       |apply fresh_tκ_inv_join2]
+      |subst; apply freshΞ in Hmap;
+       destruct Hmap as [freshctx [singletκ [[[singleq nrt]|botheq] freshsingle]]];
+       [destruct (trunkont_eq_dec (rt (context e ρ' σ' ts')) tκs) as [Hrt|Hnrt];
+         [subst; exists singletκ; split; [|apply fresh_tκ_inv_join2]
+         |exists tκs; split; [left;split|]]
+       |]
+      |]
+    |]; auto.
+  subst;
+  destruct (trunkont_eq_dec singletκ tκs) as [|bad];
+    [subst; simpl; split_refl trunkont_eq_dec tκs
+    |simpl].
+  simpl.
+
+  exists tκs; split;
+  [unfold Ξ_join in H;
+    destruct (join_mapsto_elim context_eq_dec κs_join κ_singleton κs_join_extensive κ_singleton_extensive
+                               _ _ _ _ (fun ab H => H) H) as [[Hctxeq Hin]|[Hctxneq Hrest]];
+    [destruct (list_join_mapsto_elim context_eq_dec κs_join κ_singleton _ _ _ _ H)
+      as [[ctxeq [[Hunmapped' Hsingle]|[tκs' [Hmap Hjoin]]]]|[ctxneq Hrest]];
+      [left; split;[|subst ctx0; subst; intro bad; subst; inversion freshtκ as [| |? freshctx];
+                     subst; bad_fresh_context freshctx Hunmapped']
+      |subst
+      |]
+    |]
+  |apply fresh_tκ_inv_join]; auto.
+
+  apply freshΞ in Hmap;
+  destruct Hmap as [freshctx [singletκ [[[singleeq nonrt]|botheq] freshsingle]]];
+  [subst
+  |].
+  destruct (trunkont_eq_dec singletκ tκs) as [tκeq|tκneq];
+    [subst; left; split; [simpl; split_refl trunkont_eq_dec tκs|]
+    |]; auto.
+  assert (lhseq : κs_join Ξs (singleton trunkont_eq_dec singletκ) tκs = [singletκ; tκs]) by
+    (simpl; split_refl2 trunkont_eq_dec tκs singletκ);
+  rewrite lhseq;
+  unfold set_add;
+  destruct (trunkont_eq_dec (rt (context e ρ' σ' ts')) tκs) as [eqrt|neqrt].
+  [subst;
+  inversion freshtκ as [| |? [bad ?]].
+  assert (singleq : (singleton trunkont_eq_dec tκs) = [tκs]) by (compute; auto).
+  unfold singleton,set_add.
+  fold set_add.
+  unfold set_add.
+  cbv beta.
+  simpl.
+  remember Hmap as rHmap; clear HeqrHmap.
+  subst; apply freshΞ in Hmap.
+  destruct Hmap as [freshctx [tκold [[singlemap | withrt] freshtκold]]].
+  subst.
+  destruct (trunkont_eq_dec tκold tκs) as [tκeq | tκneq].
+  left; simpl;subst; split_refl trunkont_eq_dec tκs.
+  destruct (trunkont_eq_dec
+  right; simpl.
+      |
+      
+       [subst
+       |]
+      |]
+
+
+
+  case_eq (lookup_Ξ ctx0 Ξs).
+  intro tκ_look; unfold lookup_Ξ; rewrite <- lookup_mapsto; intro Hlookeq.
+  apply freshΞ in Hlookeq;
+  destruct Hlookeq as [freshctx0 [tκex [[singlex|bothex] freshex]]].
+  unfold κs_join.
+  apply join_an_unmapped in H.
+  destruct (freshΞ _ _ H).
+  
+  [subst; subst σ' a'; unfold σ_join in Hmap; pose (use := (join_an_unmapped' addr_eq_dec σ_combine force (fresh (ap x e ρ v σ)) (l' := σ) (c := v)))|]]; auto.
+  destruct (fresh_force_singleton _ freshσ freshv) as [s seq].
+  exists s; rewrite (MapsTo_same Hmap use); split; auto. apply freshM in H; destruct H; auto; au
+
+  destruct Hmap as [ss Hσmap].
+  apply freshσ in Hσmap.
+  unfold fresh_val_inv.
+  inversion freshws as [freshtκ freshp].
+  Ltac subgoal Hall :=
+    repeat split; 
+    try (rewrite Forall_forall);
+    try solve [auto
+              |intros φ Hin; ((inversion Hin; [subst; simpl; auto|]) || idtac); apply Hall; (right || idtac); auto].
+
+(* Tedious, just like CESK's. Omitted for now. *)
+Admitted.
+
+Definition unroll_fresh (unroll_fresh_f : KTable -> TrunKont -> Kont) (Ξ : KTable) (tκ : TrunKont) : Kont :=
+  match tκ with
+      mt => nil
+    | kpush φ tκ => φ :: (unroll_fresh_f Ξ tκ)
+    | rt ctx => match (lookup_Ξ ctx Ξ) with
+                    | None => nil (* should be killable *)
+                    | Some tκs => match tκs with
+                                     tκ :: nil => unroll_fresh_f Ξ tκ
+                                    | (rt ctx') :: tκ :: nil => if context_eq_dec ctx ctx' then
+                                                                  unroll_fresh_f Ξ tκ
+                                                                else (* must be that tκ is (rt rtx) *)
+                                                                  unroll_fresh_f Ξ (rt ctx')
+                                    | tκ :: (rt ctx') :: nil => unroll_fresh_f Ξ tκ
+                                    | _ => nil (* should be killable *)
+                                  end
+                end
+  end.
+
+Theorem
+
+Theorem CESKMΞ_deterministic : (alloc_fresh alloc) -> deterministic_modulo red_ceskmk fresh_inv_ceskmk.
+(* Tedious, just like CESK's. Omitted for now. *)
+Admitted.
 
 Inductive ForallT {A} (P:A->Type) : list A -> Type :=
  | ForallT_nil : ForallT P nil
@@ -730,19 +1186,19 @@ Admitted.
 
 (* Proof relevant or not? *)
 Inductive Wide_CESKMΞ : System -> System -> Prop :=
-  | big_step : forall s M Ξ Seen F ss M' Ξ',
-                 (wide_step ss M' Ξ') = (smush_steps s M Ξ Seen) ->
-                 Wide_CESKMΞ (**) (system Seen (s::F) M Ξ) (**)
+  | big_step : forall s M Ξ Seen F E ss E' M' Ξ',
+                 (wide_step ss E' M' Ξ') = (smush_steps s E M Ξ Seen) ->
+                 Wide_CESKMΞ (**) (system Seen (s::F) E M Ξ) (**)
                                   (system
                                   (set_union wceskmξ_eq_dec ss (set_add wceskmξ_eq_dec s Seen))
                                   (set_union wceskmξ_eq_dec F ss)
-                                  M' Ξ').
+                                  E' M' Ξ').
 
-Definition inject_wide_ceskmk (e : Expr) := (system [(inject_wceskmk e)] [(inject_wceskmk e)] nil nil).
+Definition inject_wide_ceskmk (e : Expr) := (system [(inject_wceskmk e)] [(inject_wceskmk e)] nil nil nil).
 Definition CESKMΞ_trace (e : Expr) :=
   Trace (inject_ceskmk e) red_ceskmk.
 Definition WCESKMΞ_trace (e : Expr) :=
-  Trace (system [(inject_wceskmk e)] [(inject_wceskmk e)] nil nil) Wide_CESKMΞ.
+  Trace (system [(inject_wceskmk e)] [(inject_wceskmk e)] nil nil nil) Wide_CESKMΞ.
 
 Inductive StackUnroll (Ξ : KTable) : Kont -> TrunKont -> Prop :=
   unroll_mt : `{StackUnroll Ξ nil mt}

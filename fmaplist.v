@@ -140,6 +140,13 @@ Proof.
     |inversion Hmap; subst; [constructor|constructor; [|apply (IH a a' b)]]]; auto].
 Qed.
 
+Theorem extend_mapsto_elim : forall a a' b b' (ρ : list (A * B)), MapsTo (extend_map a b ρ) a' b' -> (a = a' /\ b = b') \/ (a <> a' /\ MapsTo ρ a' b').
+Proof.
+  intros; destruct (eq_dec a a') as [Heq|Hneq];
+  [subst; left; split; [|apply (extend_map_MapsTo_eq _ _ H)]
+  |right; split;[|apply (extend_map_old _ _ Hneq H)]]; auto.
+Qed.
+
 Theorem lookup_mapsto : forall (l : list (A * B)) a b,
                           (MapsTo l a b) <-> (lookup_map a l) = Some b.
 Proof.
