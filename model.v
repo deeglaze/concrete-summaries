@@ -1,4 +1,5 @@
 Require Import ZArith NArith List ListSet CpdtTactics stutter basic fmaplist joins.
+Require Import Relation_Operators Wellfounded ListSetFacts.
 Import ListNotations.
 Definition Name := nat.
 
@@ -13,6 +14,13 @@ Inductive Expr : Type :=
 | app : Expr -> Expr -> Expr
 | lam : Name -> Expr -> Expr.
 
+Fixpoint fv (e : Expr) : set Name :=
+  match e with
+      var x => singleton name_eq_dec x
+    | app e0 e1 => set_union name_eq_dec (fv e0) (fv e1)
+    | lam x e => set_remove name_eq_dec x (fv e)
+  end.
+
 Definition expr_eq_dec : dec_type Expr. decide equality. Defined.
 Hint Immediate expr_eq_dec.
 
@@ -23,18 +31,44 @@ Variable time_eq_dec : dec_type Time.
 
 Definition Env := list (Name * Addr).
 Inductive storeable := s_closure : Name -> Expr -> Env -> storeable.
+
+Definition touch_closure (e : Expr) (ρ : Env) : set Addr :=
+  range_in_set name_eq_dec addr_eq_dec ρ (fv e).
+
+Definition touch_storeable (s : storeable) : set Addr :=
+  match s with s_closure x e ρ => touch_closure e ρ end.
+
 Definition AbsVal := set storeable.
+
+Definition touch_absval (ss : AbsVal) := union_map addr_eq_dec touch_storeable ss.
+
 Inductive val :=
   | closure : Name -> Expr -> Env -> val
   | adelay : Addr -> val
   | amany : AbsVal -> val.
+
+Definition touch_val (v : val) : set Addr :=
+  match v with
+      closure x e ρ => touch_closure e ρ
+    | adelay a => singleton addr_eq_dec a
+    | amany ss => touch_absval ss
+  end.
 
 Definition Store := list (Addr * AbsVal).
 Inductive Frame :=
   | ar : Expr -> Env -> Frame
   | fn : val -> Frame.
 
+Definition touch_frame (φ : Frame) : set Addr :=
+  match φ with
+      ar e ρ => touch_closure e ρ
+    | fn v => touch_val v
+  end.
+
 Definition Kont : Type := list Frame.
+Definition touch_kont (κ : Kont) : set Addr :=
+  union_map addr_eq_dec touch_frame κ.
+
 Inductive Shell (P : Type) :=
   shell : P -> Kont -> Time -> Shell P.
 Inductive CES_point :=
@@ -43,7 +77,20 @@ Inductive CES_point :=
   | ap : Name -> Expr -> Env -> (* Closure *)
          val -> (* Argument *)
          Store -> CES_point.
+
+Definition touch_point (p : CES_point) : set Addr :=
+  match p with
+      ev e ρ s => touch_closure e ρ
+    | co v σ => touch_val v
+    | ap x e ρ v σ => set_union addr_eq_dec (touch_closure e ρ) (touch_val v)
+  end.
 Definition CESK := Shell CES_point.
+Definition root_CESK (s : CESK) : set Addr :=
+  match s with shell p κ t => set_union addr_eq_dec (touch_point p) (touch_kont κ) end.
+
+Inductive twiddle (σ : Store) : Addr -> Addr -> Prop :=
+  twiddle_intro : forall a b ss, MapsTo σ b ss -> set_In a (touch_absval ss) -> twiddle σ a b.
+Definition reach_addr (σ : Store) : Addr -> Addr -> Prop := clos_refl_trans _ (twiddle σ).                        
 
 Hint Immediate addr_eq_dec time_eq_dec.
 Definition env_eq_dec : dec_type Env. apply list_eq_dec; decide equality. Defined.
@@ -90,6 +137,133 @@ Definition extend_ρ := extend_map name_eq_dec (B := Addr).
 Definition lookup_ρ := lookup_map name_eq_dec (B := Addr).
 Definition lookup_σ := lookup_map addr_eq_dec (B := AbsVal).
 
+Definition all_InDom {A B} (l: list (A * B)) (s : set A) : Prop :=
+  Forall (InDom l) s.
+Lemma all_InDom_subset : forall {A B} (l : list (A * B)) (s s' : set A),
+                           Subset s s' -> all_InDom l s' -> all_InDom l s.
+Proof.
+  intros A B l s s' Hsub Hall; unfold all_InDom in *;
+  rewrite Forall_forall in *. 
+  intros; apply Hall,Hsub; auto.
+Qed.
+
+Lemma storeable_subset_absval : forall s ss, in_aval s ss -> Subset (touch_storeable s) (touch_absval ss).
+Proof.
+  intros s ss Hin a Hain;
+  apply (union_map_subset _ addr_eq_dec _ touch_storeable ss s Hin); auto.
+Qed.
+
+Definition wellformed_σ (σ : Store) := forall a ss, MapsTo σ a ss -> all_InDom σ (touch_absval ss).
+Lemma wellformed_in_list_list : forall σ, wellformed_σ σ ->
+                                          forall a ss, MapsTo σ a ss ->
+                                               forall s, in_aval s ss ->
+                                                 all_InDom σ (touch_storeable s).
+Proof.
+  intros σ Hwf a ss Hmap s Hin.
+  specialize (Hwf _ _ Hmap).
+  apply (all_InDom_subset (storeable_subset_absval s ss Hin)); assumption.
+Qed.
+
+Inductive reaching_input (σ : Store) := ri_intro : set Addr -> set Addr -> reaching_input σ.
+Inductive good_reaching_input {σ} : (reaching_input σ) -> Prop :=
+  good_ri : forall todo seen, NoDup todo -> NoDup seen ->
+                              all_InDom σ todo -> all_InDom σ seen ->
+                              set_inter addr_eq_dec todo seen = (empty_set _) ->
+                              good_reaching_input (ri_intro σ todo seen).
+Definition ri_measure {σ} (ri : reaching_input σ) :=
+  match ri with
+      ri_intro todo seen =>
+      let σsize := (length (union_map addr_eq_dec touch_absval (collect_range addr_eq_dec absval_eq_dec σ))) in
+      (σsize - (length (set_union addr_eq_dec seen todo)))
+  end.
+
+Definition reaching_order {σ} (ri0 ri1 : reaching_input σ) : Prop := lt (ri_measure ri0) (ri_measure ri1).
+Definition greaching_order {σ} (gri0 gri1 : sigT (fun ri : reaching_input σ => good_reaching_input ri)) : Prop :=
+  match gri0,gri1 with
+      existT ri0 _, existT ri1 _ => reaching_order ri0 ri1
+  end.
+
+Lemma reaching_wf' : forall σ len (ri : reaching_input σ), le (ri_measure ri) len
+                      -> Acc (@reaching_order σ) ri.
+Proof.
+  unfold reaching_order; induction len; intros [todo seen] Hord;
+  constructor; intros; [elimtype False|apply IHlen]; omega.
+Qed.
+
+Lemma greaching_wf' : forall σ len (ri : reaching_input σ) (g : good_reaching_input ri),
+                        le (ri_measure ri) len -> Acc (@greaching_order σ) (existT _ ri g).
+Proof.
+  unfold greaching_order,reaching_order; induction len; intros [todo seen] Hord;
+  constructor; intros [ri' g'] Hbad; [elimtype False|apply IHlen]; omega.
+Qed.
+
+Lemma reaching_wf : forall σ, well_founded (@reaching_order σ).
+Proof.
+  intros σ ri0; constructor; intros ri1 Hord; eapply reaching_wf'; eauto.
+Qed.
+Lemma greaching_wf : forall σ, well_founded (@greaching_order σ).
+Proof.
+  intros σ [r0 g0]; constructor; unfold greaching_order; intros [ri1 g1] Hord.
+  eapply greaching_wf'; eauto.
+Qed.
+
+Definition reaching_addrs_aux : forall σ (gri : sigT (fun ri : reaching_input σ => good_reaching_input ri)), set Addr.
+  refine (fun σ =>
+    Fix (@greaching_wf σ)
+        (fun _ => set Addr)
+        (fun gx reaching_addrs_aux =>
+              (match gx with
+                   existT ri g =>
+                   (fun Hg : gx = existT _ ri g =>
+                   (match ri with 
+                        ri_intro todo seen =>
+                        (fun Hr : ri = (ri_intro σ todo seen) =>
+                        (match todo with
+                             nil => (fun _ => seen)
+                           | a::todo' =>
+                             fun (Ht : todo = a::todo') =>
+                             if set_In_dec addr_eq_dec a seen then
+                               reaching_addrs_aux (existT _ (ri_intro σ todo' seen)
+                                                          _) _
+                             else match lookup_σ a σ with
+                                      None => seen (* rule out with well-formedness *)
+                                    | Some ss =>
+                                      reaching_addrs_aux
+                                        (existT
+                                           _
+                                           (ri_intro
+                                              σ (set_union addr_eq_dec todo' 
+                                                           (set_diff addr_eq_dec (touch_absval ss) seen))
+                                              (set_add addr_eq_dec a seen))
+                                           _)
+                                        _
+                                  end
+                         end) (eq_refl todo))
+                    end) (eq_refl ri))
+               end) (eq_refl gx))).
+  subst.
+  unfold greaching_order.
+  
+  Focus 2.
+  subst.
+  unfold reaching_order, greaching_order, ri_measure.
+  assert (simplify : forall (l x y : nat), x <= l -> y <= l -> y < x -> l - x < l - y) by (intros; omega).
+  apply (simplify (length
+                     (union_map addr_eq_dec touch_absval
+                                (collect_range addr_eq_dec absval_eq_dec σ)))
+                  (length
+                     (set_union addr_eq_dec (set_union addr_eq_dec todo' (touch_absval ss))
+                                (set_add addr_eq_dec a seen)) + 1)
+                  (length (set_union addr_eq_dec (a :: todo') seen))).
+  Focus 3.
+  inversion g as [? ? ndt nds allt alls]; subst.
+  assert (nds' : NoDup (a :: seen)) by (constructor; auto).
+
+  SearchAbout minus.
+  rewrite (NPeano.Nat.lt_sub_lt_add_l l x (l - y)).
+  assert (lenunionleft : length (set_union addr_eq_dec (set_union addr_eq_dec todo0 (touch_absval ss))
+                                           (set_add addr_eq_dec a seen))
+                                = 
 Definition force (σ : Store) (v:val) : AbsVal :=
   match v with
       | adelay a => match lookup_σ a σ with
@@ -213,6 +387,7 @@ Inductive red_cesk : CESK -> CESK -> Prop :=
             let ρ' := extend_ρ x a ρ in
             let σ' := σ_join σ a v in
             red_cesk (shell p κ t) (shell (ev e ρ' σ') κ (tick p))}.
+
 Inductive PR_red_cesk : CESK -> CESK -> Type :=
   pr_ev_var : `{let p := (ev (var x) ρ σ) in
              MapsTo ρ x a ->
@@ -300,10 +475,6 @@ Definition fresh_inv (s : CESK) : Prop :=
 
 Definition alloc_fresh (alloc : CES_point -> Addr) :=
   forall p, Unmapped (store_of p) (alloc p).
-
-(* if not stuck, then all steps are the same *)
-Definition deterministic_modulo {S} (R : S -> S -> Prop) (P : S -> Prop) : Prop :=
-  forall s s', P s -> R s s' -> forall s'', R s s'' -> s' = s''.
 
 Lemma σ_join_mapsto_elim : forall σ a v a' ss, MapsTo (σ_join σ a v) a' ss ->
                                                (a = a' /\ Subset (force σ v) ss) \/
@@ -606,7 +777,7 @@ Inductive red_CESK_frontier : CESK_System -> CESK_System -> Prop :=
 Definition CESK_System_to_reduction_relation (S : CESK_System) : CESK -> CESK -> Prop :=
   match S with cesk_system _ _ E => fun s s' => In (s,s') E end.
 
-Definition CESK_trace (e : Expr) := Trace (inject_cesk e) red_cesk.
+Definition CESK_trace (e : Expr) := Trace red_cesk (inject_cesk e).
 Section NonStandardData.
 Inductive Context := context : Expr -> Env -> Store -> Time -> Context.
 Inductive Result := res: val -> Store -> Time -> Result.
@@ -916,14 +1087,7 @@ Inductive fresh_TrunKont (σ : Store) (Ξ : KTable) : TrunKont -> Prop :=
 | ctx_fresh : `{fresh_ctx Ξ ctx -> fresh_TrunKont σ Ξ (rt ctx)}.
 
 Definition fresh_ktable (σ : Store) (Ξ : KTable) : Prop :=
-  forall ctx tκs, MapsTo Ξ ctx tκs ->
-                  (* not necessarily a singleton set, since infinite loops will add rt konts of the same context *)
-                  fresh_ctx Ξ ctx /\ exists tκ,
-                                     (* if singleton, it cannot be (rt ctx) *)
-                                     ((tκs = (singleton trunkont_eq_dec tκ) /\ tκ <> (rt ctx))
-                                      \/
-                                      tκs = (set_add trunkont_eq_dec (rt ctx) (singleton trunkont_eq_dec tκ)))
-                                     /\ fresh_TrunKont σ Ξ tκ.
+  forall ctx tκs, MapsTo Ξ ctx tκs -> fresh_ctx Ξ ctx /\ Forall (fresh_TrunKont σ Ξ) tκs.
 
 Definition fresh_inv_wceskmξ (s : WCESKMΞ) (Ξ : KTable) : Prop :=
   match s with
@@ -969,6 +1133,22 @@ Proof.
   constructor; apply fresh_ctx_inv_join; auto.
 Qed.
 
+Inductive fresh_trace (s0 : CESKMΞ) (π : list CESKMΞ) :=
+  fresh_inject : fresh_inv_ceskmk s0 -> fresh_trace s0 [s0]
+| fresh_step : forall w M Ξ π,
+                 fresh_trace s0 (widemk w M Ξ :: π) ->
+                 red_ceskmk (widemk w M Ξ) (widemk w' M' Ξ') ->
+                 (forall ctx tκs, Unmapped M ctx -> MapsTo Ξ ctx tκs -> (*TODO*)
+                                  (~ exists tκ, tκs = singleton trunkont_eq_dec tκ) ->
+                                  Unmapped M' ctx) ->
+                 fresh_trace s0 ((widemk w' M' Ξ') :: (widemk w M Ξ) :: π).
+  
+
+
+(* Not enough for determinism since we need to know that when |Ξ(ctx)) > 1 and |M(ctx)| = 0,
+   then |M(ctx)| will always be 0.
+ This will tell us that we will never reach ((co v σ) (rt ctx)) and thus not hit the non-determinism from
+ the several tκs in Ξ(ctx). TODO: formally state and prove. *)
 Theorem CESKMΞ_fresh_inv : forall s s' (fresh : (alloc_fresh alloc)) 
                                   (Hinv : fresh_inv_ceskmk s)
                                   (Hstep : red_ceskmk s s'),
@@ -1038,6 +1218,27 @@ Proof.
      |subst σ' ρ' a ts'; apply fresh_σ_join with (p := (ap x e ρ v σ))]
     |apply freshΞ in Hrest; destruct Hrest as [[? ?] ?]]; auto.
 
+  rewrite Forall_forall; intros tκf Hinf;
+  assert (Hctx : in_ctxs (Ξ_join Ξs ctx tκs) ctx0 tκf) by (exists tκs0; auto);
+  destruct (in_list_join_set_split context_eq_dec trunkont_eq_dec)
+       with (l := Ξs) (l' := Ξs) (a := ctx) (a' := ctx0) (c := tκs) (c' := tκf)
+    as [[? [? ?]]|[tκsf [Hmap Hin]]];
+    [|subst; apply fresh_tκ_inv_join2
+     |apply freshΞ in Hmap; destruct Hmap as [? use]; 
+      rewrite Forall_forall in use; apply use in Hin; apply fresh_tκ_inv_join2]; auto.
+
+  destruct Hinmemos as [rs [Hmap Hin]].
+  apply freshM in Hmap; destruct Hmap as [freshctx [r [rsingleq freshr]]].
+  subst; inversion Hin as [|bad]; [subst; inversion freshr; subst|destruct bad].
+  (* TODO: use order invariant to get that σm ⊒ σ'. [not necessarily with GC!!! FSCK] *)
+
+  unfold Ξ_join in H;
+    destruct (join_mapsto_elim context_eq_dec κs_join κ_singleton κs_join_extensive κ_singleton_extensive
+                               _ _ _ _ (fun ab H => H) H) as [[Hctxeq Hin]|[Hctxneq Hrest]].
+  subst ctx0; subst.
+  apply fresh_tκ_inv_join2.  
+  apply
+
   Ltac bad_fresh_context H Hunmapped :=
     destruct H as [bad' ?];
     rewrite (InDom_is_mapped context_eq_dec) in bad';
@@ -1047,20 +1248,26 @@ Proof.
 
   unfold Ξ_join in H;
     destruct (join_mapsto_elim context_eq_dec κs_join κ_singleton κs_join_extensive κ_singleton_extensive
-                               _ _ _ _ (fun ab H => H) H) as [[Hctxeq Hin]|[Hctxneq Hrest]];
-    [destruct (list_join_mapsto_elim context_eq_dec κs_join κ_singleton _ _ _ _ H)
-      as [[ctxeq [[Hunmapped' Hsingle]|[tκs' [Hmap Hjoin]]]]|[ctxneq Hrest]];
-      [subst; exists tκs; split;
+                               _ _ _ _ (fun ab H => H) H) as [[Hctxeq Hin]|[Hctxneq Hrest]].
+  destruct (list_join_mapsto_elim context_eq_dec κs_join κ_singleton _ _ _ _ H)
+    as [[ctxeq [[Hunmapped'' Hsingle]|[tκs' [Hmap Hjoin]]]]|[ctxneq Hrest]].
+  subst; exists tκs; split;
        [left; split;
         [|subst ctx0; subst; intro bad; subst; inversion freshtκ as [| |? freshctx];
-          subst; bad_fresh_context freshctx Hunmapped']
-       |apply fresh_tκ_inv_join2]
-      |subst; apply freshΞ in Hmap;
-       destruct Hmap as [freshctx [singletκ [[[singleq nrt]|botheq] freshsingle]]];
-       [destruct (trunkont_eq_dec (rt (context e ρ' σ' ts')) tκs) as [Hrt|Hnrt];
-         [subst; exists singletκ; split; [|apply fresh_tκ_inv_join2]
-         |exists tκs; split; [left;split|]]
-       |]
+          subst; bad_fresh_context freshctx Hunmapped'']
+       |apply fresh_tκ_inv_join2]; auto.
+
+  subst; apply freshΞ in Hmap;
+  destruct Hmap as [freshctx unsingle]; subst ctx0;
+  specialize (unsingle Hunmapped');
+  destruct unsingle as [singletκ [[[singleq nrt]|botheq] freshsingle]];  
+  destruct (trunkont_eq_dec (rt (context e ρ' σ' ts')) tκs) as [Hrt|Hnrt].
+  
+  subst; exists singletκ; split; [|apply fresh_tκ_inv_join2]; auto.
+  exists tκs; split; [left;split|]; auto.
+  subst.
+         |].
+
       |]
     |]; auto.
   subst;
@@ -1196,9 +1403,9 @@ Inductive Wide_CESKMΞ : System -> System -> Prop :=
 
 Definition inject_wide_ceskmk (e : Expr) := (system [(inject_wceskmk e)] [(inject_wceskmk e)] nil nil nil).
 Definition CESKMΞ_trace (e : Expr) :=
-  Trace (inject_ceskmk e) red_ceskmk.
+  Trace red_ceskmk (inject_ceskmk e).
 Definition WCESKMΞ_trace (e : Expr) :=
-  Trace (system [(inject_wceskmk e)] [(inject_wceskmk e)] nil nil nil) Wide_CESKMΞ.
+  Trace Wide_CESKMΞ (system [(inject_wceskmk e)] [(inject_wceskmk e)] nil nil nil).
 
 Inductive StackUnroll (Ξ : KTable) : Kont -> TrunKont -> Prop :=
   unroll_mt : `{StackUnroll Ξ nil mt}
@@ -1460,8 +1667,8 @@ Definition ctx_in_dom (Ξ : KTable) (tκ : TrunKont) :=
 
 (* Proof relevant or not? *)
 Inductive Tailed_Trace : forall (κ : Kont) (p : CES_point) (t : Time) (p' : CES_point) (t' : Time), Prop :=
-  tailt : `{Trace (shell p κ t)
-                  red_cesk
+  tailt : `{Trace red_cesk
+                  (shell p κ t)
                   ((shell p' κ t') :: π)
             -> (hastail κ π) -> Tailed_Trace κ p t p' t'}.
 
@@ -1471,12 +1678,12 @@ Inductive Stack_Irrelevant : CESK -> Kont -> Kont -> list CESK -> Prop :=
   irrelevant_intro : forall s s' π π' κ' κ'',
                        (replacetail_state s κ' κ'') = Some s' ->
                        (replacetail π κ' κ'') = (map (@Some CESK) π') ->
-                       Trace s' red_cesk π' ->
+                       Trace red_cesk s' π' ->
                        Stack_Irrelevant s κ' κ'' π.
 
 Ltac grumble H_ := try solve [simpl; rewrite H_; reflexivity | constructor].
 Lemma stack_irrelevance : forall p κ t π κ' κ''
-                                 (orig : Trace (shell p κ t) red_cesk π)
+                                 (orig : Trace red_cesk (shell p κ t) π)
                                  (tail0 : KontTail κ' κ)
                                  (Htail : hastail κ' π),
                             Stack_Irrelevant (shell p κ t) κ' κ'' π.
@@ -1979,14 +2186,14 @@ Inductive relate_CESK_CESKMΞ_traces : list CESK -> list (nat * CESKMΞ) -> Prop
                   let t' := tick p in
                   let ctx := (context e ρ' σ' t') in
                   in_memos M ctx (res vm σm tm) ->
-                  Trace (shell (ev e ρ σ) κ t) red_cesk
+                  Trace red_cesk (shell (ev e ρ σ) κ t)
                         ((shell (co vm σm) κ tm) :: mπ) ->
                   relate_CESK_CESKMΞ_traces ((shell (ap x e ρ v σ) κ t) :: π)
                                             ((length mπ,(widemk (wshell (ap x e ρ v σ) tκ t) M Ξ))
                                                :: (n',(widemk (wshell p_ tκ t_) M Ξ)) :: wπ)}.
 
 Theorem initial_trace_inv : forall e wπ,
-                              Trace (inject_ceskmk e) red_ceskmk wπ ->
+                              Trace red_ceskmk (inject_ceskmk e) wπ ->
                               Forall (fun x =>
                                         Inv x /\
                                         match x with
@@ -2014,8 +2221,8 @@ Qed.
 Theorem TraceRed_preserves_relation : forall e π wπ
                                              (Hrel : relate_CESK_CESKMΞ_traces π wπ)
                                              π' wπ'
-                                             (HMK : TraceRed_Stutter (inject_ceskmk e) red_ceskmk wπ wπ')
-                                             (Horig : TraceRed (inject_cesk e) red_cesk π π'),
+                                             (HMK : TraceRed_Stutter red_ceskmk (inject_ceskmk e) wπ wπ')
+                                             (Horig : TraceRed red_cesk (inject_cesk e) π π'),
                                         relate_CESK_CESKMΞ_traces π' wπ'.
 Proof.
   intros e_ ? ? Hrel; induction Hrel as [|ς π_ wn wς wπ_ ς' wς' wn' Hrel' IH Hstep Hsrel

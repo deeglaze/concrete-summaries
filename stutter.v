@@ -4,16 +4,10 @@ Generalizable All Variables.
 Set Implicit Arguments.
 
 Inductive PR_Trace {State} (s0 : State) (step : State -> State -> Type) : list State -> Type :=
-  | pr_initial : PR_Trace s0 step (s0 :: nil)
+  | pr_initial : PR_Trace s0 step [s0]
   | pr_take_step : `{PR_Trace s0 step (ς :: π) ->
                   step ς ς' ->
                   PR_Trace s0 step (ς' :: (ς :: π))}.
-Inductive Trace {State} (s0 : State) (step : State -> State -> Type) : list State -> Prop :=
-  | initial : Trace s0 step (s0 :: nil)
-  | take_step : `{Trace s0 step (ς :: π) ->
-                  step ς ς' ->
-                  Trace s0 step (ς' :: (ς :: π))}.
-
 Lemma PR_trace_app : forall State (s0 s1 : State) π step
                          (T1 : PR_Trace s0 step (s1 :: π))
                          π'
@@ -23,32 +17,119 @@ Proof.
   intros; induction T2;[|constructor]; assumption.
 Qed.
 
+Section PropTrace.
+Variables (State : Type) (step : State -> State -> Prop) (s0 : State).
+Inductive Trace : list State -> Prop :=
+  | initial : Trace [s0]
+  | take_step : `{Trace (ς :: π) ->
+                  step ς ς' ->
+                  Trace (ς' :: (ς :: π))}.
+
+Inductive OnlyStep : State -> State -> Prop :=
+  only_step_intro : forall s s', step s s' -> (forall s'', step s s'' -> s' = s'') -> OnlyStep s s'.
+
+Inductive OnlyTrace : list State -> Prop :=
+  | only_initial : OnlyTrace [s0]
+  | only_step : forall ς ς' π, OnlyTrace (ς :: π) -> OnlyStep ς ς' -> OnlyTrace (ς' :: (ς :: π)).
+
+Inductive TraceTo (s1 : State) : Type :=
+  intro_traceto : forall π, Trace (s1 :: π) -> TraceTo s1.
+
+Inductive TraceRed : (list State) -> (list State) -> Prop :=
+  tr_eps : TraceRed nil [s0]
+| tr_take_step : `{TraceRed π (ς :: π) -> step ς ς' -> TraceRed (ς :: π) (ς' :: ς :: π)}.
+
+Inductive TraceRed_Stutter : (list (nat * State)) -> (list (nat * State)) -> Prop :=
+  str_eps : forall n, TraceRed_Stutter nil [(n, s0)]
+| str_stutter : forall n n' ς π, n' < n -> TraceRed_Stutter ((n, ς) :: π) ((n', ς) :: (n, ς) :: π)
+| str_take_step : forall n n' ς π ς',
+                   TraceRed_Stutter π ((n,ς) :: π) -> step ς ς' ->
+                   TraceRed_Stutter ((n,ς) :: π) ((n',ς') :: (n,ς) :: π).
+
+(* if not stuck, then all steps are the same *)
+Definition deterministic_modulo (P : State -> Prop) : Prop :=
+  forall s s', P s -> step s s' -> OnlyStep s s'.
+
+End PropTrace.
+
+Definition lift_prop_to_trace {State} (P : State -> Prop) : list State -> Prop :=
+  fun π => Forall P π.
+
+Lemma deterministic_upto : forall (State : Type) (P : State -> list State -> Prop)
+                                  (Pprop : forall s0 s s' π, P s0 (s' :: s :: π) -> P s0 (s :: π))
+  (step : relation State),
+  (forall s, P s [s]) ->
+  (forall s0,
+     (forall π s s', OnlyTrace step s0 (s :: π) -> P s0 (s :: π) -> step s s' ->
+                     (P s0 (s' :: s :: π) /\ OnlyTrace step s0 (s' :: s :: π))) ->
+     forall π, Trace step s0 π -> P s0 π -> OnlyTrace step s0 π).
+Proof.
+  intros State P Pprop step Pinitial s0 Pstep π HT Pπ.
+  induction HT as [|ς π ς' HT IH Hstep].
+  constructor.
+  apply Pprop in Pπ.
+  destruct (Pstep π ς ς' (IH Pπ) Pπ Hstep); auto.
+Qed.
+
+Theorem determinism_iff_only_traces : forall State (step : relation State)
+                                      (P : State -> Prop)
+                                      (Pinv : forall s s', P s -> step s s' -> P s'),
+                                        (forall s0 π, P s0 -> Trace step s0 π -> OnlyTrace step s0 π) <->
+                                        deterministic_modulo step P.
+Proof.
+  intros; split;
+  [intros onlyπ s s' Ps sRs';
+    assert (StepT : Trace step s [s'; s]) by (repeat constructor; auto);
+    specialize (onlyπ s [s'; s] Ps StepT);
+    inversion onlyπ; subst
+  |intros Hdet s0 π P0 HT;
+    assert (invπ : Forall P π) by
+       (induction HT; [|rewrite Forall_forall in IHHT]; auto;
+        rewrite Forall_forall; intros ς_ Hin;
+        inversion Hin as [Heq|Hrest];
+        [subst; apply (Pinv ς);[apply IHHT; left|]|]; auto);
+    rewrite Forall_forall in invπ;
+    induction HT; constructor; [apply IHHT; intros ? ?; apply invπ; right
+                               |apply Hdet;[apply invπ; right;left|]]]; auto.
+Qed.
+
+Theorem deterministic_tracered_iff_det_trace : forall State (step : relation State) (s0 : State)
+                                                      (P : State -> Prop),
+                                                      (forall s0, P s0 -> deterministic_modulo (TraceRed step s0) (lift_prop_to_trace P))
+                                                      <->
+                                                      deterministic_modulo step P.
+Proof.
+  intros; split; 
+  [intros Hdet s s' Ps Hstep;
+    assert (LP : lift_prop_to_trace P [s]) by (constructor; auto);
+    assert (HT : TraceRed step s [s] [s'; s]) by (constructor; [constructor|]; auto);
+    specialize (Hdet s Ps [s] [s'; s] LP HT);
+    inversion Hdet as [? ? HT' Heq]; subst;
+    constructor; [|intros s'' Hstep']; auto;
+    assert (Hneed : TraceRed step s [s] [s''; s]) by (constructor; [constructor|]; auto);
+    specialize (Heq [s''; s] Hneed);
+    injection Heq; intros; subst; auto
+  |intros Hdet s Ps π π' Pπ HT].
+  constructor;[|intros π'' HT']; auto.
+  inversion HT; inversion HT'; subst; try solve [auto|discriminate].
+  match goal with [H : cons ?x ?y = cons ?z ?w |- _] => injection H; intros; subst end.
+  f_equal;
+  rewrite Forall_forall in Pπ;
+  match goal with [Hs : step ς ς' |- _] => specialize (Hdet _ _ (Pπ ς (or_introl (eq_refl _))) Hs); inversion Hdet as [? ? ? Heq]; subst; apply Heq; auto end.
+Qed.
+  
 Lemma trace_app : forall State (s0 s1 : State) π step
-                         (T1 : Trace s0 step (s1 :: π))
+                         (T1 : Trace step s0 (s1 :: π))
                          π'
-                         (T2 : Trace s1 step π'),
-                    Trace s0 step (π' ++ π).
+                         (T2 : Trace step s1 π'),
+                    Trace step s0 (π' ++ π).
 Proof.
   intros; induction T2;[|constructor]; assumption.
 Qed.
 
-Inductive TraceTo {State} (step : State -> State -> Type) (s0 s1 : State) : Type :=
-  intro_traceto : forall π, Trace s0 step (s1 :: π) -> TraceTo step s0 s1.
-
 Inductive PR_TraceRed {State} (s0 : State) (step : State -> State -> Type) : (list State) -> (list State) -> Type :=
   pr_tr_eps : PR_TraceRed s0 step nil [s0]
 | pr_tr_take_step : `{PR_TraceRed s0 step π (ς :: π) -> step ς ς' -> PR_TraceRed s0 step (ς :: π) (ς' :: ς :: π)}.
-
-Inductive TraceRed {State} (s0 : State) (step : State -> State -> Prop) : (list State) -> (list State) -> Prop :=
-  tr_eps : TraceRed s0 step nil [s0]
-| tr_take_step : `{TraceRed s0 step π (ς :: π) -> step ς ς' -> TraceRed s0 step (ς :: π) (ς' :: ς :: π)}.
-
-Inductive TraceRed_Stutter {State} (s0 : State) (step : State -> State -> Prop) : (list (nat * State)) -> (list (nat * State)) -> Prop :=
-  str_eps : forall n, TraceRed_Stutter s0 step nil [(n, s0)]
-| str_stutter : forall n n' ς π, n' < n -> TraceRed_Stutter s0 step ((n, ς) :: π) ((n', ς) :: (n, ς) :: π)
-| str_take_step : forall n n' ς π ς',
-                   TraceRed_Stutter s0 step π ((n,ς) :: π) -> step ς ς' ->
-                   TraceRed_Stutter s0 step ((n,ς) :: π) ((n',ς') :: (n,ς) :: π).
 
 Lemma PR_trace_to_tracered : forall State (s0 : State) (step : State -> State -> Type) (π : list State)
                                  (HT: PR_Trace s0 step π),
