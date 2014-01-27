@@ -1,5 +1,4 @@
-Require Import List ListSet.
-Require Import "basic".
+Require Import List ListSet ListSetFacts basic.
 Generalizable All Variables.
 Set Implicit Arguments.
 Inductive PR_InDom {A B} : list (A * B) -> A -> Type :=
@@ -21,6 +20,14 @@ Inductive Unmapped {A B} : list (A * B) -> A -> Prop :=
 Inductive Functional {A B} : list (A * B) -> Prop :=
   | empty_fn : Functional nil
   | extend_fn : `{Functional l -> Unmapped l a -> Functional ((a,b)::l)}.
+
+Fixpoint in_dom {A B} (Aeq_dec : dec_type A) (l : list (A * B)) (a : A) : bool :=
+  match l with
+      nil => false
+    | (a',b)::l => if (Aeq_dec a a') then true else in_dom Aeq_dec l a
+  end.
+
+Hint Constructors MapsTo Unmapped InDom : fmaplist.
 
 Lemma MapsTo_In : forall A B (l : list (A * B)) a b (H: MapsTo l a b), In (a,b) l.
 Proof.
@@ -48,6 +55,15 @@ Proof.
   [rewrite InDom_is_mapped in H; auto; destruct H as [b H']; apply MapsTo_In in H'; exists b
   |destruct H as [b H']; induction l as [|(a_,b_) l_ IH]; inversion H'; [inject_pair|];constructor]; auto.
 Qed. 
+
+Theorem in_dom_reflect : forall A B (eq_dec : dec_type A) (l : list (A * B)) a, InDom l a <-> in_dom eq_dec l a = true.
+Proof.
+  induction l as [|(a',b') l IH]; intros; split; intro H;
+  solve [inversion H
+        |simpl; destruct (eq_dec a a');
+         [|inversion H; subst; [bad_eq|rewrite <- IH]]; auto
+        |simpl in H; destruct (eq_dec a a'); [subst; constructor|constructor; rewrite IH; auto]].
+Qed.
 
 Theorem unmapped_not_mapped : forall A B
                                      (eq_dec : dec_type A)
@@ -172,3 +188,77 @@ Proof.
                 |exact eq_dec].
 Qed.
 End ExtendLookup.
+
+Section RangeRestriction.
+
+Variables (A B : Type) (Aeq_dec : dec_type A) (Beq_dec : dec_type B).
+
+Definition functional_restrict_to_set (l : list (A * B)) (s : set A) :=
+  filter (fun ab => match ab with (a,b) => if (set_In_dec Aeq_dec a s) then true else false end) l.                
+
+Fixpoint restrict_to_set (l : list (A * B)) (s : set A) : list (A * B) :=
+  match l with
+      nil => nil
+    | (a,b)::l => if (set_In_dec Aeq_dec a s) then
+                     (a,b)::(restrict_to_set l (set_remove Aeq_dec a s))
+                  else restrict_to_set l s
+  end.
+
+Definition functional_range_in_set (l : list (A * B)) (s : set A) :=
+  fold_right (fun ab acc =>
+             match ab with (a,b) => if (set_In_dec Aeq_dec a s) then
+                                       set_add Beq_dec b acc
+                                    else acc
+             end)
+             (empty_set _) l.
+
+Fixpoint collect_domain (l : list (A * B)) : set A :=
+  match l with
+      nil => (empty_set _)
+    | (a,_)::l => set_add Aeq_dec a (collect_domain l)
+  end.
+Open Scope list_scope.
+
+Lemma collect_domain_nodup : forall l, NoDup (collect_domain l).
+Proof.
+  induction l as [|(a,b) l IH]; simpl; [constructor|apply set_add_nodup; auto].
+Qed.  
+
+Fixpoint range_in_set (l : list (A * B)) (s : set A) : set B :=
+  match l with 
+      nil => (empty_set _)
+    | (a,b)::l => if (set_In_dec Aeq_dec a s) then
+                     set_add Beq_dec b (range_in_set l (set_remove Aeq_dec a s))
+                  else range_in_set l s
+  end.
+
+Lemma range_in_set_nodup : forall l s, NoDup (range_in_set l s).
+Proof.
+  induction l as [|(a,b) l IH]; intros; [constructor|].
+  simpl.
+  destruct (set_In_dec Aeq_dec a s);[apply set_add_nodup|]; apply IH.
+Qed.  
+
+Definition collect_range (l : list (A * B)) : set B :=
+  range_in_set l (collect_domain l).
+
+Theorem collect_range_nodup : forall l, NoDup (collect_range l).
+Proof.
+  intro l; apply range_in_set_nodup.
+Qed.
+
+Theorem restrict_is_restriction : forall l s a b, MapsTo (restrict_to_set l s) a b ->
+                                                  MapsTo l a b /\ set_In a s.
+Proof.
+  induction l as [|(a_,b_) l_ IH]; intros s a b Hmap.
+  inversion Hmap.
+  simpl in Hmap;
+    destruct (set_In_dec Aeq_dec a_ s) as [Hin|Hnin].
+  
+  inversion Hmap as [|? ? ? ? ? ? Hmap']; subst;
+  [|apply IH in Hmap'; destruct Hmap' as [? Hinrem];apply set_remove_in in Hinrem];auto with fmaplist.
+
+   apply IH in Hmap; destruct Hmap; split; [constructor; [intro bad; subst; contradiction|] |]; auto.
+Qed.
+
+End RangeRestriction.

@@ -1,12 +1,10 @@
-Require Import List ListSet CpdtTactics basic fmaplist.
+Require Import List ListSet CpdtTactics basic fmaplist ListSetFacts.
 
 Generalizable All Variables.
 Set Implicit Arguments.
 
 Definition in_list_list {A B} (l : list (A * (list B))) (a : A) (b : B) : Prop :=
   exists bs, (MapsTo l a bs) /\ (set_In b bs).
-
-Definition Subset {A} (s s' : set A) := forall x, In x s -> In x s'.
 
 Definition subset_list_list {A B} (l : list (A * (list B))) (a : A) (b : list B) : Prop :=
   exists bs, (MapsTo l a bs) /\ (Subset b bs).
@@ -26,12 +24,6 @@ Fixpoint list_join  (l_orig : list (A * B))
   end.
 Definition singleton {A} (eq_dec : dec_type A) (x : A) : list A := set_add eq_dec x (empty_set _).
 End ListJoin.
-
-Lemma subset_refl : forall A (s : set A), Subset s s.
-Proof. intros A s x Hin; auto. Qed.
-
-Lemma subset_trans : forall A (s s' s'' : set A) (Hsub0 : Subset s s') (Hsub1 : Subset s' s''), Subset s s''.
-Proof. intros; intros x Hin; apply Hsub0,Hsub1 in Hin; assumption. Qed.
 
 Inductive EntryLE {A B} (s : list (A * set B)) : A -> set B -> Prop :=
   entryle_intro : forall a vs vs' (Hmap : MapsTo s a vs') (Hsub : Subset vs vs'), EntryLE s a vs.
