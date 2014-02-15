@@ -25,6 +25,11 @@ Inductive Trace : list State -> Prop :=
                   step ς ς' ->
                   Trace (ς' :: (ς :: π))}.
 
+Theorem trace_shape : forall π, Trace π -> exists π', π = π' ++ [s0].
+Proof.
+  intros ? HT; induction HT;[exists []|destruct IHHT as [π' Heq]; exists (ς' :: π'); simpl; f_equal]; auto.
+Qed.
+
 Inductive OnlyStep : State -> State -> Prop :=
   only_step_intro : forall s s', step s s' -> (forall s'', step s s'' -> s' = s'') -> OnlyStep s s'.
 

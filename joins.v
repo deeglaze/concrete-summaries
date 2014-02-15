@@ -135,6 +135,26 @@ Proof.
             |constructor;inversion H;[apply IH|]]]; auto.
 Qed.
 
+Lemma mapsto_join_neq : `{MapsTo l a b -> a <> a' -> MapsTo (list_join eq_dec combine base l' a' c l) a b}.
+Proof.
+  induction l as [|(a_,b_) l_ IH]; intros a b a' l' c Hmap Hneq;
+  inversion Hmap as [|? ? ? ? ? Hneq' Hmap']; subst; simpl.
+  split_refl2 eq_dec a' a.
+  destruct (eq_dec a' a_);
+    [subst; apply map_rst; auto
+    |apply map_rst,IH; auto].
+Qed.
+
+Lemma mapsto_join_neq' : `{MapsTo l a b -> a <> a' -> MapsTo (list_join eq_dec combine' base' l' a' c l) a b}.
+Proof.
+  induction l as [|(a_,b_) l_ IH]; intros a b a' l' c Hmap Hneq;
+  inversion Hmap as [|? ? ? ? ? Hneq' Hmap']; subst; simpl.
+  split_refl2 eq_dec a' a.
+  destruct (eq_dec a' a_);
+    [subst; apply map_rst; auto
+    |apply map_rst,IH; auto].
+Qed.
+
 Lemma join_an_unmapped : `{Unmapped l a -> MapsTo (list_join eq_dec combine base l' a c l) a (base l' c)}.
 Proof.
   induction l as [|(a,b) l_ IH]; intros; simpl;[constructor|].
@@ -176,7 +196,7 @@ Proof.
   inversion mumble as [? ? cs' map' sub']; subst;
   pose (grumble := Hmap1 a cs' map');
   inversion grumble as [? ? cs'' map'' sub'']; subst;
-  exists cs'';[|apply subset_trans with (s' := cs')]; auto.
+  exists cs'';[|transitivity cs']; auto.
 Qed.
 
 Lemma maple_top : forall (l : list (A * set C)) a b b', Subset b b' -> MappingLE ((a,b) :: l) ((a,b') :: l).
@@ -460,6 +480,26 @@ Proof.
     |right; exists X; split; [constructor|]; auto].
 Qed.
 
+Lemma InDom_join_set_split : forall (l l' : list (A * list C))
+                                    (a a' : A)
+                                    (c : C)
+                                 (Hin : InDom (list_join eq_dec joiner singler l' a c l) a'),
+                                 ((a = a') /\ (~ in_list_list l a c)) \/ (InDom l a').
+Proof.
+intros.
+rewrite (InDom_is_mapped eq_dec) in Hin; destruct Hin as [b Hmap].
+induction l as [|(a_,b_) l_ IH].
+inversion Hmap as [|? ? ? ? ? ? bad]; [subst; left;split;[reflexivity|intros [? [bad ?]]; inversion bad]
+                                      |inversion bad].
+simpl in Hmap; destruct (eq_dec a a_); subst; inversion Hmap as [|? ? ? ? ? Hneq Hrest]; subst;
+try solve
+    [right; constructor
+    |apply (mapsto_join_neq eq_dec joiner singler (c := c) (l' := l') (a' := a_)) in Hrest; auto;
+     destruct (IH Hrest) as [[? Hnin]|Hindom]; subst; right; constructor; auto].
+destruct (IH Hrest) as [[? Hnin]|Hindom]; subst;
+[left; split; [reflexivity|intros [bb [Hmap' ?]];inversion Hmap'; subst; [bad_eq|apply Hnin; exists bb; auto]]
+|right; constructor; auto].
+Qed.
 End ListJoin_morefacts.
 
 Inductive Dom_in_Dom {A B C} : list (A * B) -> list (A * C) -> Prop :=
