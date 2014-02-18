@@ -73,6 +73,20 @@ Qed.
 Section Facts.
 Variables (A : Type) (Aeq_dec : dec_type A).
 
+Lemma set_add_elim_LEM : forall (s : set A) a b, set_In a (set_add Aeq_dec b s) ->
+                                                 (a = b /\ ~ set_In a s) \/ set_In a s.
+Proof.
+  intros s a ? H; destruct (set_add_elim _ _ _ _ H);
+  [destruct (set_In_dec Aeq_dec a s)|]; auto.
+Qed.
+
+Theorem set_union_elim_LEM : forall (s s' : set A) a, set_In a (set_union Aeq_dec s s') ->
+                                                      set_In a s \/
+                                                      (set_In a s' /\ ~ set_In a s).
+Proof.
+  intros s ? a H; destruct (set_union_elim _ _ _ _ H);[|destruct (set_In_dec Aeq_dec a s)]; auto.
+Qed.  
+
 Lemma set_add_nodup : forall (s : set A) a, NoDup s -> NoDup (set_add Aeq_dec a s).
 Proof.
   induction s as [|a' s IH]; intros; simpl;

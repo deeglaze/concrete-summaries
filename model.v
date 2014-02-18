@@ -685,24 +685,150 @@ Fixpoint map_join {A B} (join1 : list (A * B) -> A -> B -> list (A * B)) (l l' :
       nil => l'
     | (a,b)::l'' => join1 (map_join join1 l'' l') a b
   end.
-Definition mjoiner {A B} (Aeq_dec : dec_type A) (Beq_dec : dec_type B) (l : list (A * set B)) a bs :=
+Section MapJoin.
+Variables (A B : Type) (Aeq_dec : dec_type A) (Beq_dec : dec_type B).
+Definition mjoiner (l : list (A * set B)) a bs :=
   list_join Aeq_dec
             (fun _ bs' bs => set_union Beq_dec bs' bs)
             (fun _ bs => bs)
             l a bs l.
-Definition Ξs_join := map_join (mjoiner context_eq_dec trunkont_eq_dec).
-Definition Ms_join := map_join (mjoiner context_eq_dec result_eq_dec).
-Lemma map_join_ordering1 : forall A B (Aeq_dec : dec_type A) (Beq_dec : dec_type B)
-                                 (l l' : list (A * set B)),
-                            MappingLE l (map_join (mjoiner Aeq_dec Beq_dec) l l').
+Lemma mjoiner_forget_orig : forall l a bs l' l'',
+                              list_join Aeq_dec
+                                        (fun _ bs' bs => set_union Beq_dec bs' bs)
+                                        (fun _ bs => bs)
+                                        l' a bs l
+                                        =
+                              list_join Aeq_dec
+                                        (fun _ bs' bs => set_union Beq_dec bs' bs)
+                                        (fun _ bs => bs)
+                                        l'' a bs l.
+Proof.
+  induction l as [|(a,b) l IH]; intros a' bs l' l''; simpl; auto.
+  destruct (Aeq_dec a' a); [|f_equal];auto.
+Qed.
+
+Lemma in_mjoiner_split : forall (l l' : list (A * set B))
+                                (a a' : A)
+                                (c : set B)
+                                (b : B)
+                                (Hin : in_list_list (list_join Aeq_dec
+                                                               (fun _ bs' bs => set_union Beq_dec bs' bs)
+                                                               (fun _ bs => bs)
+                                                               l' a c l)
+                                                    a' b),
+                           ((a = a') /\ (set_In b c) /\ (~ in_list_list l a b)) \/
+                           (in_list_list l a' b).
+Proof.
+  induction l as [|(a_,bs) l IH]; simpl; intros l' a a' c b [bs' [Hmap Hin]];
+  [inversion Hmap as [|? ? ? ? ? ? bad];
+    [subst; left; repeat split; auto; intros [? [bad ?]]; inversion bad
+    |inversion bad]
+  |destruct (Aeq_dec a a_);
+    [inverts Hmap;
+      [subst a_; destruct (set_union_elim_LEM _ Beq_dec _ _ _ Hin) as [inbs|[inc ninb]];
+       [right; exists bs; split; [constructor|]; auto
+       |left; repeat split; auto; intros [? [bad ?]];inverts bad; [contradiction|bad_eq]]
+      |right; exists bs'; repeat constructor; auto]
+    |inversion Hmap as [|? ? ? ? ? ? Hmap']; subst;
+     [right; exists bs'; repeat constructor; auto
+     |destruct (IH l' a a' c b) as [[? [? neg]]|[w [map Hin']]];
+       [exists bs'; split; auto
+              |subst; left; repeat constructor; auto;
+               intros [w [bad ?]]; inverts bad; [bad_eq|apply neg; exists w; auto]
+              |right; exists w; split; [constructor|]; auto]]]].
+Qed.
+
+Lemma mjoiner_maps : forall l a bs, exists bs', MapsTo (mjoiner l a bs) a bs'.
+Proof.
+  induction l as [|(a,bs) l IH]; intros a' bs'.
+  exists bs'; constructor.
+  destruct (IH a' bs') as [w Hmap].
+  destruct (Aeq_dec a a').
+  subst; exists (set_union Beq_dec bs bs'); unfold mjoiner,list_join; split_refl Aeq_dec a'; constructor.
+  exists w; unfold mjoiner,list_join; split_refl2 Aeq_dec a' a; constructor; auto;
+  rewrite mjoiner_forget_orig with (l'' := l); auto.
+Qed.
+
+Theorem in_mjoiner_still_in : forall l a b bs, set_In b bs -> in_list_list (mjoiner l a bs) a b.
+Proof.
+  induction l as [|(a,bs) l IH]; simpl; intros a' b bs' Hin.
+  exists bs'; split; [constructor|]; auto.
+  unfold mjoiner,list_join; destruct (Aeq_dec a' a);
+  [subst; exists (set_union Beq_dec bs bs'); split; [constructor|apply set_union_intro2]
+  |destruct (IH a' _ _ Hin) as [bs_ [Hmap Hin']];
+    rewrite mjoiner_forget_orig with (l'' := l); exists bs_; split; [constructor|]]; auto.
+Qed.
+
+Theorem mjoiner_neq_eq : forall l a bs a' bs', MapsTo l a bs -> a <> a' ->
+                                          MapsTo (mjoiner l a' bs') a bs.
+Proof.
+  induction l as [|(a,bs) l IH]; simpl; intros a' bs' a'' bs'' Hmap Hneq;
+  inversion Hmap as [|? ? ? ? ? ? Hmap']; subst.
+  unfold mjoiner,list_join; destruct (Aeq_dec a'' a');
+  [subst; bad_eq|rewrite mjoiner_forget_orig with (l'' := l);constructor; apply IH].
+
+  unfold mjoiner,list_join; destruct (Aeq_dec a'' a);
+  [subst; constructor
+  |rewrite mjoiner_forget_orig with (l'' := l); constructor; [|apply IH]]; auto.
+Qed.
+
+Theorem in_map_join_intro1 : forall (l l' : list (A * set B)) a b,
+                               in_list_list l a b ->
+                               in_list_list (map_join mjoiner l l') a b.
+Proof.
+  induction l as [|(a,bs) l IH]; intros l' a' b [w [Hmap Hin]];
+  inversion Hmap as [|? ? ? ? ? ? Hmap']; subst.
+  destruct (in_mjoiner_still_in (map_join mjoiner l l') a' b w Hin) as [w' [Hmap' Hin']];
+  exists w'; split; auto.
+
+  simpl.
+  destruct (IH l' a' b) as [w' [Hmap'' Hin'']];
+    [exists w; split; auto
+    |exists w'; split; [apply mjoiner_neq_eq|]; auto].
+Qed.
+
+Lemma map_join_nil : forall (l : list (A * set B)) a b, in_list_list (map_join mjoiner l []) a b <->
+                                                        in_list_list l a b.
+Proof.
+  induction l as [|(a,bs) l IH]; intros a' b'; split; intros H; auto.
+  simpl in H.
+  destruct (in_mjoiner_split _ _ _ _ H) as [[? [innew ninold]]|inold].
+  subst; exists bs; split; [constructor|]; auto.
+  rewrite IH in inold.
+Abort.
+
+Lemma in_map_join_commute : forall (l l' : list (A * set B)) a b,
+                              in_list_list (map_join mjoiner l l') a b <->
+                              in_list_list (map_join mjoiner l' l) a b.
+Proof.
+  induction l; intros; split; intro H.
+  unfold map_join.
+Abort.
+
+Theorem in_map_join_elim : forall (l l' : list (A * set B)) a b,
+                             in_list_list (map_join mjoiner l l') a b ->
+                             (in_list_list l a b /\ ~ in_list_list l' a b) \/ in_list_list l' a b.
+Proof.
+  induction l as [|(a,bs) l IH]; intros l' a' b injoin.
+  auto.
+  simpl in injoin;
+  destruct (in_mjoiner_split _ _ _ _ injoin) as [[? [hin hnin]]|inold].
+  subst. left; split; [exists bs; split; [constructor|];auto|].
+  intro bad; apply in_map_join_intro1 with (l' := l) in bad.
+Abort.
+
+Lemma map_join_ordering1 : forall (l l' : list (A * set B)),
+                            MappingLE l (map_join mjoiner l l').
 Proof.
 Admitted.
 
-Lemma map_join_ordering2 : forall A B (Aeq_dec : dec_type A) (Beq_dec : dec_type B)
-                                 (l l' : list (A * set B)),
-                            MappingLE l (map_join (mjoiner Aeq_dec Beq_dec) l' l).
+Lemma map_join_ordering2 : forall (l l' : list (A * set B)),
+                            MappingLE l (map_join mjoiner l' l).
 Proof.
 Admitted.
+End MapJoin.
+Definition Ξs_join := map_join (mjoiner context_eq_dec trunkont_eq_dec).
+Definition Ms_join := map_join (mjoiner context_eq_dec result_eq_dec).
 
 Definition in_ctxs (Ξ : KTable) (ctx : Context) (κ : TrunKont) : Prop :=
   in_list_list Ξ ctx κ.
@@ -2072,6 +2198,12 @@ Inductive WInv (e_initial : Expr) : WCESKMΞ -> Memo -> KTable -> Prop :=
            ->
           WInv e_initial (wshell p tκ t) M Ξ.
 
+Inductive WideInv (e_initial : Expr) : System -> Prop :=
+  wideinv : forall Seen F E M Ξ
+                (SeenInv : forall s, set_In s Seen -> WInv e_initial s M Ξ /\ StateOrd s M Ξ)
+                (FrontierInv : forall s, set_In s F -> WInv e_initial s M Ξ /\ StateOrd s M Ξ),
+           WideInv e_initial (system Seen F E M Ξ).
+
 Inductive Inv (e_initial : Expr) : CESKMΞ -> Prop :=
   inv : forall s M Ξ, WInv e_initial s M Ξ -> Inv e_initial (widemk s M Ξ).
 
@@ -2090,12 +2222,6 @@ Proof.
   intros ? ? [? [bad ?]]; inversion bad.
   simpl; exact I.
 Qed.
-
-Inductive WideInv (e_initial : Expr) : System -> Prop :=
-  wideinv : forall Seen F E M Ξ
-                (SeenInv : forall s, set_In s Seen -> WInv e_initial s M Ξ * StateOrd s M Ξ)
-                (FrontierInv : forall s, set_In s F -> WInv e_initial s M Ξ * StateOrd s M Ξ),
-           WideInv e_initial (system Seen F E M Ξ).
 
 Lemma inv_invariant : forall e0 s M Ξ s' M' Ξ' (Hinv : WInv e0 s M Ξ) (Hord : StateOrd s M Ξ)
                              (Hstep : red_ceskmk (widemk s M Ξ) (widemk s' M' Ξ')),
@@ -2540,28 +2666,53 @@ case_eq (f a); [intro Hfatrue|intro Hfafalse];
 [rewrite Hfatrue in H; inversion H as [? ? Heq|]; [inversion Heq|destruct IHl; auto]; subst; split; auto|rewrite Hfafalse in H; destruct IHl; auto].
 Defined.
 
+Lemma ktable_join_invariant : forall e0 Ξ Ξ'
+                                     (Inv0 :
+                                        (forall e ρ σ t tκ, in_ctxs Ξ (context e ρ σ t) tκ ->
+                                                            KontUpto Ξ e0 (ev e ρ σ) tκ t))
+                                     (Inv1 :
+                                        (forall e ρ σ t tκ, in_ctxs Ξ' (context e ρ σ t) tκ ->
+                                                            KontUpto Ξ' e0 (ev e ρ σ) tκ t)),
+                                forall e ρ σ t tκ,
+                                  in_ctxs (Ξs_join Ξ Ξ') (context e ρ σ t) tκ ->
+                                  KontUpto (Ξs_join Ξ Ξ') e0 (ev e ρ σ) tκ t.
+Proof.
+  intros.
+
 Lemma smush_invariant : forall e0 Seen ss E M Ξ nexts s0
-                               (SeenInv : ForallT (fun s => WInv e0 s M Ξ) Seen)
+                               (SeenInv : Forall (fun s => WInv e0 s M Ξ) Seen)
                                (MΞinv : TableContains M Ξ ss)
-                               (ssInv : ForallT (Inv e0) ss)
+                               (ssInv : Forall (Inv e0) ss)
                                (s0Inv : WInv e0 s0 M Ξ)
-                               (nextsInv : ForallT (fun s => WInv e0 s M Ξ) nexts),
+                               (nextsInv : Forall (fun s => WInv e0 s M Ξ) nexts),
                           match smusher s0 Seen ss nexts E M Ξ with
-                              wide_step ss E' M' Ξ' => ForallT (fun s => WInv e0 s M' Ξ') ss
+                              wide_step ss E' M' Ξ' => Forall (fun s => WInv e0 s M' Ξ') ss
                           end.
 Proof.
   induction ss as [|[s' M' Ξ'] ss' IH]; intros.
   (* base *)
-  simpl; apply ForallT_forall2; intros s H; apply filter_InT1 in H; destruct H as [Hin feq].
-  apply ForallT_forall1 with (x := s) in nextsInv; auto.
+  simpl; rewrite Forall_forall; intros ? H; rewrite filter_In in H;
+  rewrite Forall_forall in nextsInv; intuition auto.
   (* induction step *)
   simpl.
-apply IH.
-Focus 2.
-unfold TableContains; rewrite Forall_forall;
-unfold TableContains in MΞinv; rewrite Forall_forall in MΞinv;
-intros mum ble; assert (blahneed : In mum (widemk s' M' Ξ' :: ss')) by (right; exact ble); pose (blah := (MΞinv mum blahneed));
-destruct mum; intuition ((apply maple_trans with (l' := M) || apply maple_trans with (l' := Ξ)); solve [apply map_join_ordering2; auto | auto]).
+apply IH; repeat match goal with [H : context[Forall ?p ?l] |- _] => rewrite Forall_forall in H end;
+try match goal with [|- context[Forall ?p ?l]] => rewrite Forall_forall; intros x Hin end;
+[
+|
+hnf; rewrite Forall_forall;
+hnf in MΞinv; rewrite Forall_forall in MΞinv;
+intros mum ble;
+assert (blahneed : In mum (widemk s' M' Ξ' :: ss')) by (right; exact ble);
+pose (blah := (MΞinv mum blahneed));
+destruct mum; intuition ((apply maple_trans with (l' := M)
+                       || apply maple_trans with (l' := Ξ));
+                          solve [apply map_join_ordering2; auto | auto])
+|apply ssInv; right; auto
+|
+|].
+(* TODO 02/17: figure out a way to combine Winv with Ms_join/Ξs_join *)
+
+
 Abort.
 
 Lemma wideinv_invariant : forall e0 Seen F E M Ξ Seen' F' E' M' Ξ'
