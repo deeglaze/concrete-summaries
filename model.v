@@ -1580,13 +1580,6 @@ Qed.
 Definition ctx_in_dom (Ξ : KTable) (tκ : TrunKont) :=
   forall ctx : Context, `{ctx_of tκ ctx -> exists tκ, in_ctxs Ξ ctx tκ}.
 
-(* Proof relevant or not? *)
-Inductive Balanced_Trace : forall (κ : Kont) (p : CES_point) (t : Time) (p' : CES_point) (t' : Time), Prop :=
-  btailt : `{Trace red_cesk
-                  (shell p κ t)
-                  ((shell p' κ t') :: π)
-            -> (hastail κ π) -> Balanced_Trace κ p t p' t'}.
-
 Inductive Tailed_Trace : forall (p : CES_point) (κ : Kont) (t : Time) (p' : CES_point) (κ' : Kont) (t' : Time), Prop :=
   tailt : `{Trace red_cesk
                   (shell p κ t)
@@ -1727,6 +1720,7 @@ Proof.
     |(* do ap : ε *)
      ε s0'eq p0' κ0' t0' pp κt_ ts seq Ht_ H_ πeq (shell p κ_ t) (ap x e ρ v σ) (ev e ρ' σ') π' σ].
 Qed.
+
 End StackIrrelevance.
 
 (* should only be used when we know that κ results from unrolling rt. *)
@@ -1863,7 +1857,32 @@ Proof.
   intros ? ? ? ? ? HT; induction HT as [|s π IH]; constructor; auto.
   apply (trunkont_append_tail_shrink H); auto.
 Qed.
-  
+
+Ltac pathex wit := exists wit;
+                     [constructor; [assumption|constructor]
+                     |constructor; assumption
+                     |assumption].
+
+(* XXX: Will this need tweaking when tick can consider a portion of the stack? *)
+Lemma tailed_trace_append_replace : forall tκ ctx, ctx_of tκ ctx ->
+                                                   forall p κ t p' t',
+                                                     Tailed_Trace p κ t p' (trunkont_append_kont tκ κ) t' ->
+                                                     forall κ',
+                                                     Tailed_Trace p κ' t p' (trunkont_append_kont tκ κ') t'.
+Proof.
+  intros ? ? Hctx ? ? ? ? ? HT κ'.
+  inversion HT as [? ? ? ? ? ? π HT' πtail κtail]; subst.
+  pose (rew := stack_irrelevance κ' HT' (@same_tail _) (Cons_tail _ _ πtail κtail)).
+  inversion rew as [? ? ? π' ? ? Hreps Hrep HrT]; subst.
+  destruct π' as [|s'' π']; [discriminate|injection Hrep; intros H_ H__; subst].
+  rewrite (append_replace Hctx) in H__.
+  simpl in Hreps; rewrite replacetail_kont_same in Hreps; injects Hreps; injects H__.
+  exists π';
+    [
+    |apply replacetail_complete in H_
+    |eapply append_tail]; eauto.
+Qed.
+
 Inductive KontUpto Ξ e_initial p tκ t : Prop :=
   mtupto : no_ctx tκ -> Tailed_Trace (ev e_initial nil nil) nil time0
                                        p (trunkont_append_kont tκ nil) t ->
@@ -1885,7 +1904,7 @@ Inductive KontUpto Ξ e_initial p tκ t : Prop :=
 (* Proof relevant or not? *)
 Inductive MemoTrace e ρ σ t v σ'' t' : Prop :=
   memotrace_intro : forall κ_irrelevant,
-                      Balanced_Trace κ_irrelevant (ev e ρ σ) t (co v σ'') t' ->
+                      Tailed_Trace (ev e ρ σ) κ_irrelevant t (co v σ'') κ_irrelevant t' ->
                       MemoTrace e ρ σ t v σ'' t'.
 
 (*
@@ -2078,10 +2097,6 @@ Inductive WideInv (e_initial : Expr) : System -> Prop :=
                 (FrontierInv : forall s, set_In s F -> WInv e_initial s M Ξ * StateOrd s M Ξ),
            WideInv e_initial (system Seen F E M Ξ).
 
-Ltac pathex wit := exists wit;
-                     [constructor; [assumption|constructor]
-                     |constructor; assumption
-                     |assumption].
 Lemma inv_invariant : forall e0 s M Ξ s' M' Ξ' (Hinv : WInv e0 s M Ξ) (Hord : StateOrd s M Ξ)
                              (Hstep : red_ceskmk (widemk s M Ξ) (widemk s' M' Ξ')),
                         WInv e0 s' M' Ξ'.
@@ -2167,11 +2182,12 @@ destruct (@in_list_join_set_split _ _ context_eq_dec result_eq_dec M M ctx (cont
    destruct (Htκctx _ (@rt_ctx (context se sρ sσ st))); injects ctxform;
    inversion locpath as [Hnoctx HT|? ? ? ? Hctxof Hunrolltrace κ Hunroll HT];[inversion Hnoctx|inverts Hctxof];
    inversion HT as [? ? ? ? ? ? π HT' πtail κtail]; subst; exists κ;
-   eapply (@btailt _ _ _ _ _ π HT' πtail)
+   eapply (@tailt _ _ _ _ _ _ π HT' πtail (@same_tail _))
   |cut (InDom Ξ' (context se sρ sσ st));
      [intro Hindom; destruct (Hctxs _ Hindom) as [? []]; injects ctxform; eapply Hmemo; eauto
      |apply (Dom_InDom context_eq_dec Hdomdom); destruct S1 as [ress [Hmap ?]];
       rewrite (InDom_is_mapped context_eq_dec); exists ress; auto]]].
+
 
 intros [se sρ sσ st] Hindom'; split; (* COPY-PASTA YURRRZZ *)
 [destruct (Hctxs _ Hindom'); auto
@@ -2185,7 +2201,7 @@ destruct (@in_list_join_set_split _ _ context_eq_dec result_eq_dec M M ctx (cont
    destruct (Htκctx _ (@rt_ctx (context se sρ sσ st))); injects ctxform;
    inversion locpath as [Hnoctx HT|? ? ? ? Hctxof Hunrolltrace κ Hunroll HT];[inversion Hnoctx|inverts Hctxof];
    inversion HT as [? ? ? ? ? ? π HT' πtail κtail]; subst; exists κ;
-   eapply (@btailt _ _ _ _ _ π HT' πtail)
+   eapply (@tailt _ _ _ _ _ _ π HT' πtail (@same_tail _))
   |cut (InDom Ξ' (context se sρ sσ st));
      [intro Hindom; destruct (Hctxs _ Hindom) as [? []]; injects ctxform; eapply Hmemo; eauto
      |apply (Dom_InDom context_eq_dec Hdomdom); destruct S1 as [ress [Hmap ?]];
@@ -2207,8 +2223,10 @@ apply (@context_inv_intro _ _ _ _ e ρ' σ' t' (eq_refl _));
   destruct (@in_list_join_set_split _ _ context_eq_dec trunkont_eq_dec
          Ξ Ξ (context e ρ' σ' t') (context e ρ' σ' t') tκ tκ' HinΞ) as [[? [? Hnotincur]]|tκ'inctx];
 [subst|];
-(case_eq (get_ctx tκ'); [intros [e_ ρ_ σ_ t_] Heqctx';rewrite <- reflect_ctx in Heqctx'|intro Hnone]) |]|].
+(case_eq (get_ctx tκ'); [intros [e_ ρ_ σ_ t_] Heqctx';rewrite <- reflect_ctx in Heqctx'|intro Hnone]) |]|];
 
+try solve
+[
 inversion locpath as [Hnoctx mttrace|ce' cρ' cσ' ct' Hctxof Hunrolltrace κ Hunroll Htrace];
 [eapply (@rtupto_intro _ _ _ _ _ _ _ _ _ (@rt_ctx ctx));
   [intros κ Hunroll; exists []; constructor
@@ -2218,13 +2236,13 @@ inversion locpath as [Hnoctx mttrace|ce' cρ' cσ' ct' Hctxof Hunrolltrace κ Hu
   [intros κ_ Hunroll_; exists []; constructor
   |apply (@append_unroll_rt _ tκ κ); [apply InΞ_join|rewrite reflect_ctx in Hctxof; rewrite Hctxof;
                                      apply unroll_with_extension; auto]
-  |exists []; constructor]].
-
+  |exists []; constructor]]
+|
 inversion locpath as [Hnoctx mttrace|ce' cρ' cσ' ct' Hctxof Hunrolltrace κ Hunroll Htrace];
   [rewrite reflect_ctx in Heqctx'; rewrite reflect_no_ctx,Heqctx' in Hnoctx; discriminate|];
 cut (context e_ ρ_ σ_ t_ = context ce' cρ' cσ' ct');
 [intro toinj; injects toinj
-|rewrite reflect_ctx in Heqctx',Hctxof; rewrite Hctxof in Heqctx'; injects Heqctx'; reflexivity].
+|rewrite reflect_ctx in Heqctx',Hctxof; rewrite Hctxof in Heqctx'; injects Heqctx'; reflexivity];
 
 assert (subgoal : forall κ0 : Kont,
                     StackUnroll (Ξ_join Ξ (context e ρ' σ' t') tκ') κ0
@@ -2242,86 +2260,21 @@ assert (subgoal : forall κ0 : Kont,
      exists ((shell p (trunkont_append_kont tκ' κ_) t) :: π');
             [constructor;[auto|constructor]
             |constructor; [apply replacetail_complete in pr; auto|apply (append_tail _ Hctxof)]
-            |apply (append_tail _ Hctxof)]).
+            |apply (append_tail _ Hctxof)]);
 eapply (@rtupto_intro _ _ _ _ _ _ _ _ _ Heqctx'); 
   [auto
   |apply unroll_with_extension; exact Hunroll
   |inversion Htrace as [? ? ? ? ? ? π HT πtail κtail]; subst;
-   pathex (shell p (trunkont_append_kont tκ' κ) t :: π)].
-
+   pathex (shell p (trunkont_append_kont tκ' κ) t :: π)]
+|
 apply mtupto;
-[rewrite <- reflect_no_ctx in Hnone; auto
+[rewrite reflect_no_ctx; auto
 |inversion locpath as [Hnoctx mttrace|ce' cρ' cσ' ct' Hctxof Hunrolltrace κ Hunroll Htrace];
   [inversion mttrace as [? ? ? ? ? ? π HT πtail κtail]; subst;
    pathex (shell p (trunkont_append_kont tκ' []) t :: π)
-  |rewrite reflect_ctx,Hnone in Hctxof;discriminate]].
+  |rewrite reflect_ctx,Hnone in Hctxof;discriminate]]
 
-cut (InDom Ξ (context e ρ' σ' t'));
-[intro Hindom; destruct (Hctxs _ Hindom) as [? []]|].
-eapply (@rtupto_intro _ _ _ _ _ _ _ _ _ Heqctx').
-intros κ Hunroll.
-(* HERE *)
-try solve
-[(* fresh addition
-    in the case that the arbitrary tκ in Ξ[ctx] has an rt tail... *)
-  specialize (Htκctx ctx' Heqctx');inversion Htκctx as [? ? ? ? ? Hkontupto Hmemo]; subst;
-  destruct (Hctxdom _ Heqctx') as [sometκ someinctxs];
-  specialize (Hkontupto _ someinctxs);
-  inversion Hkontupto as [somet' [hmt hmtπ|κ ce cρ cσ ct Hctxof Hunroll Htrace]];
-  [exists t';
-     inversion locpath as [Hnoctx mttrace|κ ce' cρ' cσ' ct' Hctxof Hunroll Htrace];
-     [rewrite reflect_ctx in Heqctx'; rewrite reflect_no_ctx,Heqctx' in Hnoctx; discriminate
-     |cut ((context ce' cρ' cσ' ct') = (context e1 ρ0 σ0 t0));
-       [intro toinj; injects toinj;
-        eapply (@rtupto_intro _ _ _ _ _ κ _ _ _ _ Heqctx');
-        [apply unroll_with_extension; auto
-        |inversion Htrace as [? ? ? ? κ' ? π HT πtail κtail]; subst;
-         pathex ((shell p (trunkont_append_kont tκ' κ) t) :: π)]
-       |rewrite reflect_ctx in Heqctx',Hctxof; rewrite Heqctx' in Hctxof; injects Hctxof; reflexivity]]
-  |inversion locpath as [Hnoctx mttrace|lκ ce' cρ' cσ' ct' Hlctxof Hlunroll Hltrace];
-    [rewrite reflect_ctx in Heqctx'; rewrite reflect_no_ctx,Heqctx' in Hnoctx; discriminate
-    |exists t';
-      cut ((context ce' cρ' cσ' ct') = (context e1 ρ0 σ0 t0));
-      [intro toinj; injects toinj;
-       eapply (@rtupto_intro _ _ _ _ _ lκ _ _ _ _ Heqctx');
-       [apply unroll_with_extension; auto
-       |inversion Hltrace as [? ? ? ? κ' ? π HT πtail κtail]; subst;
-        exists ((shell p (trunkont_append_kont tκ' lκ) t) :: π);
-        [constructor;[assumption|constructor]
-        |constructor; assumption
-    |assumption]]
-      |rewrite reflect_ctx in Heqctx',Hlctxof; rewrite Heqctx' in Hlctxof; injects Hlctxof; reflexivity]]]
 |
-cut (InDom Ξ (context e ρ' σ' t'));
-  [intro Hindom; specialize (Hctxs _ Hindom);
-   inversion Hctxs as [[wtκ wthere] [? ? ? ? ctxform Hctx Hmemo]];
-   injection ctxform; intros teq σeq ρeq eeq;
-   rewrite <-teq,<-σeq,<-ρeq,<-eeq in Hctx;
-   destruct (Hctx _ tκ'inctx) as [oldtime kupto];
-   exists oldtime;
-   inversion kupto as [|? ? ? ? ? ctxof Hunroll HT];
-   [constructor
-   |apply (@rtupto_intro _ _ _ _  _ κ _ _ _ _ ctxof);
-     [apply unroll_with_extension|]]; auto
-  |rewrite (InDom_In context_eq_dec); destruct tκ'inctx as [tκs [Hmap Hin]]; exists tκs; apply MapsTo_In in Hmap; assumption]
-|(* in the case that the arbitrary tκ in Ξ[ctx] is an initial kont. *)
-inversion locpath as [Hnoctx mttrace|lκ ce' cρ' cσ' ct' Hlctxof Hlunroll Hltrace];
-exists t';
-[constructor;
-  [rewrite <- reflect_no_ctx in Hnone; auto
-  |inversion mttrace as [? ? ? ? κ' ? π HT πtail κtail]; subst;
-   exists (shell p (trunkont_append_kont tκ' []) t :: π);
-   [constructor;[assumption|constructor]
-   |constructor; assumption
-   |assumption]]
-|apply (@rtupto_intro _ _ _ _ _ lκ _ _ _ _ Hlctxof);
-  [apply unroll_with_extension;auto
-  |inversion Hltrace as [? ? ? ? κ' ? π HT πtail κtail]; subst;
-   exists (shell p (trunkont_append_kont tκ' lκ) t :: π);
-  [constructor;[assumption|constructor]
-  |constructor; assumption
-  |assumption]]]
-|(* fulfill Hmemo of Context_inv *)
 intros v' σ'' t'' Hinmemos;
   cut (InDom Ξ (context e ρ' σ' t'));
   [intro inΞdom; specialize (Hctxs _ inΞdom);
@@ -2330,163 +2283,217 @@ intros v' σ'' t'' Hinmemos;
    subst p a ρ' t' σ'; apply Hmemo; auto
   |apply (Dom_InDom context_eq_dec Hdomdom);
     destruct Hinmemos as [ress [Hmap Hin]];
-    rewrite (InDom_is_mapped context_eq_dec); exists ress; auto]].
-|(* ctxs in table. *)].
+    rewrite (InDom_is_mapped context_eq_dec); exists ress; auto]
 
-inversion locpath as [Hnoctx mttrace|ce cρ cσ ct Hctxof Hunrolltrace];
-apply (@rtupto_intro _ _ _ _ _ e ρ' σ' t');
-solve [constructor|intros κ Hunroll; simpl; exists []; constructor].
-
-inversion locpath as [Hnoctx mttrace|ce cρ cσ ct Hctxof Hunrolltrace];
-[rewrite reflect_no_ctx in Hnoctx; rewrite reflect_ctx,Hnoctx in Heqctx'; discriminate
-|].
-exists t'; apply (@rtupto_intro _ _ _ _ _ _ _ _ _ Hctxof).
-intros κ Hunroll; simpl. exists []; constructor.
-
-apply
-    [constructor
-    |apply append_unroll_rt;
-      [apply (InΞ_join Ξ ctx tκ)
-      |rewrite reflect_no_ctx in Hnoctx; rewrite Hnoctx; reflexivity]
-    |exists []; constructor]
-  |apply (@rtupto_intro _ _ _ _ _ (trunkont_append_kont tκ κ) e ρ' σ' t');
-    [constructor
-    |apply append_unroll_rt;
-      [apply (InΞ_join Ξ ctx tκ)
-      |rewrite reflect_ctx in Hctxof; rewrite Hctxof;apply unroll_with_extension; auto]
-    |exists []; constructor]].
-
-intros ctx' Hinctx;
-destruct (@InDom_join_set_split _ _ context_eq_dec trunkont_eq_dec Ξ Ξ ctx ctx' tκ Hinctx) as [[? Hnonin]|Hindom];
-split;
-(* take care of witness cases *)
-try solve
-[subst ctx'; subst; exists tκ; apply (InΞ_join Ξ (context e ρ' σ' t') tκ)
-|destruct (Hctxs _ Hindom) as [[wtκ tκthere] ?]; exists wtκ; textend_map].
-subst ctx'; subst.
-
-(* TODO: ensure each Ξ entry has at least one element *)
-case_eq (get_ctx tκ); [intros tctx Heqtctx|intros Hnone].
-rewrite <- reflect_ctx in Heqtctx;
-destruct (Htκctx _ Heqtctx) as [ce cρ cσ ct cctxform Hcctx Hcmemo].
-subst ctx; apply (@context_inv_intro _ _ _ _ _ _ _ _ (eq_refl (context e ρ' σ' t'))).
-intros tκ' HinΞ;
-inversion locpath as [Hnoctx mttrace|lκ ce' cρ' cσ' ct' Hlctxof Hlunroll Hltrace];
-  [rewrite reflect_ctx in Heqtctx; rewrite reflect_no_ctx in Hnoctx; rewrite Heqtctx in Hnoctx; discriminate|];
-destruct (@in_list_join_set_split _ _ context_eq_dec trunkont_eq_dec
-                                  Ξ Ξ (context e ρ' σ' t') (context e ρ' σ' t') tκ tκ' HinΞ) as
-    [[? [? Hnotincur]]|tκ'inctx];
-[subst tκ'; exists t';
-  apply (@rtupto_intro _ _ _ _ _ lκ _ _ _ _ Hlctxof);
-    [apply unroll_with_extension; auto
-    |inversion Hltrace as [? ? ? ? ? ? π HT πtail κtail]; subst;
-     pathex (shell p (trunkont_append_kont tκ lκ) t :: π)]
-|].
-
+|
 cut (InDom Ξ (context e ρ' σ' t'));
-[intro Hindom; specialize (Hctxs _ Hindom); inversion Hctxs as [[wtκ Hwin] [? ? ? ? ctxform' Hctx' Hmemo']];
- subst tctx; injection ctxform'; intros ? ? ? ?; subst e1 ρ0 σ0 t0;
- specialize (Hctx' _ tκ'inctx); inversion Hctx' as [t'' [Hnoctx HT|κ e_ ρ_ σ_ t_ Hctxof Hunroll HT']];
- [exists t''; apply mtupto; auto
- |exists t''; apply (@rtupto_intro _ _ _ _ _ κ _ _ _ _ Hctxof);
-  [apply unroll_with_extension|]; auto]
-|rewrite (InDom_is_mapped context_eq_dec); destruct tκ'inctx as [tκ's [? ?]]; exists tκ's; auto].
+[intro Hindom; destruct (Hctxs _ Hindom) as [Hw [aa bb cc dd ctxform Hctx Hmemo]];
+ injection ctxform; intros ? ? ? ?; subst aa bb cc dd;
+ specialize (Hctx _ tκ'inctx);
+ inversion Hctx as [Hnoctx mttrace|? ? ? ? Hctxof Hunrolltrace κ Hunroll HT];
+   [apply mtupto; auto|rewrite reflect_ctx,Hnone in Hctxof; discriminate]
+|destruct tκ'inctx as [tκs [? ?]]; rewrite (InDom_is_mapped context_eq_dec); exists tκs; auto]
+
+|
+cut (InDom Ξ (context e ρ' σ' t'));
+[intro Hindom; destruct (Hctxs _ Hindom) as [Hw [aa bb cc dd ctxform Hctx Hmemo]];
+ injection ctxform; intros ? ? ? ?; subst aa bb cc dd;
+ specialize (Hctx _ tκ'inctx);
+ inversion Hctx as [Hnoctx mttrace|? ? ? ? Hctxof Hunrolltrace κ Hunroll HT];
+ [rewrite reflect_no_ctx in Hnoctx; rewrite reflect_ctx,Hnoctx in Heqctx'; discriminate
+ |eapply (@rtupto_intro _ _ _ _ _ _ _ _ _ Hctxof);
+   [intros κ' Hunroll'; apply (tailed_trace_append_replace Hctxof HT κ')
+   |apply unroll_with_extension
+   |]; eauto]
+|destruct tκ'inctx as [tκs [? ?]]; rewrite (InDom_is_mapped context_eq_dec); exists tκs; auto]].
+
+intros ctx' Hindom'; split;
+(* supply witness via invariant or current tκ *)
+[destruct (@InDom_join_set_split _ _ context_eq_dec trunkont_eq_dec Ξ Ξ ctx ctx' tκ Hindom') as [[? Hnonin]|Hindom];
+  [subst ctx'; exists tκ; apply InΞ_join
+  |destruct (Hctxs _ Hindom) as [[wtκ Hwin] ?]; exists wtκ; textend_map]
+|destruct ctx' as [ce cρ cσ ct]; apply (context_inv_intro (eq_refl _))].
+
+intros tκ' Hinctx;
+destruct (@in_list_join_set_split _ _ context_eq_dec trunkont_eq_dec
+                                  Ξ Ξ ctx (context ce cρ cσ ct) tκ tκ' Hinctx) as [[Hinj [? Hnotincur]]|tκ'inctx];
+[subst; injection Hinj; intros ? ? ? ?; subst ce cρ cσ ct;
+inversion locpath as [Hnoctx mttrace|ce' cρ' cσ' ct' Hctxof Hunrolltrace κ Hunroll Htrace];
+[apply mtupto;
+  [auto
+  |inversion mttrace as [? ? ? ? ? ? π HT πtail κtail]; subst;
+   pathex (shell p (trunkont_append_kont tκ' []) t :: π)]
+|eapply (rtupto_intro _ Hctxof);
+  [intros κ' Hunroll';
+    pose (L := (tailed_trace_append_replace Hctxof Htrace κ'));
+    inversion L as [? ? ? ? ? ? π HT πtail κtail]; subst;
+    pathex (shell p (trunkont_append_kont tκ' κ') t :: π)
+  |apply unroll_with_extension; eauto
+  |inversion Htrace as [? ? ? ? ? ? π HT πtail κtail]; subst;
+   pathex (shell p (trunkont_append_kont tκ' κ) t :: π)]]
+
+|].
+destruct (Hctxs (context ce cρ cσ ct)) as [? [aa bb cc dd ctxform Hctx Hmemo]];
+[rewrite (InDom_is_mapped context_eq_dec); destruct tκ'inctx as [tκs [? ?]]; exists tκs; auto
+|injection ctxform; intros ? ? ? ?; subst aa bb cc dd].
+specialize (Hctx _ tκ'inctx);
+inversion Hctx as [Hnoctx mttrace|ce' cρ' cσ' ct' Hctxof Hunrolltrace κ Hunroll Htrace];
+[apply mtupto; auto
+|eapply (rtupto_intro _ Hctxof);
+  [intros κ' Hunroll';apply (tailed_trace_append_replace Hctxof Htrace κ')
+  |apply unroll_with_extension; eauto
+  |auto]].
 
 intros v'' σ'' t'' Hinmemos;
-cut (InDom Ξ (context e ρ' σ' t'));
-[intro Hindom; destruct (Hctxs _ Hindom) as [[] [? ? ? ? ctxform' Hctx' Hmemo']];
- injection ctxform'; intros ? ? ? ?; subst e1 ρ0 σ0 t0; apply Hmemo'
-|apply (Dom_InDom context_eq_dec Hdomdom); rewrite (InDom_is_mapped context_eq_dec);
- destruct Hinmemos as [w [? ?]]; exists w]; auto.
+cut (InDom Ξ (context ce cρ cσ ct));
+[intro Hindom
+|cut (InDom M' (context ce cρ cσ ct));
+  [intro inM; apply (Dom_InDom context_eq_dec Hdomdom inM)
+  |rewrite (InDom_is_mapped context_eq_dec); destruct Hinmemos as [ress [? ?]]; exists ress; auto]];
+destruct (Hctxs _ Hindom) as [? [aa bb cc dd ctxform Hctx Hmemo]];
+injection ctxform; intros ? ? ? ?; subst aa bb cc dd; apply Hmemo; auto.
 
-inversion locpath as [Hnoctx mttrace|lκ ce' cρ' cσ' ct' Hlctxof Hlunroll Hltrace];
-[|rewrite reflect_ctx,Hnone in Hlctxof; discriminate].
-apply (@context_inv_intro _ _ _ _ _ _ _ _ (eq_refl ctx)).
-intros tκ' HinΞ;
-destruct (@in_list_join_set_split _ _ context_eq_dec trunkont_eq_dec
-                                  Ξ Ξ (context e ρ' σ' t') (context e ρ' σ' t') tκ tκ' HinΞ) as
-    [[? [? Hnotincur]]|tκ'inctx];
-[subst tκ'; exists t';
-  apply mtupto; auto;
-  inversion mttrace as [? ? ? ? ? ? π HT πtail κtail]; subst;
-  pathex (shell p (trunkont_append_kont tκ []) t :: π)
+Focus 6. (* memoized function call *)
+subst; inversion Hinv as [? ? ? ? ? Hdomdom Hctxdom locpath Htκctx Hctxs]; subst;
+constructor;
+[apply Dom_join_right; assumption
+|intros ctx' Hctxof;destruct (Hctxdom _ Hctxof) as [tκ' Hin]; exists tκ'; textend_map
+|
+|
 |].
+cut (InDom Ξ ctx);
+  [intro Hindom|cut (InDom M' ctx);
+     [intro inM; apply (Dom_InDom context_eq_dec Hdomdom inM)
+     |rewrite (InDom_is_mapped context_eq_dec); destruct H0 as [ress [? ?]]; exists ress; auto]];
+destruct (Hctxs _ Hindom) as [? [aa bb cc dd ctxform Hctx Hmemo]]; subst ctx; injection ctxform;
+intros ? ? ? ?; subst aa bb cc dd;
+specialize (Hmemo _ _ _ H0);
+inversion Hmemo as [κ_irr Hbal];
+inversion locpath as [Hnoctx mttrace|ce' cρ' cσ' ct' Hctxof Hunrolltrace κ Hunroll Htrace].
 
-cut (InDom Ξ (context e ρ' σ' t'));
-[intro Hindom; specialize (Hctxs _ Hindom); inversion Hctxs as [[wtκ Hwin] [? ? ? ? ctxform' Hctx' Hmemo']];
- injection ctxform'; intros ? ? ? ?; subst e1 ρ0 σ0 t0;
- specialize (Hctx' _ tκ'inctx); inversion Hctx' as [t'' [Hnoctx' HT|κ e_ ρ_ σ_ t_ Hctxof Hunroll HT']];
- [exists t''; apply mtupto; auto
- |exists t''; apply (@rtupto_intro _ _ _ _ _ κ _ _ _ _ Hctxof);
-  [apply unroll_with_extension|]; auto]
-|rewrite (InDom_is_mapped context_eq_dec); destruct tκ'inctx as [tκ's [? ?]]; exists tκ's; auto].
+apply mtupto; auto;
+inversion mttrace as [? ? ? ? ? ? π HT πtail κtail]; subst;
+(* use a dummy context to make it simplify to the same continuation *)
+pose (Hmemo' := tailed_trace_append_replace (@rt_ctx (context e ρ' σ' t)) Hbal (trunkont_append_kont tκ []));
+simpl in Hmemo';
+inversion Hmemo' as [? ? ? ? ? ? π' HT' πtail' κtail']; subst;
+exists (π' ++ shell p (trunkont_append_kont tκ []) t :: π);
+[cut (Trace red_cesk (shell (ev e0 [] []) [] time0)
+            (shell (ev e ρ' σ') (trunkont_append_kont tκ []) (tick p) ::
+                   shell p (trunkont_append_kont tκ []) t :: π));
+  [intro HT_; exact (trace_app HT_ HT')
+  |constructor; [assumption|constructor]]
+|apply hastail_nil
+|apply kont_tail_nil].
+
+eapply (rtupto_intro _ Hctxof);
+[intros κ' Hunroll';
+pose (Htrace' := tailed_trace_append_replace Hctxof Htrace κ');
+inversion Htrace' as [? ? ? ? ? ? π HT πtail κtail]; subst;
+pose (Hmemo' := tailed_trace_append_replace (@rt_ctx (context e ρ' σ' t)) Hbal (trunkont_append_kont tκ κ'));
+simpl in Hmemo';
+inversion Hmemo' as [? ? ? ? ? ? π' HT' πtail' κtail']; subst;
+exists (π' ++ shell p (trunkont_append_kont tκ κ') t :: π);
+[cut (Trace red_cesk (shell (ev ce' cρ' cσ') κ' ct')
+            (shell (ev e ρ' σ') (trunkont_append_kont tκ κ') (tick p) ::
+                   shell p (trunkont_append_kont tκ κ') t :: π));
+  [intro HT_; exact (trace_app HT_ HT')
+  |constructor; [assumption|constructor]]
+|apply hastail_app;[eapply hastail_shrink|constructor; [|eapply append_tail]];eauto
+|eapply append_tail; eauto]
+|apply unroll_with_extension; eauto
+
+|
+inversion Htrace as [? ? ? ? ? ? π HT πtail κtail]; subst;
+ pose (Hmemo' := tailed_trace_append_replace (@rt_ctx (context e ρ' σ' t)) Hbal (trunkont_append_kont tκ κ));
+ simpl in Hmemo';
+ inversion Hmemo' as [? ? ? ? ? ? π' HT' πtail' κtail']; subst;
+ exists (π' ++ shell p (trunkont_append_kont tκ κ) t :: π);
+ [cut (Trace red_cesk (shell (ev ce' cρ' cσ') κ ct')
+             (shell (ev e ρ' σ') (trunkont_append_kont tκ κ) (tick p) ::
+                    shell p (trunkont_append_kont tκ κ) t :: π));
+   [intro HT_; exact (trace_app HT_ HT')
+   |constructor; [assumption|constructor]]
+ |apply hastail_app;[eapply hastail_shrink|constructor; [|eapply append_tail]];eauto
+ |eapply append_tail; eauto]].
+
+intros ctx' Hctxof'; destruct (Htκctx _ Hctxof') as [ce cρ cσ ct ctxform Hctx Hmemo];
+subst ctx'; apply (context_inv_intro (eq_refl _)).
+intros tκ' Hinctx';
+destruct (@in_list_join_set_split _ _ context_eq_dec trunkont_eq_dec
+                                  Ξ Ξ ctx (context ce cρ cσ ct) tκ tκ' Hinctx') as [[Hinj [? Hnotincur]]|tκ'inctx];
+[subst; injection Hinj; intros ? ? ? ?; subst ce cρ cσ ct
+|specialize (Hctx _ tκ'inctx);
+  inversion Hctx as [Hnoctx mttrace|ce' cρ' cσ' ct' Hctxof Hunrolltrace κ Hunroll Htrace];
+  [apply mtupto; auto
+  |eapply (rtupto_intro _ Hctxof);
+    [intros κ' ?; specialize (Hunrolltrace _ Hunroll);
+    apply (tailed_trace_append_replace Hctxof Hunrolltrace κ')
+    |apply unroll_with_extension; eauto
+    |auto]]].
+inversion locpath as [Hnoctx mttrace|ce' cρ' cσ' ct' Hctxof Hunrolltrace κ Hunroll Htrace];
+[apply mtupto;
+  [auto
+  |inversion mttrace as [? ? ? ? ? ? π HT πtail κtail]; subst;
+   pathex (shell p (trunkont_append_kont tκ' []) t :: π)]
+|eapply (rtupto_intro _ Hctxof);
+  [intros κ' Hunroll';
+    pose (Htrace' := tailed_trace_append_replace Hctxof Htrace κ');
+    inversion Htrace' as [? ? ? ? ? ? π HT πtail κtail]; subst;
+    pathex (shell p (trunkont_append_kont tκ' κ') t :: π)
+  |apply unroll_with_extension; eauto
+  |inversion Htrace as [? ? ? ? ? ? π HT πtail κtail]; subst;
+    pathex (shell p (trunkont_append_kont tκ' κ) t :: π)]].
+
+auto.
+
+intros ctx' Hindom'; split;
+(* supply witness via invariant or current tκ *)
+[destruct (@InDom_join_set_split _ _ context_eq_dec trunkont_eq_dec Ξ Ξ ctx ctx' tκ Hindom') as [[? Hnonin]|Hindom];
+  [subst ctx'; exists tκ; apply InΞ_join
+  |destruct (Hctxs _ Hindom) as [[wtκ Hwin] ?]; exists wtκ; textend_map]
+|destruct ctx' as [ce cρ cσ ct]; apply (context_inv_intro (eq_refl _))].
+
+intros tκ' Hinctx;
+destruct (@in_list_join_set_split _ _ context_eq_dec trunkont_eq_dec
+                                  Ξ Ξ ctx (context ce cρ cσ ct) tκ tκ' Hinctx) as [[Hinj [? Hnotincur]]|tκ'inctx];
+[subst; injection Hinj; intros ? ? ? ?; subst ce cρ cσ ct;
+inversion locpath as [Hnoctx mttrace|ce' cρ' cσ' ct' Hctxof Hunrolltrace κ Hunroll Htrace];
+[apply mtupto;
+  [auto
+  |inversion mttrace as [? ? ? ? ? ? π HT πtail κtail]; subst;
+   pathex (shell p (trunkont_append_kont tκ' []) t :: π)]
+|eapply (rtupto_intro _ Hctxof);
+  [intros κ' Hunroll';
+    pose (L := (tailed_trace_append_replace Hctxof Htrace κ'));
+    inversion L as [? ? ? ? ? ? π HT πtail κtail]; subst;
+    pathex (shell p (trunkont_append_kont tκ' κ') t :: π)
+  |apply unroll_with_extension; eauto
+  |inversion Htrace as [? ? ? ? ? ? π HT πtail κtail]; subst;
+   pathex (shell p (trunkont_append_kont tκ' κ) t :: π)]]
+
+|].
+destruct (Hctxs (context ce cρ cσ ct)) as [? [aa bb cc dd ctxform Hctx Hmemo]];
+[rewrite (InDom_is_mapped context_eq_dec); destruct tκ'inctx as [tκs [? ?]]; exists tκs; auto
+|injection ctxform; intros ? ? ? ?; subst aa bb cc dd].
+specialize (Hctx _ tκ'inctx);
+inversion Hctx as [Hnoctx mttrace|ce' cρ' cσ' ct' Hctxof Hunrolltrace κ Hunroll Htrace];
+[apply mtupto; auto
+|eapply (rtupto_intro _ Hctxof);
+  [intros κ' Hunroll';apply (tailed_trace_append_replace Hctxof Htrace κ')
+  |apply unroll_with_extension; eauto
+  |auto]].
 
 intros v'' σ'' t'' Hinmemos;
-cut (InDom Ξ (context e ρ' σ' t'));
-[intro Hindom; destruct (Hctxs _ Hindom) as [[] [? ? ? ? ctxform' Hctx' Hmemo']];
- injection ctxform'; intros ? ? ? ?; subst e1 ρ0 σ0 t0; apply Hmemo'
-|apply (Dom_InDom context_eq_dec Hdomdom); rewrite (InDom_is_mapped context_eq_dec);
- destruct Hinmemos as [w [? ?]]; exists w]; auto.
+cut (InDom Ξ (context ce cρ cσ ct));
+[intro Hindom
+|cut (InDom M' (context ce cρ cσ ct));
+  [intro inM; apply (Dom_InDom context_eq_dec Hdomdom inM)
+  |rewrite (InDom_is_mapped context_eq_dec); destruct Hinmemos as [ress [? ?]]; exists ress; auto]];
+destruct (Hctxs _ Hindom) as [? [aa bb cc dd ctxform Hctx Hmemo]];
+injection ctxform; intros ? ? ? ?; subst aa bb cc dd; apply Hmemo; auto.
 
-destruct (Hctxs _ Hindom) as [ignore [? ? ? ? ctxform Hctx Hmemo]];
-subst ctx';
-apply (@context_inv_intro _ _ _ _ _ _ _ _ (eq_refl (context e1 ρ0 σ0 t0))).
-intros tκ' HinΞ.
-destruct (@in_list_join_set_split _ _ context_eq_dec trunkont_eq_dec
-                                  Ξ Ξ (context e ρ' σ' t') (context e1 ρ0 σ0 t0) tκ tκ' HinΞ) as 
-        [[Hinj [? Hnotincur]]|tκ'inctx].
-injection Hinj; intros ? ? ? ?; subst tκ' e1 ρ0 σ0 t0;
-inversion locpath as [Hnoctx HT|lκ ce' cρ' cσ' ct' Hlctxof Hlunroll HT];
-inversion HT as [? ? ? ? ? ? π]; subst;
-exists t'; [apply mtupto; auto; pathex (shell p (trunkont_append_kont tκ []) t :: π)
-           |apply (@rtupto_intro _ _ _ _ _ lκ _ _ _ _ Hlctxof);
-             [apply unroll_with_extension; auto
-             |pathex (shell p (trunkont_append_kont tκ lκ) t :: π)]].
-case_eq (get_ctx tκ'); [intros ctx' Heqctx'|intro Hnone].
-destruct (Hctx _ tκ'inctx) as [t'' [Hnoctx |? ep ρp σp tp Hctxof Hunroll HT]];
-[rewrite reflect_no_ctx, Heqctx' in Hnoctx; discriminate|].
-exists t''; apply (@rtupto_intro _ _ _ _ _ κ _ _ _ _ Hctxof);
-             [apply unroll_with_extension; auto
-             |auto].
-destruct (Hctx _ tκ'inctx) as [t'' [Hnoctx HT|? ep ρp σp tp Hctxof Hunroll HT]];
-  [exists t''; apply mtupto; auto
-        |rewrite reflect_ctx, Hnone in Hctxof; discriminate].
-
-intros v'' σ'' t'' Hinmemos; apply Hmemo; auto. 
-
-(* memoized call Focus 6 memoized call *)
-Focus 7.  (* memoize return *)
-subst; constructor;
-subst; inversion Hinv as [? ? ? ? ? Hdomdom Hctxdom locpath Htκctx Hctxs]; subst.
-
-apply Dom_join_left; auto;
-destruct (Hctxdom _ (@rt_ctx ctx)) as [? [tκs [Hmap ?]]]; exact (ex_intro _ tκs Hmap).
-
-intros ctx' Hctxof; inversion Hord as [? ? ? ? ? Mord Kord' ctxord]; subst;
-destruct (Kord' _ _ H0 _ Hctxof) as [? indom]; destruct (Hctxs _ indom); auto.
-
-(* the goal here is to fetch the path fragment from tκ's context up to the call
-   and prepend that on HT *)
-inversion locpath as [Hnoctx HT|κ ? ? ? ? Hctxof Hunroll HT]; (* Hunroll is from something in ctx, not nec. tκ*)
-[inversion Hnoctx|simpl in HT; inversion Hctxof as [|ctx']; subst ctx ctx'; clear Hctxof].
-inversion Hunroll as [| | ? tκunroll κunroll Hκunroll Hunrollin]; subst.
-
-cut (InDom Ξ' ctx').
-intros Hindom; destruct (Hctxs _ Hindom) as [[wtκ Hwin] [? ? ? ? ctxform Hctx Hmemo]].
-subst ctx'.
-rewrite <- reflect_ctx in HinΞ; destruct (Hctx _ Hwin) as [t'' [bad|κ' ? ? ? ? ctxform Hunroll' HT']].
-(* any trunkont tκ with ctx in its tail must have a trace from tκ' in Ξ(cxt), <ctx,tκ'> to <ctx',tκ> where tκ is in Ξ(ctx'). *)
-(* TODO *)
-Focus 2.
-
-
-apply (@rtupto_intro _ _ _ _ _ κ _ _ _ _ 
-destruct (Htκctx _ (@rt_ctx ctx)) as [? ? ? ? ctxform Hctx Hmemo].
-rewrite <- ctxform in Hctx.
-
- (* tκ is pulled from the rt*)
-
-(* TODO *)
+(* TODO: the rest are trivial *)
 Admitted.
 
 Lemma ForallT_forall1 : forall A (P : A -> Type) x l, ForallT P l -> InT x l -> P x.
@@ -2768,4 +2775,4 @@ Proof.
 End NonStandardSemantics.
 End NonStandardData.
 End StandardSemantics.
-End Data.
+End Data.x
