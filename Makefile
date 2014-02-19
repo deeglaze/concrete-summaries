@@ -1,5 +1,5 @@
 CURRENT=paper
-TARGET=lncs
+TARGET=sigplan
 FILE=$(CURRENT)$(TARGET)
 export TEXINPUTS := ./pfsteps:${TEXINPUTS}
 

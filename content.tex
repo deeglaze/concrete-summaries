@@ -1,21 +1,23 @@
 
 \section{Introduction}
 
-Programs in higher-order languages heavily use function calls and method dispatch as part of their control flow.
+Programs in higher-order languages heavily use function calls and method dispatch for control flow.
 %
-Until recently, flow analyses for higher-order languages could not handle return flow precisely \citep{ianjohnson:vardoulakis-lmcs11, dvanhorn:Earl2010Pushdown}, which leads to several spurious paths (and thus false positives) due to the pervasiveness of function or method calls and subsequent returns.
+Standard flow analyses' imprecise handling of returns damages all specific analyses' precision.
+%
+Recent techniques match calls and returns precisely \citep{ianjohnson:vardoulakis-lmcs11, dvanhorn:Earl2010Pushdown} and build smaller models more quickly than a standard 0-CFA (evaluation predicted 2-5 times more constant bindings).
 %
 These works, called CFA2 and PDCFA respectively, use pushdown automata as their approximation's target model of computation.
 %
 They are hence called ``pushdown analyses.''%
 %
-\footnote{We refer to finite model analyses as ``regular analyses'' after regular languages.}
+\footnote{We refer to finite model analyses as ``regular analyses'' after the regular languages of traces they realize.}
 %
 CFA2 and PDCFA have difficult details to easily apply to an off-the-shelf semantics---especially if they feature non-local control transfer that breaks the pushdown model.
 %%
 
 %%
-There is a systematic process for transforming off-the-shelf programming language semantics into a form amenable to \emph{regular} analysis that has been widely applied with great success to production programming languages (a technique called abstracting abstract machines, or AAM~\citep{dvanhorn:VanHorn2010Abstracting}).
+There is a systematic process for transforming off-the-shelf programming language semantics into a form amenable to \emph{regular} analysis that has been widely applied to production programming languages (a technique called abstracting abstract machines, or AAM~\citep{dvanhorn:VanHorn2010Abstracting}).
 %
 A contribution of this paper is a systematic process to construct \emph{pushdown} analyses of programming languages, due to the precision (and often performance) benefits.
 %
@@ -25,9 +27,11 @@ A contribution of this paper is a systematic process to construct \emph{pushdown
 %%
 Testing new ideas in analysis for improving precision or increasing performance can be a difficult venture.
 %
-We contend that the machinery that we employ in the abstract should have a concrete counterpart that maintains the meaning of the language so that we can see their effect without introducing approximations which might mask correctness issues.
+Premature abstraction can mask correctness issues with complicated machinery we employ in our analyses\footnote{Oh so many personal experiences}.
 %
-Abstraction should be a simple process that is ``obviously correct.''
+We contend that analysis machinery should have an executable concrete counterpart that maintains the meaning of the language for effective testing.
+%
+Abstraction should then be a simple process that is ``obviously correct.''
 %
 The framework we present in this paper is applicable in the concrete such that a point-wise abstraction leads to the pushdown analyses in the literature.
 %%
@@ -226,7 +230,7 @@ We separate the table of continuations, $\mktab$, from the store, $\mstore$, sin
 %
 The store is an important ingredient to maintaining enough precision to keep a pushdown abstraction.
 %
-The semantic spaces for the machine are modified thusly:
+The semantic spaces for the machine are modified as follows:
 
 \begin{align*}
   \mstate \in \State &= (\Expr \times \Env) \times \Store \times \Kont \times \KTab \times \Memo \\
@@ -245,34 +249,31 @@ In our model, we only ``push'' when we call a function, and we only ``pop'' when
 %
 There is an analogy to something more operational: summary edges embody memoization.
 %
-Instead of following an entire path through a call to return a value, we simply jump from the call to the return with the result of the call, with the resulting context changes---in this case only the store \textsc{[memo lookup]}.
+Instead of following an entire path through a call to return a value, we simply jump from the call to the return with the result of the call, with the resulting context changes---in this case only the store (\todo{show in figure})
 %%
 
 \begin{figure}
   \centering
   $\mstate \stepto \mstate' \text{ where } \maddr = \alloc(\mstate)$ \\
-  \begin{tabular}{r|ll}
+  \begin{tabular}{r|l}%{r|ll}
     \hline
 % variable lookup
     $\tpl{(\svar\mvar, \menv), \mstore, \mkont, \mktab, \mmemo}$
     &
     $\tpl{\mval,\mstore,\mkont, \mktab, \mmemo}$ if $\mval \in \mstore(\menv(\mvar))$
-    &
-    \textsc{[variable lookup]}
+%    & \textsc{[variable lookup]}
     \\
 % application
     $\tpl{(\sapp{\mexpri0}{\mexpri1}, \menv), \mstore, \mkont, \mktab, \mmemo}$
     &
     $\tpl{(\mexpri0, \menv), \mstore, \kcons{\kar{\mexpri1,\menv}}{\mkont}, \mktab, \mmemo}$
-    &
-    \textsc{[function eval]}
+%    & \textsc{[function eval]}
     \\
 % argument evaluation
     $\tpl{\mval, \mstore, \kcons{\kar{\mexpr,\menv}}{\mkont}, \mktab, \mmemo}$
     &
     $\tpl{(\mexpr, \menv), \mstore, \kcons{\kfn{\mval}}{\mkont}, \mktab, \mmemo}$
-    &
-    \textsc{[argument eval]}
+%    & \textsc{[argument eval]}
     \\
 % function call
     $\tpl{\mval,\mstore,\kcons{\kfn{\vclo{\slam{\mvar}{\mexpr}}{\menv}}}{\mkont},\mktab,\mmemo}$
@@ -282,8 +283,7 @@ Instead of following an entire path through a call to return a value, we simply 
           \krt{\mpoint, \mstore'},
           \mktab',
           \mmemo}$
-    &
-    \textsc{[un-memoized call]}
+%    & \textsc{[un-memoized call]}
      \\ & \quad if $(\mpoint, \mstore') \notin \dom(\mmemo)$
 \\
     & or \\
@@ -291,8 +291,7 @@ Instead of following an entire path through a call to return a value, we simply 
             \mstore'',
             \mkont,
             \mktab',
-            \mmemo}$
-    & \textsc{[memo lookup]}
+            \mmemo}$ % & \textsc{[memo lookup]}
     \\ & \quad if $(\mval_\mathit{result},\mstore'') \in \mmemo(\mpoint,\mstore')$
     \\ % or, lookup in table
 %    & $\tpl{\mval, \mstore', \mkont,\mktab,\mmemo}$ if $\mval \in \mmemo(\mpoint, \mstore')$ \\    
@@ -304,8 +303,7 @@ Instead of following an entire path through a call to return a value, we simply 
     $\tpl{\mval, \mstore, \krt{\mpoint,\mstore'}, \mktab, \mmemo}$
     &
     $\tpl{\mval, \mstore, \mkont, \mktab, \joinone{\mmemo}{(\mpoint, \mstore')}{(\mval,\mstore)}}$
-    &
-    \textsc{[memoize/return]}
+%    & \textsc{[memoize/return]}
     \\ & \quad if $\mkont \in \mktab(\mpoint, \mstore')$
   \end{tabular}
   \caption{The summarizing tabular stack machine}
@@ -398,7 +396,7 @@ Call the constructor of this frame $\mathbf{lt}$.
 %%
 We should expect that a pushdown analysis would predict this evaluates to true, and there are no loops in the program.
 %
-0-CFA~\citep{dvanhorn:Shivers:1991:CFA} claims there is a loop from the second call of \texttt{id} to the first, and thusly predicts this program evaluates to true or false.
+0-CFA~\citep{dvanhorn:Shivers:1991:CFA} claims there is a loop from the second call of \texttt{id} to the first, and thus predicts this program evaluates to true or false.
 %
 PDCFA claims there is no loop and that the result is true.
 %
@@ -490,13 +488,12 @@ Address reachability is in terms of a base ``touches'' function, $\touches$.
 Entries in $\mktab$ might be circular, so we compute the continuation frames in a fixed-point before computing touched addresses:
 \begin{center}
   \,
-  \begin{minipage}{0.32\linewidth}
     $\touchesk{\mkont}(\mktab) = \setbuild{\maddr}{\mkont \rightsquigarrow_\mktab^*\maddr}$
+\\[4pt]
+  \begin{minipage}{0.5\linewidth}
+    $\touchesf(\kar{\mexpr,\menv}) = \mathit{range}(\menv|_{\mathit{fv}(\mexpr)})$
   \end{minipage}
-  \begin{minipage}{0.36\linewidth}
-    $\touchesf(\kar{\mexpr,\menv}) = \mathit{rng}(\menv|_{\mathit{fv}(\mexpr)})$
-  \end{minipage}
-  \begin{minipage}{0.3\linewidth}
+  \begin{minipage}{0.4\linewidth}
     $\touchesf(\kfn{\mval}) = \touches(\mval)$
   \end{minipage}
 \end{center}
@@ -524,7 +521,7 @@ Garbage collection ($\Gamma$) restricts the heap to just the reachable addresses
     \begin{align*}
       \Gamma(\tpl{(\mexpr,\menv),\mstore,\mkont, \mktab, \mmemo}) &= \tpl{(\mexpr,\menv),\mstore|_{\reaches(\mathit{root}, \mstore)}, \mkont, \mktab, \mmemo} \\
       \text{where } \mathit{root} &= \touchesk{\mkont}(\mktab) \cup
-      \mathit{rng}(\menv|_{\mathit{fv}(\mexpr)})
+      \mathit{range}(\menv|_{\mathit{fv}(\mexpr)})
     \end{align*}
   \end{minipage}
 \end{center}
@@ -555,7 +552,7 @@ More live addresses means a less effective GC, but the introspective pushdown an
 
 The creators of CFA2 had a clear goal of harnessing the extra information a pushdown model provides to produce a high-precision analysis that works well in practice.
 %
-This resulted in more than just the call/return matching of the previous section, which is why we are showing the two separately.
+This resulted in the following features in addition to just the call/return matching of \autoref{sec:pdcfa}:
 %
 
 \begin{enumerate}
@@ -616,7 +613,7 @@ The second of these is to ameliorate a problem they call ``fake rebinding.''
 Bindings in the abstract represent several values, but we don't want to reference a variable \texttt{x} in different places in a function and have it resolve to different values
 \footnote{In AAM, a variable reference non-deterministically steps to all possible values associated with that variable.}.
 %
-If subsequent variable references are not the some, it looks as if the variable was rebound; it hasn't, and thus it is a ``fake rebinding.''
+If subsequent variable references are not the same, it looks as if the variable was rebound; it hasn't, and thus it is a ``fake rebinding.''
 %
 %CFA2 does not step to all values on variable reference, but instead carries all its values around in superposition until they need to be observed at, say, a function call.
 %
@@ -661,7 +658,7 @@ Look-up would then always try the stack frame before falling back on the heap (t
 
 A tabular semantics for the CES$\xi$K machine follows the previous section, except that $\mktab$ now stores $(\mkont, \mframe)$ pairs, and returns reinstate the saved $\mframe$:
 \begin{align*}
-  \tpl{\mval,\mstore,\kcons{\kfn{\vclo{\slam{\mvar}{\mexpr}}{\menv}}}{\mkont},\mktab,\mmemo} &\stepto
+  \tpl{\mval,\mstore,\mframe,\kcons{\kfn{\vclo{\slam{\mvar}{\mexpr}}{\menv}}}{\mkont},\mktab,\mmemo} &\stepto
   \tpl{\mpoint,
     \mstore',
     \mframe',
@@ -901,36 +898,32 @@ The changed semantic spaces for the shift/reset semantics are as follows:
 \begin{figure}
   \centering
   $\mstate \stepto \mstate' \text{ where } \maddr = \alloc(\mstate)$ \\
-  \begin{tabular}{r|ll}
+  \begin{tabular}{r|l}%{r|ll}
     \hline
 % Reset
     $\tpl{(\sreset{\mexpr}, \menv), \mstore, \mkont, \mmkont}$
     &
     $\tpl{(\mexpr, \menv), \mstore, \kmt, \mkapp{\mkont}{\mmkont}}$
-    &
-    \textsc{[push prompt]}
+%    & \textsc{[push prompt]}
     \\
 % Pop prompt
     $\tpl{\mval, \mstore, \kmt, \mkapp{\mkont}{\mmkont}}$
     &
     $\tpl{\mval, \mstore, {\mkont}, {\mmkont}}$
-    &
-    \textsc{[pop prompt]}
+%    & \textsc{[pop prompt]}
     \\
 % Shift
     $\tpl{(\sshift{\mvar}{\mexpr}, \menv), \mstore, \mkont, \mmkont}$
     &
     $\tpl{(\mexpr, \extm{\menv}{\mvar}{\maddr}), \mstore',\kmt,\mmkont}$
-    &
-    \textsc{[capture continuation]}
+%    & \textsc{[capture continuation]}
     \\ & where $\mstore' = \joinone{\mstore}{\maddr}{\vcomp{\mkont}}$
     \\
 % continuation call
     $\tpl{\mval,\mstore,\kcons{\kfn{\vcomp{\mkont'}}}{\mkont}, \mmkont}$
     &
     $\tpl{\mval, \mstore, \mkont', \mkapp{\mkont}{\mmkont}}$
-    &
-    \textsc{[compose continuation]}
+%    & \textsc{[compose continuation]}
   \end{tabular}  
   \caption{Machine semantics for shift/reset}
   \label{fig:shift-reset}
@@ -985,7 +978,7 @@ Captured continuations' store component in the $\rt$ context gets replaced with 
     $\tpl{(\mexpr, \extm{\menv}{\mvar}{\maddr}), \joinone{\mstore}{\maddr}{\vcomp{\mkont}},\kmt,\mmkont,\mktab,\mmemo}$
     \\
 % continuation call
-    $\tpl{\mval,\mstore,\kfn{\vcomp{\mkont'}, \mkont}, \mmkont, \mktab, \mmemo}$
+    $\tpl{\mval,\mstore,\kcons{\kfn{\vcomp{\mkont'}}}{\mkont}, \mmkont, \mktab, \mmemo}$
     &
     $\tpl{\mval, \mstore, \mkont', \kprompt{\mctx}, \mktab',\mmemo}$
     \\ & \quad if $\mctx \notin \dom(\mmemo)$
@@ -1001,7 +994,7 @@ Captured continuations' store component in the $\rt$ context gets replaced with 
 % continuation call
     $\tpl{\mval,\mstore,\kcons{\kfn{\vcomp{\mkont'}}}{\mkont}, \mmkont, \mktab, \mmemo}$
     &
-    $\tpl{\mval', \mstore', \mkont, \mmkont, \mktab,\mmemo}$ if $(\mval',\mstore') \in \mmemo(\mkont',\mval,\mstore)$
+    $\tpl{\mval', \mstore', \mkont, \mmkont, \mktab,\mmemo}$ if $(\mval',\mstore') \in \mmemo(\vcomp{\mkont'},\mval,\mstore)$
   \end{tabular}  
   \caption{Faulty table-based semantics for shift/reset}
   \label{fig:shift-reset-table0}
