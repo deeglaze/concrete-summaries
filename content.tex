@@ -41,6 +41,34 @@ This paper gives a common, simple framework to derive CFA2, PDCFA and its garbag
 %
 To exercise the framework further, we give a novel analysis for delimited, composable control. \\
 
+\section{Models in higher-order analysis}
+
+Constructing models and analyzing models are different processes.
+%
+The goal of this work is to simplify the program $\to$ model process.
+%
+First-order languages have the luxury of a fully-precise control flow graph that can be extracted from a program AST in linear time.
+%
+In a sense, the first-order world gets their models ``for free.''
+%
+Higher-order recursion schemes (HORS) are a powerful model for simply typed functional programs with good model-checking properties~\citep{dvanhorn:Ong2006ModelChecking}, but the program $\to$ HORS process is narrowly applicable.
+%
+It is still a matter of mystery for HORS to support programming language features like mutable state and untyped computation.
+%%
+As a middle ground, we show a simple way to transform one's programming language semantics into a what can be viewed as a pushdown model constructor.
+%%
+
+%%
+When striving for precision, the interconnectedness of data-flow and control-flow analysis in higher-order languages extend upwards to the interconnectedness of model construction and model-checking.
+%
+When we tune the abstractions, the result of translating semantics can range from control-flow analysis~\citep{dvanhorn:VanHorn2010Abstracting} to a symbolic execution engine~\citep{dvanhorn:TobinHochstadt2012Higherorder}.
+%
+These are all forward-executing techniques, so the analogy does not fully extend to all analytical technologies.
+%
+We find the power and simplicity in the constructions enticing nonetheless.
+%
+The resulting artifacts can be used as models in the first-order tools~\citep{ianjohnson:bandera}
+
 \section{The essence of summarization}
 
 CFA2 is an online version of a technique called ``summarization'' from Sharir and Pnueli \citep[Chapter 7]{local:muchnick:jones:flow-analysis:1981}, which is synonymous with PDCFA's crucial ``$\epsilon$-closure graph''.
@@ -78,7 +106,7 @@ There are common underpinnings of PDCFA and CFA2 that can be embodied as concret
 %%
 The first of these is a semantic approach to memoizing that is a straight-forward analog to the programmatic approach.
 %
-A memoizing program will call a function in a non-tail context in order to obtain the result, store the result to an ``enough context to obtain the same result'' key in a table (in a pure setting, just the function and arguments), and continue with the result.
+A memoizing program will call a function in a non-tail context in order to obtain the result, store the result to an \emph{enough context to obtain the same result} key in a table (in a pure setting, just the function and arguments), and continue with the result.
 %
 The semantics we use is functionally equivalent, only we have a special stack frame that acts as the non-tail context that additionally stores results in a table that is part of the machine state.
 %
