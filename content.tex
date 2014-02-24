@@ -37,21 +37,28 @@ The framework we present in this paper is applicable in the concrete such that a
 %%
 
 %%
-This paper gives a common, simple framework to derive CFA2, PDCFA and its garbage-collecting extension in a manner similar to AAM.
+This paper gives a common, simple methodology to derive CFA2, PDCFA and its garbage-collecting extension in a manner similar to AAM.
 %
-To exercise the framework further, we give a novel analysis for delimited, composable control. \\
+Our presentation is meant to be a tutorial to this related literature, with the additional promise of a novel analysis.
+%
+We don't presume a language of formal semantics such that our technique applies to all formalisms in such a language.
+%
+Such an approach is unlikely to capture all ``real language's'' formalizations.
+%
+An additional abstraction also detracts from the operational intuitions and simplicity of the methodology.
+
 
 \section{Models in higher-order analysis}
 
 Constructing models and analyzing models are different processes.
 %
-The goal of this work is to simplify the program $\to$ model process.
+The goal of this work is to simplify the \textit{program} $\to$ \textit{model} process.
 %
 First-order languages have the luxury of a fully-precise control flow graph that can be extracted from a program AST in linear time.
 %
 In a sense, the first-order world gets their models ``for free.''
 %
-Higher-order recursion schemes (HORS) are a powerful model for simply typed functional programs with good model-checking properties~\citep{dvanhorn:Ong2006ModelChecking}, but the program $\to$ HORS process is narrowly applicable.
+Higher-order recursion schemes (HORS) are a powerful model for simply typed functional programs with good model-checking properties~\citep{dvanhorn:Ong2006ModelChecking}, but the \textit{program} $\to$ \textit{HORS} process is narrowly applicable.
 %
 It is still a matter of mystery for HORS to support programming language features like mutable state and untyped computation.
 %%
@@ -59,7 +66,7 @@ As a middle ground, we show a simple way to transform one's programming language
 %%
 
 %%
-When striving for precision, the interconnectedness of data-flow and control-flow analysis in higher-order languages extend upwards to the interconnectedness of model construction and model-checking.
+When striving for precision, the interconnectedness of data-flow and control-flow analysis in higher-order languages extends upwards to the interconnectedness of model construction and model-checking.
 %
 When we tune the abstractions, the result of translating semantics can range from control-flow analysis~\citep{dvanhorn:VanHorn2010Abstracting} to a symbolic execution engine~\citep{dvanhorn:TobinHochstadt2012Higherorder}.
 %
@@ -67,7 +74,7 @@ These are all forward-executing techniques, so the analogy does not fully extend
 %
 We find the power and simplicity in the constructions enticing nonetheless.
 %
-The resulting artifacts can be used as models in the first-order tools~\citep{ianjohnson:bandera}
+The resulting artifacts can be used as models in the first-order tools, as demonstrated by the Java model-checker Bandera~\citep{ianjohnson:bandera}.
 
 \section{The essence of summarization}
 
@@ -77,7 +84,7 @@ The online quality of the algorithm is what makes it suitable for higher-order l
 %
 Summarization algorithms need not be restricted to languages with well-bracketed calls and returns.
 %
-We can adopt the technique for higher precision in the common case but still handle difficult cases such as first-class control.
+The technique is adaptable for higher precision in the common case but to still handle difficult cases such as first-class control.
 %
 This was shown for the \rackett{call/cc} operator in~\citet{ianjohnson:Vardoulakis2011Pushdown}.
 %
@@ -170,26 +177,26 @@ The semantic spaces for the machine follow.
 \setlength{\abovedisplayshortskip}{0pt}
 \setlength{\belowdisplayshortskip}{8pt}
 \begin{align*}
-  \mexpr \in \Expr = \svar{\mvar} \alt \sapp{\mexpr}{\mexpr} \alt \slam{\mvar}{\mexpr}
-\end{align*}
-\begin{minipage}[b]{.55\linewidth}
-  \begin{align*}
+  \mexpr \in \Expr &= \svar{\mvar} \alt \sapp{\mexpr}{\mexpr} \alt \slam{\mvar}{\mexpr} \\
   \mstate \in \State &= (\Expr \times \Env) \times \Store \times \Kont \\
   \mval \in \Value &::= \vclo{\slam{\mvar}{\mexpr}}{\menv} \\
   \mkont \in \Kont &::= \kmt \alt \kcons{\mkframe}{\mkont} \\
-  \mkframe \in \Frame &::= \kar{\mexpr,\menv} \alt \kfn{\mval}
-  \end{align*}\hrule height 0pt\end{minipage}
-\begin{minipage}[b]{.40\linewidth}
-  \begin{align*}
+  \mkframe \in \Frame &::= \kar{\mexpr,\menv} \alt \kfn{\mval} \\
   \menv \in \Env &= \Var \to \Addr \\
   \mstore \in \Store &= \Addr \to \wp(\Value) \\
   \mvar \in \Var &\text{ an infinite set} \\
   \maddr \in \Addr &\text{ an infinite set}
-  \end{align*}\hrule height 0pt\end{minipage}
+\end{align*}
 }
 %%
 
 %%
+%
+The $\kmt$ continuation is the empty continuation.
+%
+The continuation frames represent an \textbf{ar}gument left to evaluate, and \textbf{f}u\textbf{n}ction left to call.
+%
+%
 The $\Addr$ space is what controls the precision of the model.
 %
 For a concrete semantics, we require the allocation meta-function $\alloc :
@@ -197,7 +204,9 @@ For a concrete semantics, we require the allocation meta-function $\alloc :
 %
 If $\alloc$ only uses addresses from a finite subset of $\Addr$, then the state space without continuations is finite, and the space of continuation frames is finite.
 %
-A finite allocation strategy makes the continuation the only unbounded data structure in the machine, which follows a stack discipline with a finite ``stack alphabet''---thus the pushdown system interpretation is apt.
+A finite allocation strategy makes the continuation the only unbounded data structure in the machine.
+%
+The semantics' treatment of continuations follows a stack discipline, and since it has a finite ``stack alphabet'' (space of frames), a pushdown system interpretation is apt.
 %
 The $\alloc$ meta-function along with the commitment to having no recursive data-structures is the key to the AAM technique.
 %
@@ -211,7 +220,7 @@ We borrow this technique on top of our own.
   \begin{tabular}{r|l}
     \hline
 % variable lookup
-    $\tpl{(\svar\mvar, \menv), \mstore, \mkont}$
+    $\tpl{\svar\mvar, \menv, \mstore, \mkont}$
     &
     $\tpl{\mval,\mstore,\mkont}$ if $\mval \in \mstore(\menv(\mvar))$
     \\
@@ -233,6 +242,8 @@ We borrow this technique on top of our own.
   \caption{The CESK machine with allocation tuning}
   \label{fig:base-semantics}
 \end{figure}
+
+\paragraph{Notation:} we make judicious use of the isomorphism between associations of $n$-tuples to spare the paper from excessive parentheses, even though our implementations are in a Lisp-descendent language.
 
 \paragraph{Tracking return points:} the crux of the method is the table of continuations for each function and store pair.
 %
