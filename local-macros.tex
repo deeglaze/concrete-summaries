@@ -1,9 +1,10 @@
 \newcommand{\todo}[1]{\textbf{TODO:} #1}
-\newcommand{\iftr}[1]{}
+\newcommand{\iftr}[1]{#1}
 
 \newcommand{\eg}{\textit{e.g.}}
 \newcommand{\ie}{\textit{i.e.}}
 
+\newcommand{\nat}{{\mathbb N}}
 % Metavariables from defined spaces
 \newcommand{\mexpr}{e}
 \newcommand{\mexpri}[1]{e_{#1}}
@@ -83,6 +84,12 @@
 \newcommand{\captureupto}{\mathit{capture\text{-}upto}}
 \newcommand{\aborttargets}{\mathit{abort\text{-}targets}}
 
+\newcommand{\startstate}{\mathit{base}}
+\newcommand{\tails}{\mathit{tails}}
+\newcommand{\reify}{\mathit{reify}}
+\newcommand{\reflect}{\mathit{reflect}}
+\newcommand{\reachrestrict}{\mathit{unfold}}
+
 \newcommand{\domark}{\mathit{mark}}
 \newcommand{\domarkset}{\mathit{markset}}
 \newcommand{\returns}{{\mathbb R}}
@@ -98,8 +105,8 @@
 \newcommand{\reachable}{\mathit{reach}}
 \newcommand{\memo}{\mathit{memo}}
 \newcommand{\unroll}[2]{\mathit{unroll}_{#1}(#2)}
-\newcommand{\hastail}{\mathit{hastail}}
-\newcommand{\replacetail}{\mathit{replacetail}}
+\newcommand{\hastail}{\mathit{ht}}
+\newcommand{\replacetail}{\mathit{rt}}
 
 % Constructors
 \newcommand{\svar}[2][{}]{#2^{#1}}
