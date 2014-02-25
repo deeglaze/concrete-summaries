@@ -234,8 +234,19 @@ Proof.
   |constructor].
 Qed.
 
+
 Theorem union_fold_base_subset : forall B (f: B -> set A) (s : set B) (base : set A),
                                    Subset base (union_fold Aeq_dec f s base).
+Proof.
+  induction s as [|b s IH]; intros base; simpl.
+  reflexivity.
+  transitivity (set_union Aeq_dec base (f b)); [intros ? ?; apply set_union_intro1; auto|apply IH].
+Qed.
+
+Theorem fold_left_subset : forall B (f: B -> set A) (s : set B) (base : set A),
+                             Subset base (set_fold_left (fun acc b =>
+                                                           set_union Aeq_dec acc (f b))
+                                                        s base).
 Proof.
   induction s; intros b a' Hin.
   auto.
@@ -279,8 +290,11 @@ Proof.
   destruct IHs as [X [Y Z]]; repeat split; solve [eapply union_subset1; eauto| eapply union_subset2; eauto].
 Qed.
 
-Theorem union_fold_subset_in : forall B (f: B -> set A) (s : set B) (base : set A) b,
-                                 In b s -> Subset (f b) (union_fold Aeq_dec f s base).
+Theorem fold_left_subset_in : forall B (f: B -> set A) (s : set B) (base : set A) b,
+                             In b s -> Subset (f b) (set_fold_left (fun acc b =>
+                                                           set_union Aeq_dec acc (f b))
+                                                        s base).
+
 Proof.
   induction s; intros base b Hin a' Hin'.
   inversion Hin.
@@ -289,6 +303,13 @@ Proof.
   subst; apply union_fold_base_subset,set_union_intro2; auto.
   apply (IHs (set_union Aeq_dec base (f a)) b Hrest); auto.
 Qed.
+
+Theorem union_fold_subset_in : forall B (f: B -> set A) (s : set B) (base : set A) b,
+                                 In b s -> Subset (f b) (union_fold Aeq_dec f s base).
+Proof.
+  intros; apply fold_left_subset_in; auto.
+Qed.
+
 
 Theorem triple_union_fold_subset_in : forall B C D
                                             (Beq_dec : dec_type B) (Ceq_dec : dec_type C)
@@ -448,6 +469,7 @@ Theorem triple_union_folded_property : forall B C D (Beq_dec : dec_type B) (Ceq_
   try solve [apply allbase; auto|apply fprop;auto].
 Qed.
 
+  
 Theorem length_add : forall s a, ~ set_In a s -> length (set_add Aeq_dec a s) = S (length s).
 Proof.
   induction s as [|a s IH]; intros a' H;
