@@ -339,12 +339,12 @@ Instead of following an entire path through a call to return a value, we simply 
           & $\mktab' = \joinone{\mktab}{(\mpoint, \mstore')}{\mkont}$
     \\
 % return
-    $\tpl{\mval, \mstore, \krt{\mpoint,\mstore'}, \mktab, \mmemo}$
+    $\tpl{\mval, \mstore, \krt{\mctx}, \mktab, \mmemo}$
     &
     $\tpl{\mval, \mstore, \mkont, \mktab, M'}$
 %    & \textsc{[memoize/return]}
-    \\ & \quad if $\mkont \in \mktab(\mpoint, \mstore')$
-    \\ where & $\mmemo' = \joinone{\mmemo}{(\mpoint, \mstore')}{(\mval,\mstore)}$
+    \\ & \quad if $\mkont \in \mktab(\mctx)$
+    \\ where & $\mmemo' = \joinone{\mmemo}{\mctx}{(\mval,\mstore)}$
   \end{tabular}
   \caption{The summarizing tabular stack machine}
   \label{fig:summary-semantics}
@@ -379,10 +379,10 @@ To turn this semantics into PDCFA's algorithm for constructing a pushdown system
                    &= \tpl{\mexpr,\menv,\mstore,\mkont,\mktab,\mmemo}
 \end{align*}
 \begin{align*}
-    R' &= \setbuild{(\mastate,\mastate')}{\wn(\mastate', \_, \_) \in I \wedge \mastate\nequiv\tpl{\mval,\mstore,\krt{\mctx}}} \cup \set{\mastate_0}\\
+    R' &= \setbuild{(\mastate,\mastate')}{\wn(\mastate', \_, \_) \in I \wedge \mastate\nequiv\tpl{\mval,\mstore,\krt{\mctx}}} \\
     \mktab' &=  \bigsqcup\setbuild{\mktab'}{\wn(\_, \mktab', \_) \in I} \\
     \mmemo' &= \bigsqcup\setbuild{\mmemo'}{\wn(\_, \_, \mmemo') \in I} \\
-    F' &= \setbuild{\mastate'}{\wn(\mastate', \_, \_) \in I} \setminus (\pi_1 R \cup \pi_2 R)
+    F' &= (\setbuild{\mastate'}{\wn(\mastate', \_, \_) \in I} \cup \set{\mastate_0})\setminus (\pi_1 R \cup \pi_2 R)
   \end{align*}
 }
 %%
