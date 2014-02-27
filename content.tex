@@ -80,7 +80,7 @@ The resulting artifacts can be used as models in the first-order tools, as demon
 
 CFA2 is an online version of a technique called ``summarization'' from Sharir and Pnueli \citep[Chapter 7]{local:muchnick:jones:flow-analysis:1981}, which is synonymous with PDCFA's crucial ``$\epsilon$-closure graph''.
 %
-The online quality of the algorithm is what makes it suitable for higher-order languages.
+The online quality of the algorithm is what makes it suitable for higher-order languages, since CFA essentially interprets the program for each discovered state to build the model on the fly.
 %
 Summarization algorithms need not be restricted to languages with well-bracketed calls and returns.
 %
@@ -178,7 +178,7 @@ The semantic spaces for the machine follow.
 \setlength{\belowdisplayshortskip}{8pt}
 \begin{align*}
   \mexpr \in \Expr &= \svar{\mvar} \alt \sapp{\mexpr}{\mexpr} \alt \slam{\mvar}{\mexpr} \\
-  \mstate \in \State &= \Expr \times \Env \times \Store \times \Kont \\
+  \mstate \in \State &::= \tpl{\mexpr,\menv,\mstore,\mkont} \\
   \mval \in \Value &::= \vclo{\slam{\mvar}{\mexpr}}{\menv} \\
   \mkont \in \Kont &::= \kmt \alt \kcons{\mkframe}{\mkont} \\
   \mkframe \in \Frame &::= \kar{\mexpr,\menv} \alt \kfn{\mval} \\
@@ -272,7 +272,7 @@ The store is an important ingredient to maintaining enough precision to keep a p
 The semantic spaces for the machine are modified as follows:
 
 \begin{align*}
-  \mstate \in \State &= \Expr \times \Env \times \Store \times \Kont \times \KTab \times \Memo \\
+  \mstate \in \State &::= \tpl{\mexpr,\menv,\mstore,\mkont,\mktab,\mmemo} \\
   \mkont \in \Kont &::= \kmt \alt \krt{\mexpr,\menv,\mstore} \alt \kcons{\mkframe}{\mkont} \\
   \mktab \in \KTab &= Expr \times \Env\times \Store \to \wp(\Kont) \\
   \mmemo \in \Memo &= \Expr \times \Env\times \Store \to \wp(\Value \times \Store)
@@ -367,7 +367,7 @@ To turn this semantics into PDCFA's algorithm for constructing a pushdown system
 \setlength{\abovedisplayshortskip}{0pt}
 \setlength{\belowdisplayshortskip}{8pt}
 \begin{align*}
-  \mastate \in \sa{State} &= \Expr \times \Env \times \Store \times \Kont \\
+  \mastate \in \sa{State} &::= \tpl{\mexpr,\menv,\mstore,\mkont} \\
   \System &= \wp(\sa{State}) \times \wp(\sa{State} \times \sa{State}) \times \KTab \times \Memo \\
   {\mathcal F} &: \sa{\State} \to \System \to \System
 \end{align*}
@@ -400,6 +400,8 @@ We define $\pi_1$ and $\pi_2$ as the pointwise lifting of the left and right pro
 %The next frontier contains only states resulting from stepping the previous frontier that we haven't seen at this next store.}
 %
 The least fixed-point of ${\mathcal F}(\tpl{\mexpr,\bot,\bot,\kmt})$ is the analysis of closed expression $\mexpr$.
+%
+Note the ordering on systems is pointwise, so the bottom element is $(\emptyset,\emptyset,\bot,\bot)$, which we'll call $\mathit{sys}_0$.
 %
 Systematic techniques for a performant implementation can be found in \citet{ianjohnson:oaam:icfp2013}.
 %
@@ -527,7 +529,7 @@ Entries in $\mktab$ might be circular, so we compute the continuation frames in 
   \,
     $\touchesk{\mkont}(\mktab) = \setbuild{\maddr}{\mkont \rightsquigarrow_\mktab^*\maddr}$
 \\[4pt]
-  \begin{minipage}{0.5\linewidth}
+  \begin{minipage}{0.55\linewidth}
     $\touchesf(\kar{\mexpr,\menv}) = \mathit{range}(\menv|_{\mathit{fv}(\mexpr)})$
   \end{minipage}
   \begin{minipage}{0.4\linewidth}
@@ -543,7 +545,7 @@ Entries in $\mktab$ might be circular, so we compute the continuation frames in 
   \quad
   \inferrule{\mkont \rightsquigarrow_\mktab \maddr}{\kcons{\mkframe}{\mkont} \rightsquigarrow_\mktab \maddr}
 %  \inferrule{\mkont \rightsquigarrow_\mktab (\mkont' \text{ or } \maddr)}{\kcons{\mkframe}{\mkont} \rightsquigarrow_\mktab (\mkont' \text{ or } \maddr)}
-  \quad
+  \\
   \inferrule{\mkont \in \mktab(\mctx)}{\krt{\mctx} \rightsquigarrow_\mktab \mkont}
 \end{mathpar}
 
@@ -565,13 +567,14 @@ Garbage collection ($\Gamma$) restricts the heap to just the reachable addresses
 %
 The ``reaches'' metafunction ($\reaches$) is a transitive closure of ``touches'' as it weaves through the store, starting from some root set of addresses:
 
-\begin{align*}
-  \reaches(\mathit{root}, \mstore) = \setbuild{b}{\maddr \in \mathit{root}, \maddr \rightsquigarrow_\mstore^* b}
-   \quad
-               \inferrule{\mval \in \mstore(\maddr) \\
-                             b \in \touches(\mval)}
-                            {\maddr \rightsquigarrow_\mstore b}
-\end{align*}
+\begin{center}
+  $\reaches(\mathit{root}, \mstore) = \setbuild{b}{\maddr \in \mathit{root}, \maddr \rightsquigarrow_\mstore^* b}$
+\end{center}
+\begin{mathpar}
+  \inferrule{\mval \in \mstore(\maddr) \\
+    b \in \touches(\mval)}
+  {\maddr \rightsquigarrow_\mstore b}
+\end{mathpar}
 
 This semantics of course enjoys the soundness properties that GC does not introduce dangling pointers, equal length traces are equal up to GC (in the concrete), and abstractions are sound with respect to collected states.
 %
@@ -606,7 +609,8 @@ There are two orthogonal features of the semantics, embodied by our semantics' t
 % variable lookup
     $\tpl{\svar[\mlab]{\mvar}, \menv, \mstore, \mframe, \mkont}$
     &
-    $\tpl{\mval,\mstore,\mframe',\mkont}$ if $(\mframe', \mval) \in \lookup(\mstore,\mframe,\menv(\mvar),\mlab)$
+    $\tpl{\mval,\mstore,\mframe',\mkont}$
+    \\ & if $(\mframe', \mval) \in \lookup(\mstore,\mframe,\menv(\mvar),\mlab)$
     \\
 % % application
 %     $\tpl{(\sapp{\mexpri0}{\mexpri1}, \menv), \mstore, \mframe, \mkont}$
@@ -694,7 +698,7 @@ Sidestepping fake rebinding does not need to be restricted to stackable referenc
 %
 As soon as the non-determinism has been determined, we could extend the stack frame so any subsequent reference means what it meant previously in the function.
 %
-Look-up would then always try the stack frame before falling back on the heap (this must be limited to immutable addresses).
+Look-up would then always try the stack frame before falling back on the heap, though this must be limited to immutable addresses.
 %%
 
 A tabular semantics for the CES$\xi$K machine follows the previous section, except that $\mktab$ now stores $(\mkont, \mframe)$ pairs, and returns reinstate the saved $\mframe$:
@@ -961,7 +965,7 @@ The changed semantic spaces for the shift/reset semantics are as follows:
     &
     $\tpl{\mexpr, \extm{\menv}{\mvar}{\maddr}, \mstore',\kmt,\mmkont}$
 %    & \textsc{[capture continuation]}
-    \\ & where $\mstore' = \joinone{\mstore}{\maddr}{\vcomp{\mkont}}$
+    \\ where & $\mstore' = \joinone{\mstore}{\maddr}{\vcomp{\mkont}}$
     \\
 % continuation call
     $\tpl{\mval,\mstore,\kcons{\kfn{\vcomp{\mkont'}}}{\mkont}, \mmkont}$
@@ -1127,17 +1131,18 @@ This operation makes lookups more costly since we have to find closures bounded 
 %
 If the context in an $\rt$ continuation is approximate, we must return to all the continuations known for all the contexts it approximates:
 \begin{align*}
-  \returns(\mmktab, \mktab, (\mexpr,\menv, \mstore, \mmktab')) &= \mktab(\mexpr,\menv, \mstore, \mmktab') \\
-  \returns(\mmktab, \mktab, (\mexpr,\menv, \maddr)) &=
-    \bigcup\setbuild{\mktab(\mexpr,\menv,\mstore,\mmktab')}{(\mstore \in \mmktab(\maddr), \mmktab' \sqsubseteq \mmktab}
+  &\returns(\mmktab, \mktab, (\mexpr,\menv, \mstore, \mmktab')) = \mktab(\mexpr,\menv, \mstore, \mmktab') \\
+  &\returns(\mmktab, \mktab, (\mexpr,\menv, \maddr)) =
+    \bigcup\setbuild{\mktab(\mexpr,\menv,\mstore,\mmktab')}{\mstore \in \mmktab(\maddr), \mmktab' \sqsubseteq \mmktab}
 \end{align*}
 
 At returns, the memo table must add the result to all represented contexts:
+\newcommand{\res}{m}
 \begin{align*}
-  \memoize(\mmktab, \mktab, (\mexpr,\menv, \mstore', \mmktab'), \mathit{out}) &=
-  [(\mexpr,\menv, \mstore',\mmktab') \mapsto \set{{\mathit{out}}}] \\
-  \memoize(\mmktab, \mktab, (\mexpr,\menv, \maddr), \mathit{out}) &= [\mctx \mapsto \set{\mathit{out}} : \mctx \in \dom(\mktab) \cap C] \\
-    \text{where } C &= \setbuild{(\mexpr,\menv, \mstore', \mmktab')}{\mstore' \in \mmktab(\maddr), \mmktab' \sqsubseteq \mmktab}
+  &\memoize(\mmktab, \mktab, (\mexpr,\menv, \mstore', \mmktab'), \res) =
+  [(\mexpr,\menv, \mstore',\mmktab') \mapsto \set{{\res}}] \\
+  &\memoize(\mmktab, \mktab, (\mexpr,\menv, \maddr), \res) = [\mctx \mapsto \set{\res} : \mctx \in \dom(\mktab) \cap C] \\
+  &\text{where } C = \setbuild{(\mexpr,\menv, \mstore', \mmktab')}{\mstore' \in \mmktab(\maddr), \mmktab' \sqsubseteq \mmktab}
 \end{align*}
 
 The result of this viewpoint is a sound, precise, and computable semantics for a ``pushdown approach'' to analyzing delimited, composable control.
@@ -1179,7 +1184,9 @@ Consider the following program and its CPS transform for comparison:
 
 \mbox{\hphantom{\Scribtexttt{xxxxxxx}}}\RktPn{[}\RktSym{f}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\lambda$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{y}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{j}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{j}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{j}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{y}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{]}
 
-\mbox{\hphantom{\Scribtexttt{xxxxxxx}}}\RktPn{[}\RktSym{g}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\lambda$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{z}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{h}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{h}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{f}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{z}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\lambda$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{fv}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{id}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{fv}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\lambda$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{i}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{i}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{]}\RktPn{)}
+\mbox{\hphantom{\Scribtexttt{xxxxxxx}}}\RktPn{[}\RktSym{g}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\lambda$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{z}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{h}\RktPn{)}
+\\\mbox{\hphantom{\Scribtexttt{xxxxxxxxxxx}}}\RktPn{(}\RktSym{h}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{f}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{z}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\lambda$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{fv}\RktPn{)}
+\\\mbox{\hphantom{\Scribtexttt{xxxxxxxxxxxxxxxxxxxx}}}\RktPn{(}\RktSym{id}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{fv}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\lambda$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{i}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{i}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{]}\RktPn{)}
 
 \mbox{\hphantom{\Scribtexttt{xx}}}\RktPn{(}\RktSym{g}\mbox{\hphantom{\Scribtexttt{x}}}\RktVal{0}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\lambda$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{g0v}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{g}\mbox{\hphantom{\Scribtexttt{x}}}\RktVal{1}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\lambda$}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{g1v}\RktPn{)}\mbox{\hphantom{\Scribtexttt{x}}}\RktPn{(}\RktSym{$\le$}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{g0v}\mbox{\hphantom{\Scribtexttt{x}}}\RktSym{g1v}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{)}\RktPn{)}\end{SingleColumn}\end{RktBlk}\end{SCodeFlow}
 \end{small}

@@ -1,11 +1,11 @@
-\subsection{Metatheory}
+\subsection{Correctness}
 
 Our correctness claim is that a PDCFA system reflects the subset of the CESK reduction semantics that is reachable from the initial state.
 %
 We reify the reduction relation from a system in the following way:
 
 \begin{align*}
-  \reify &: \sa{System} \to \wp(\sa{State}_\mathit{CESK} \times \sa{State}_\mathit{CESK}) \\
+  \reify &: \mathit{System} \to \wp(\mathit{State}_\mathit{CESK} \times \mathit{State}_\mathit{CESK}) \\
   \reify(F, R, \mktab, \mmemo) &=
   \setbuild{(\tpl{\mpoint,\mstore,\append{\mkont}{\mkont''}},
              \tpl{\mpoint',\mstore',\append{\mkont'}{\mkont''}})}
@@ -25,7 +25,7 @@ The $\mathit{unroll}$ relation interprets what are all the valid continuations t
             {\mkont \in \unroll{\mktab}{\krt{\mctx}}}  
 \end{mathpar}
 
-For a pushdown analysis, we can simply take the least fixed-point of ${\mathcal F}$, but in general we can only say a witnessed reduction after $n$ steps in one case will in the other case witness the same reduction in some $m$ steps.
+For a pushdown analysis, we can simply take the least fixed-point of ${\mathcal F}(\mastate_0)$, but in general we can only say a witnessed reduction after $n$ steps, in one case, will in the other case witness the same reduction in some $m$ steps.
 %
 In the limit, the CESK reduction relation unfolds to the reification of the PDCFA system, and vice versa.
 %
@@ -38,9 +38,9 @@ A queue representation of $F$ suffices to guarantee fairness.
   $\forall n \in \nat$:
   \begin{itemize}
   \item{if $(\mstate,\mstate') \in \reachrestrict(\mstate_0,\stepto_\mathit{CESK},n,\emptyset)$ then
-      $\exists m \in \nat. (\mstate,\mstate') \in \reify({\mathcal F}(\mstate_0)^m(\emptyset,\emptyset,\bot,\bot))$}
+      $\exists m \in \nat. (\mstate,\mstate') \in \reify({\mathcal F}(\mstate_0)^m(\mathit{sys}_0))$}
   \item{
-      if $(\mstate,\mstate') \in \reify({\mathcal F}(\mstate_0)^n(\emptyset,\emptyset,\bot,\bot))$ then
+      if $(\mstate,\mstate') \in \reify({\mathcal F}(\mstate_0)^n(\mathit{sys}_0))$ then
       $\exists m \in \nat. (\mstate,\mstate') \in \reachrestrict(\mstate_0,\stepto_\mathit{CESK},m,\emptyset)$}
   \end{itemize}
   given comparable allocation strategies and fair state selection.
@@ -71,7 +71,7 @@ Our development is partially verified in Coq, available with the Redex models in
 Where $\hastail$ (``has tail'') is
 \begin{mathpar}
   \inferrule{ }{\hastail(\epsilon,\mkont)} \quad
-  \inferrule{ }{\hastail(\tpl{\mpoint,\mstore,\append{\mkont'}{\mkont}},\mkont)} \quad
+  \inferrule{ }{\hastail(\tpl{\mpoint,\mstore,\append{\mkont'}{\mkont}},\mkont)} \\
   \inferrule{\hastail(\mtrace\mstate,\mkont) \quad
              \mstate \stepto \mstate' \quad
              \hastail(\mstate',\mkont)}
@@ -105,22 +105,25 @@ Finally, there is some continuation that stays in the tail of the trace of a mem
     \startstate(\kmt) &= \tpl{\mexpr_\mathit{initial}, \bot, \bot, \kmt} \\
     \startstate(\krt{\mctx}) &= \tpl{\mctx, \kmt} \\    
     \startstate(\kcons{\mkframe}{\mkont}) &= \startstate(\mkont)
- \\[2pt]
-    \inv(\tpl{\mpoint, \mstore, \mkont, \mktab, \mmemo}) &=
-    \dom(\mmemo) \subseteq \dom(\mktab) \\ % domain containment
+  \end{align*}
+  \begin{mathpar}
+    \inferrule{
+        \dom(\mmemo) \subseteq \dom(\mktab) \\ % domain containment
     % path to current kont
-    &\wedge \startstate(\mkont) \stepto^* \tpl{\mpoint, \mstore,\append{\mkont}{\kmt}} \\
+        \startstate(\mkont) \stepto^* \tpl{\mpoint, \mstore,\append{\mkont}{\kmt}} \\
     % ktable meaning
-    &\wedge \forall (\mpoint',\mstore') \in \dom(\mktab), \mkont''
-    \in \mktab(\mpoint',\mstore'). \\
-    &\quad\startstate(\mkont'') \stepto^* \tpl{\mpoint',\mstore',\append{\mkont''}{\kmt}} \\
+        \forall (\mpoint',\mstore') \in \dom(\mktab), \mkont'
+        \in \mktab(\mpoint',\mstore'). \\
+        \quad\startstate(\mkont') \stepto^* \tpl{\mpoint',\mstore',\append{\mkont'}{\kmt}} \\
     % memo table meaning
-    &\forall(\mpoint',\mstore') \in \dom(\mmemo).
+      \forall(\mpoint',\mstore') \in \dom(\mmemo).
       \forall (\mval,\mstore'') \in \mmemo(\mpoint',\mstore').
-      \\ & \quad
+      \\ \quad
        \exists \mkont, \mtrace\equiv\tpl{\mpoint',\mstore',\mkont}\stepto^* \tpl{\mval,\mstore'',\mkont}.
          \hastail(\mtrace,\mkont)
-  \end{align*}
+      }
+    {\inv(\tpl{\mpoint, \mstore, \mkont, \mktab, \mmemo})}
+  \end{mathpar}
   \caption{Table invariants}
 \label{fig:inv}
 \end{figure}
@@ -130,3 +133,17 @@ Finally, there is some continuation that stays in the tail of the trace of a mem
   By cases on $\stepto$.
 
 As the later developments in this paper are of a similar character, we will describe correctness claims as a system reflecting a relation that has a bisimulation with the original semantics.
+%
+The correctness theorem is a corollary of the following stronger statement:
+\begin{lemma}[Strengthened correctness \textbf{TODO}]
+  $\forall \mexpr$ closed, let $\mstate_0 = \tpl{\mexpr,\bot\bot,\kmt}$ in
+  $\forall n \in \nat$:
+  \begin{itemize}
+  \item{if $(\mstate,\mstate') \in \reachrestrict(\mstate_0,\stepto_\mathit{CESK},n,R)$ then
+      $\exists m \in \nat. (\mstate,\mstate') \in \reify({\mathcal F}(\mstate_0)^m(\mathit{sys}_0))$}
+  \item{
+      if $(\mstate,\mstate') \in \reify({\mathcal F}(\mstate_0)^n(\mathit{sys}_0))$ then
+      $\exists m \in \nat. (\mstate,\mstate') \in \reachrestrict(\mstate_0,\stepto_\mathit{CESK},m,\emptyset)$}
+  \end{itemize}
+  given comparable allocation strategies and fair state selection.
+\end{lemma}
