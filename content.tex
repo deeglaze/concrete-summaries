@@ -25,7 +25,7 @@ A contribution of this paper is a systematic process to construct \emph{pushdown
 %%
 
 %%
-Testing new ideas in analysis for improving precision or increasing performance can be a difficult venture.
+Testing new ideas in analysis for improving precision or performance can be a difficult venture.
 %
 Premature abstraction can mask correctness issues with complicated machinery we employ in our analyses\footnote{Oh so many personal experiences}.
 %
@@ -58,11 +58,11 @@ First-order languages have the luxury of a fully-precise control flow graph that
 %
 In a sense, the first-order world gets their models ``for free.''
 %
-Higher-order recursion schemes (HORS) are a powerful model for simply typed functional programs with good model-checking properties~\citep{dvanhorn:Ong2006ModelChecking}, but the \textit{program} $\to$ \textit{HORS} process is narrowly applicable.
+Higher-order recursion schemes (HORS) are a powerful model for simply typed functional programs with good model-checking properties~\citep{dvanhorn:Ong2006ModelChecking}, but the \textit{program} $\to$ \textit{HORS} process is still narrowly applicable.
 %
 It is still a matter of mystery for HORS to support programming language features like mutable state and untyped computation.
 %%
-As a middle ground, we show a simple way to transform one's programming language semantics into a what can be viewed as a pushdown model constructor.
+As a middle ground, we show a simple way to transform one's programming language semantics into what can be viewed as a pushdown model constructor.
 %%
 
 %%
@@ -80,17 +80,17 @@ The resulting artifacts can be used as models in the first-order tools, as demon
 
 CFA2 is an online version of a technique called ``summarization'' from Sharir and Pnueli \citep[Chapter 7]{local:muchnick:jones:flow-analysis:1981}, which is synonymous with PDCFA's crucial ``$\epsilon$-closure graph''.
 %
-The online quality of the algorithm is what makes it suitable for higher-order languages, since CFA essentially interprets the program for each discovered state to build the model on the fly.
+The online quality of the algorithm is what makes it suitable for higher-order languages, since CFA essentially interprets the program for each discovered state to build the model on-the-fly.
 %
 Summarization algorithms need not be restricted to languages with well-bracketed calls and returns.
 %
 The technique is adaptable for higher precision in the common case but to still handle difficult cases such as first-class control.
 %
-This was shown for the \rackett{call/cc} operator in~\citet{ianjohnson:Vardoulakis2011Pushdown}.
+This was shown for the \rackett{call/cc} operator by~\citet{ianjohnson:Vardoulakis2011Pushdown}.
 %
 This work illuminated the fact that we can harness the enhanced technology of pushdown analyses in non-pushdown models of computation.
 %
-Doing this sacrifices call/return matching in the general case, but in practice the precision is much better than the alternative regular model like 0-CFA would provide.
+Doing this sacrifices call/return matching in the general case, but in practice the precision is much better than the alternative regular model that, \eg, 0-CFA would provide.
 %%
 
 %%
@@ -130,14 +130,16 @@ The second piece of machinery serves two purposes:
 (1) the state space contains all function callsites to project out a control-flow graph, and %
 (2) the worklist semantics of execution makes it possible to appeal to an incomplete memo table, so the saved stacks allow new results to flow to calls that used incomplete memo information.
 %
+Once the machine semantics is in this form, simple point-wise abstraction leads to the summarization algorithms that we see in the literature.
+
+\paragraph{The problem with incomplete memo information}
 Consider a non-deterministic semantics where a function call reaches a result and memoizes, a second call uses the memo table (storing its stack), and then the original call reaches another result (since the worklist allows for such parallel reduction).
 %
 The second result had better also flow to the second call to maintain soundness!
 %%
 
 %%
-Once the machine semantics is in this form, simple point-wise abstraction leads to the summarization algorithms that we see in the literature.
-%
+\paragraph{Overview}
 In \autoref{sec:pdcfa} we derive a cousin of PDCFA.
 %
 The following section shows how to extend PDCFA with abstract garbage collection. % \autoref{sec:gc}: we show how abstract garbage collection ``falls out'' of this approach.
@@ -352,7 +354,7 @@ Instead of following an entire path through a call to return a value, we simply 
 
 This semantics is only correct for fresh allocation strategies, which in turn make the reduction relation deterministic.
 %
-As it is, the CESK machine simulates the tabular machine, but not the other way around;
+As it is, the CESK machine approximates the tabular machine, but not the other way around;
 %
 if we use a finite allocation strategy, then we don't explore some non-deterministic paths that lead to different results for a function call.
 %
@@ -553,7 +555,7 @@ Garbage collection ($\Gamma$) restricts the heap to just the reachable addresses
 \begin{center}
   \begin{minipage}{0.3\linewidth}
     \begin{align*}
-      \frac{\mstate \stepto \mstate'}{\mstate \stepto \Gamma(\mstate')}
+      \mstate \stepto \Gamma(\mstate)
     \end{align*}
   \end{minipage}
   \begin{minipage}{0.65\linewidth}
@@ -597,7 +599,7 @@ This resulted in the following features in addition to just the call/return matc
 
 \begin{enumerate}
 \item{stack allocation for some bindings in an additional $\mframe \in \Store$}
-\item{strong updates on stack frames for resolved addresses}
+\item{strong updates on stack frames for looked-up addresses}
 \end{enumerate}
 There are two orthogonal features of the semantics, embodied by our semantics' two metafunctions ($\bind$ and $\lookup$, respectively in \autoref{fig:frame-semantics}).
 
@@ -741,7 +743,7 @@ If the operator were instead $<$ or $+$, we could still constant fold that away.
 The stack frame introduces a refinement over the original CESK machine, so we first prove it correct with respect to the concrete semantics, in a similar fashion to PDCFA.
 %
 \begin{theorem}[Correctness of stack frame refinement]\label{thm:refinement}
-  The CES$\xi$K machine has a stuttering bisimulation with the CESK machine with fresh allocation.
+  The CES$\xi$K machine has a stuttering bisimulation refinement with the CESK machine with fresh allocation.
 \end{theorem}
 This follows from the invariant that if a stack frame maps $\maddr$ to $\mval$, then the store maps $\maddr$ to $\mval$, meaning that the special lookup function is equivalent to lookup directly in the store (exploits immutability).
 %

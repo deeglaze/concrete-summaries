@@ -10,48 +10,45 @@ We reify the reduction relation from a system in the following way:
   \setbuild{(\tpl{\mpoint,\mstore,\append{\mkont}{\mkont''}},
              \tpl{\mpoint',\mstore',\append{\mkont'}{\mkont''}})}
            {\\ &\phantom{= \{}(\tpl{\mpoint,\mstore,\mkont}, \tpl{\mpoint',\mstore',\mkont'}) \in R,
-            \\ &\phantom{= \{}\mkont'' \in \tails(\mkont, \mktab)} \\
-\text{where } \tails(\kmt, \mktab) &= \set{\kmt} \\
-              \tails(\krt{\mctx}, \mktab) &= \setbuild{\mkont' \in \unroll{\mktab}{\mkont}}{\mkont \in \mktab(\mctx)} \\
-              \tails(\kcons{\mkframe}{\mkont}, \mktab) &= \tails(\mkont,\mktab)
+            \\ &\phantom{= \{}\mkont'' \in \tails{\mktab}{\mkont}} \\
+\text{where } \tails{\mktab}{\kmt} &= \set{\kmt} \\
+              \tails{\mktab}{\krt{\mctx}} &= \setbuild{\mkont' \in \unroll{\mktab}{\mkont}}{\mkont \in \mktab(\mctx)} \\
+              \tails{\mktab}{\kcons{\mkframe}{\mkont}} &= \tails{\mktab}{\mkont}
+\\[2pt]
+              \unroll{\mktab}{\mkont} &= \setbuild{\append{\mkont}{\mkont'}}{\mkont' \in \tails{\mktab}{\mkont}}
+\\[2pt]
+              \append{\kmt}{\mkont} &= \append{\krt{\mctx}}{\mkont} = \mkont \\
+              \append{\kcons{\mkframe}{\mkont}}{\mkont'} &= \kcons{\mkframe}{(\append{\mkont}{\mkont'})}
 \end{align*}
 
-The $\mathit{unroll}$ relation interprets what are all the valid continuations that $\mktab$ encodes for a given continuation that contains $\krt{\mctx}$, defined inductively by the following rules:
-\begin{mathpar}
-  \inferrule{ }{\kmt \in \unroll{\mktab}{\kmt}} \quad
-  \inferrule{\mkont \in \unroll{\mktab}{\mkont'}}{\mkframe:\mkont \in \unroll{\mktab}{\mkframe:\mkont'}} \\
-  \inferrule{\mkont' \in \mktab(\mctx) \\
-             \mkont \in \unroll{\mktab}{\mkont'}}
-            {\mkont \in \unroll{\mktab}{\krt{\mctx}}}  
-\end{mathpar}
+The $\mathit{unroll}$ set interprets what are all the valid continuations that $\mktab$ encodes for a given continuation that contains $\krt{\mctx}$, and $\mathit{tails}$ is defined mutually to produce all continuations that could be unrolled from the tail of a truncated continuation.
 
 For a pushdown analysis, we can simply take the least fixed-point of ${\mathcal F}(\mastate_0)$, but in general we can only say a witnessed reduction after $n$ steps, in one case, will in the other case witness the same reduction in some $m$ steps.
 %
 In the limit, the CESK reduction relation unfolds to the reification of the PDCFA system, and vice versa.
 %
-One small caveat is that state selection from $F$ must be fair: for all states $\mastate \in F$ there is some $m$ such that $\mastate$ not in $F$ component of ${\mathcal F}(\mastate_0)^m(\tpl{F,R,\mktab,\mmemo})$.
+One small caveat is that state selection from $F$ must be fair: for all states $\mastate \in F$ there is some $m$ such that $\mastate$ not in $F$ component of ${\mathcal F}(\mastate_0)^m(\tpl{F,R,\mktab,\mmemo})$, which means $\mastate$ was selected and processed in one of those $m$ steps.
 %
 A queue representation of $F$ suffices to guarantee fairness.
 
 \begin{theorem}[Correctness of Summarization]\label{thm:concrete-tabular}
   $\forall \mexpr$ closed, let $\mstate_0 = \tpl{\mexpr,\bot\bot,\kmt}$ in
-  $\forall n \in \nat$:
+  $\forall n \in \nat,\mstate,\mstate' \in \State_\mathit{CESK}$:
   \begin{itemize}
-  \item{if $(\mstate,\mstate') \in \reachrestrict(\mstate_0,\stepto_\mathit{CESK},n,\emptyset)$ then
+  \item{if $(\mstate,\mstate') \in \reachrestrict(\mstate_0,\stepto_\mathit{CESK},n)$ then
       $\exists m \in \nat. (\mstate,\mstate') \in \reify({\mathcal F}(\mstate_0)^m(\mathit{sys}_0))$}
   \item{
       if $(\mstate,\mstate') \in \reify({\mathcal F}(\mstate_0)^n(\mathit{sys}_0))$ then
-      $\exists m \in \nat. (\mstate,\mstate') \in \reachrestrict(\mstate_0,\stepto_\mathit{CESK},m,\emptyset)$}
+      $\exists m \in \nat. (\mstate,\mstate') \in \reachrestrict(\mstate_0,\stepto_\mathit{CESK},m)$}
   \end{itemize}
   given comparable allocation strategies and fair state selection.
 \end{theorem}
 
 We unfold a reduction relation from a starting state in the following way:
 \begin{align*}
-  \reachrestrict(\mstate_0, \stepto, 0, R) &= R \\
-  \reachrestrict(\mstate_0, \stepto, n+1, R) &= \reachrestrict(\mstate_0, \stepto, n, R') \\
-  \textit{where } R' &= \setbuild{(\mstate_0,\mstate')}{\mstate_0 \stepto \mstate'}
-  \\ &\cup \setbuild{(\mstate,\mstate')}{(\_,\mstate) \in R, \mstate \stepto \mstate'}
+  \reachrestrict(\mstate_0, \stepto, 0) &= \setbuild{(\mstate_0,\mstate)}{\mstate_0 \stepto \mstate} \\
+  \reachrestrict(\mstate_0, \stepto, n+1) &= \stepextend(\reachrestrict(\mstate_0,\stepto,n)) \\
+  \textit{where } \stepextend(R) &= R \cup \setbuild{(\mstate,\mstate')}{(\_,\mstate) \in R, \mstate \stepto \mstate'}
 \end{align*}
 
 Allocation strategies $\alloc$ and $\alloc^*$ are comparable if they produce equal addresses regardless of the differences in the state representations:
@@ -62,7 +59,7 @@ Allocation strategies $\alloc$ and $\alloc^*$ are comparable if they produce equ
 
 We build toward a proof of correctness by giving invariant characterizations of the $\mktab$ and $\mmemo$ tables (\autoref{fig:inv}), which further depend on a ``context irrelevance'' lemma about the CESK machine.
 %
-Our development is partially verified in Coq, available with the Redex models in \texttt{model.v}; propositions marked with ${}^*$ are mechanically checked.
+Our development is partially verified in Coq in \texttt{model.v}, available with the Redex models; propositions marked with ${}^*$ are mechanically checked.
 
 \begin{lemma}[Context irrelevance${}^*$]\label{lem:stack-irrelevance}
   For all CESK traces $\mtrace$ and continuations $\mkont$ such that $\hastail(\mtrace,\mkont)$,
@@ -83,8 +80,9 @@ and $\replacetail$ (``replace tail'') is
   \replacetail(\epsilon,\mkont,\mkont'') &= \epsilon \\
   \replacetail(\mtrace\mstate,\mkont,\mkont') &= \replacetail(\mtrace,\mkont,\mkont')\replacetail(\mstate,\mkont,\mkont') \\
 \end{align*}
-Proof by induction on $\mtrace$ and cases on $\stepto$.
-
+\begin{proof}
+  By induction on $\mtrace$ and cases on $\stepto$.
+\end{proof}
 The first invariant is that the memo table only contains information about previously seen contexts; we need this to infer that there was at least one call leading to the memoized context such that we can use stack irrelevance to justify skipping to the memoized result.
 %
 Second, there is a path from the starting state of the current continuation to the current state.
@@ -130,20 +128,82 @@ Finally, there is some continuation that stays in the tail of the trace of a mem
 \begin{lemma}[Table invariants in CESK$\mathit{\Xi{}M}^*$]\label{lem:tab-inv}
   If $\inv(\mstate)$ and $\mstate \stepto \mstate'$ then $\inv(\mstate')$.
 \end{lemma}
+\begin{proof}
   By cases on $\stepto$.
-
+\end{proof}
 As the later developments in this paper are of a similar character, we will describe correctness claims as a system reflecting a relation that has a bisimulation with the original semantics.
 %
-The correctness theorem is a corollary of the following stronger statement:
-\begin{lemma}[Strengthened correctness \textbf{TODO}]
-  $\forall \mexpr$ closed, let $\mstate_0 = \tpl{\mexpr,\bot\bot,\kmt}$ in
-  $\forall n \in \nat$:
-  \begin{itemize}
-  \item{if $(\mstate,\mstate') \in \reachrestrict(\mstate_0,\stepto_\mathit{CESK},n,R)$ then
-      $\exists m \in \nat. (\mstate,\mstate') \in \reify({\mathcal F}(\mstate_0)^m(\mathit{sys}_0))$}
-  \item{
-      if $(\mstate,\mstate') \in \reify({\mathcal F}(\mstate_0)^n(\mathit{sys}_0))$ then
-      $\exists m \in \nat. (\mstate,\mstate') \in \reachrestrict(\mstate_0,\stepto_\mathit{CESK},m,\emptyset)$}
-  \end{itemize}
-  given comparable allocation strategies and fair state selection.
-\end{lemma}
+We argue the correctness theorem by induction on $n$:
+\begin{proof}
+  Base case, first bullet: $m = 2$, since $m = 1$ adds the initial state to the frontier, and in $m = 2$ it is the only choice to process. By cases on $\stepto$ the reductions are in the reification. \\
+  Base case, second bullet: vacuously true, since the relation is empty. \\
+  Induction step, first bullet: 
+IH: $\forall (\mstate,\mstate') \in \mathit{unfold}(\mstate_0,\stepto,n). \exists m. (\mstate,\mstate') \in \reify({\mathcal F}(\mstate_0)^m(\mathit{sys}_0))$
+Given $(\mstate,\mstate') \in \mathit{unfold}(\mstate_0,\stepto,n+1) = \mathit{unfold1}(\mathit{unfold}(\mstate_0,\stepto,n))$
+WTS $\exists m. (\mstate,\mstate') \in \mathit{reify}({\mathcal F}(\mstate_0)^m(\mathit{sys}_0))$
+Split on $(\mstate,\mstate') \in \mathit{unfold}(\mstate_0,\stepto,n)$ or $(\mstate,\mstate') \in \setbuild{(\mstate,\mstate')}{(_,\mstate) \in \mathit{unfold}(\mstate_0,\stepto,n), \mstate \stepto \mstate'}$
+\paragraph{Case 1:} Holds by IH.
+\paragraph{Case 2:} there is some $\mstate''$ such that $(\mstate'',\mstate) \in \mathit{unfold}(\mstate_0,\stepto,n)$.
+        By IH, there is an m such that $(\mstate'',\mstate) \in \mathit{reify}({\mathcal F}(\mstate_0)^m(\mathit{sys}_0))$
+        Let $\mktab$ be the ktable component of ${\mathcal F}(\mstate_0)^m(\mathit{sys}_0)$.
+        So $(\mstate'',\mstate)$ is of the form $(\tpl{p, \mstore, \append{\mkont}{\mkont''}},\tpl{p',\mstore',\append{\mkont'}{\mkont''}})$ where $\mkont'' \in \tails{\Xi}{\mkont}$.
+   Let $\mathit{sys} = {\mathcal F}(\mstate_0)^m(\mathit{sys}_0)$
+   By cases on $\tpl{p',\mstore',\mkont'} \in \mathit{sys}.F$.
+\\
+    Case in: let $\ell$ be the fairness witness. We follow the same argument for $\mathit{sys}={\mathcal F}(\mstate_0)^{m+\ell}$ as
+              the following case.
+\\
+    Case not in: it must be that $\tpl{p',\mstore',\mkont'}$ was selected and ``processed.''
+                 By cases on $\mstate \stepto \mstate'$.
+\\
+        Case $p'=(\mvar,\menv)$:
+        $\mstate'$ of the form $\tpl{\mval,\mstore',\append{\mkont'}{\mkont''}}$ where $\mval \in \mstore(\menv(\mvar))$
+         Thus $(\mstate,\mstate') \in \mathit{reify}(\mathit{sys})$
+\\
+        Case $p'=((\mexpri0\ \mexpri1),\menv)$:
+        $\mstate'$ of the form $\tpl{(\mexpri0,\menv),\mstore',\append{\mkont'}{\mkont''}}$
+         Thus $(\mstate,\mstate') \in \mathit{reify}(\mathit{sys})$
+\\
+        Case $p'=v, \append{\mkont'}{\mkont''}=\kcons{\mkframe}{\mkont^*}$ (that is, $\mkont' = \kcons{\mkframe}{\mkont^{**}} and \append{\mkont^{**}}{\mkont''}=\mkont^*$ or $\mkont'=\krt{\mctx}$ and $\mkont''=\kcons{\mkframe}{\mkont^*}$)
+         For $\mkont'$ case 2: $\mkont''$ must be unrolled from $\krt{\mctx} in \mktab$.
+                         there is a $\mkont'{}^* \in \mktab(\mctx)$ such that $\mkont'' = \mkont'$
+\\
+         Case $\mkframe=\kar{\mexpr,\menv}$:
+          $\mstate'$ of the form  $\tpl{(\mexpr,\menv),\mstore',\mkont^*}$
+          For $\mkont'$ case 1: $(\tpl{p',\mstore',\mkont'}, \tpl{(\mexpr,\menv),\mstore',\kcons{\kfn{\mval}}{\mkont^{**}}}) \in \mathit{sys}.R$, so $(\mstate,\mstate') \in \mathit{reify}(\mathit{sys})$
+          Case 2: $\mkont'{}^* = \kcons{\kar{\mexpr,\menv}}{\mkont'{}^{**}}$ and
+          $(\tpl{p',\mstore',\mkont'{}^*},\tpl{(\mexpr,\menv),\mstore',\kcons{\kfn{\mval}}{\mkont'{}^{**}}}) \in sys'.R$
+\\
+         Case $\mkframe=\kfn{\vclo{\slam{x}{\mexpr}}{\menv}}$
+          Similar.
+\\
+%%
+
+%%
+  Induction step, second bullet:
+Let $\mathit{sys} = {\mathcal F}(\mstate0)^n(\mathit{sys}_0)$.
+Let $\mathit{sys}' = {\mathcal F}(\mathit{sys})$
+IH: $\forall (\mstate,\mstate') \in \mathit{reify}(\mathit{sys}). \exists m. (\mstate,\mstate') \in \mathit{unfold}(\mstate_0,\stepto,m)$
+Given $(\mstate,\mstate') \in \mathit{reify}(\mathit{sys}')$
+WTS $\exists m. (\mstate,\mstate') \in \mathit{unfold}(\mstate_0,\stepto,m)$.
+
+We know $(\mstate,\mstate')$ of form $(\tpl{p,\mstore,\append{\mkont}{\mkont''}},\tpl{p',\mstore',\append{\mkont'}{\mkont''}})$ where
+$(\tpl{p,\mstore,\mkont},\tpl{p',\mstore',\mkont'}) \in \mathit{sys}'.R$ and $\mkont'' \in \tails{\mathit{sys}'.\mktab}{\mkont}$.
+Split on edge in $\mathit{sys}.R$ or in $\mathit{sys}'.R$ (and not in $\mathit{sys}.R$).
+\\
+Case in: $\mkont''$ is irrelevant because it's in the tail, and there must be some continuation in $\tails{\mathit{sys}.\mktab}{\mkont}$ by $\inv$.
+         Thus holds by IH.
+\\
+Case not in:
+  Must be that $\tpl{p,\mstore,\mkont}$ was the selected state, and that
+  $\tpl{p,\mstore,\mkont,\mathit{sys}.\mktab,\mathit{sys}.\mmemo} \stepto \tpl{p',\mstore',\mkont',\mktab',\mmemo'}$ where $\mktab' \sqsubseteq \mathit{sys}'.\mktab$ and $\mmemo' \sqsubseteq \mathit{sys}'.\mmemo$.
+  Split on $\tpl{p,\mstore,\mkont}$ the initial state or
+           there is a $\tpl{p^*,\mstore^*,\mkont^*}$ such that $(\tpl{p^*,\mstore^*,\mkont^*}, \tpl{p,\mstore,\mkont}) \in \mathit{sys}.R$.
+\\
+  Case initial: $m$ is 0.
+\\
+  Case else:
+   Need to show there is a path using $\mkont''$ whereever $\tpl{p,\mstore,\mkont}$ is, and the length should be an upper bound for $m$.
+   This brings in the table invariants and the order invariant which allows us to get to the starting point for 
+   $\tpl{p^*,\mstore^*,\mkont^*}$ and replace with the latest frame to get to where we are.
+\end{proof}
