@@ -86,6 +86,7 @@
 
 \newcommand{\startstate}{\mathit{base}}
 \newcommand{\tails}[2]{\mathit{tails}_{#1}(#2)}
+\newcommand{\tailscont}[3]{\mathit{tails}_{#1}^{#2}(#3)}
 \newcommand{\reify}{\mathit{reify}}
 \newcommand{\reflect}{\mathit{reflect}}
 \newcommand{\reachrestrict}{\mathit{unfold}}
@@ -106,6 +107,8 @@
 \newcommand{\reachable}{\mathit{reach}}
 \newcommand{\memo}{\mathit{memo}}
 \newcommand{\unroll}[2]{\mathit{unroll}_{#1}(#2)}
+\newcommand{\unrollK}[3]{\mathit{unrollK}^{#1}_{#2}(#3)}
+\newcommand{\unrollC}[2]{\mathit{unrollC}_{#1}(#2)}
 \newcommand{\hastail}{\mathit{ht}}
 \newcommand{\replacetail}{\mathit{rt}}
 
@@ -162,6 +165,7 @@
 \newcommand{\cstate}[1]{\langle #1 \rangle_{\mathit{call}}}
 \newcommand{\set}[1]{\{ #1 \}}
 \newcommand{\setbuild}[2]{\{ #1\ :\ #2\}}
+\newcommand{\setbuildb}[2]{\left\{ #1\ :\ #2\right\}}
 \newcommand{\sa}[1]{\widehat{#1}}
 \newcommand{\nequiv}{\centernot\equiv}
 
@@ -181,3 +185,5 @@
 \newcommand{\pdstepto}{\longmapsto_{\mathit{\Xi{}M}}}
 \newcommand{\astepto}{\mathrel{\widehat{\longmapsto}}}
 \newcommand{\tred}[1]{\mathrel{\underset{\Pi}{#1}}}
+
+\newcommand{\klectx}[3]{#2 \mathrel{\sqsubseteq_{#1}} #3}

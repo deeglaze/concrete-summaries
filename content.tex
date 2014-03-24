@@ -46,7 +46,10 @@ We don't presume a language of formal semantics such that our technique applies 
 An overly formal approach is unlikely to capture all ``real language's'' formalizations.
 %
 The additional abstraction also detracts from the operational intuitions and simplicity of the methodology.
-
+%
+We still present the definitions and proofs in a manner that should be well-positioned for mechanization.
+%
+This paper has been partially mechanized in the Coq proof assistant, with proofs in the supplemental materials\footnote{\url{http://github.com/ianj/concrete-summaries} in \texttt{model.v}}.
 
 \section{Models in higher-order analysis}
 
@@ -102,7 +105,7 @@ We also give intuitive analogies to well-established ideas and techniques so tha
 %
 In order to demonstrate the applicability of this viewpoint, we show a new analysis for a language with composable control.
 %
-All of the semantics modeled in this paper are implemented in full detail in PLT Redex~\citep{ianjohnson:Felleisen:2009:SEP:1795772} and available online.\footnote{\url{http://github.com/ianj/concrete-summaries}}
+All of the semantics modeled in this paper are implemented in full detail in PLT Redex~\citep{ianjohnson:Felleisen:2009:SEP:1795772} and available in the supplemental materials.
 
 There are common underpinnings of PDCFA and CFA2 that can be embodied as concrete ``summarization'' machinery in the programming language semantics: 
 \begin{enumerate}
@@ -983,6 +986,10 @@ The table-based semantics makes prompts a point of indirection, just like functi
 %
 Memoization also gets a new context to consider, calling a continuation, because composable continuations act like functions.
 %
+We separate contexts stored in meta-continuations from those in continuations to avoid losing precision from abstracting continuations' contexts.
+%
+The table for continuations is treated the same way as in the previous semantics for standard function call and return.
+%
 The new semantic spaces are then
 
 \begin{align*}
@@ -990,7 +997,8 @@ The new semantic spaces are then
   \mkont \in \Kont &= \kmt \alt \krt{\mctx} \alt \kcons{\mkframe}{\mkont} \\
   \mmkont \in \MKont &::= \kmt \alt \kprompt{\mctx} \\
   \mathit{KRange} &= \wp(\Kont \times \MKont) \cup \wp(\Kont) \\
-  \mktab \in \KTab &= \Context \to \mathit{KRange} \\
+  (\mktab_\mkont,\mktab_\mmkont) \in \KTab &= (\Context \to \wp(\Kont)) \\
+                                        &\times (\Context \to \wp(\Kont \times \MKont)) \\
   \mmemo \in \Memo &= \Context \to \wp(\Value \times \Store)
 \end{align*}
 
@@ -1010,17 +1018,17 @@ Captured continuations' store component in the $\rt$ context gets replaced with 
   \begin{tabular}{r|l}
     \hline
 % Reset
-    $\tpl{\sreset{\mexpr}, \menv, \mstore, \mkont, \mmkont, \mktab, \mmemo}$
+    $\tpl{\sreset{\mexpr}, \menv, \mstore, \mkont, \mmkont, (\mktab_\mkont,\mktab_\mmkont), \mmemo}$
     &
-    $\tpl{\mpoint, \mstore, \kmt, \kprompt{\mctx}, \joinone{\mktab}{\mctx}{(\mkont,\mmkont)}, \mmemo}$
+    $\tpl{\mpoint, \mstore, \kmt, \kprompt{\mctx}, (\mktab_\mkont,\joinone{\mktab_\mmkont}{\mctx}{(\mkont,\mmkont)}), \mmemo}$
     \\
     where & $\mpoint = (\mexpr, \menv)$, $\mctx = (\mpoint, \mstore)$.
     \\
 % Pop prompt
-    $\tpl{\mval, \mstore, \kmt, \kprompt{\mctx}, \mktab, \mmemo}$
+    $\tpl{\mval, \mstore, \kmt, \kprompt{\mctx}, \mktab\equiv(\mktab_\mkont,\mktab_\mmkont), \mmemo}$
     &
     $\tpl{\mval, \mstore, {\mkont}, {\mmkont}, \mktab, \joinone{\mmemo}{\mctx}{(\mval,\mstore)}}$
-    if $(\mkont,\mmkont) \in \mktab(\mctx)$
+    if $(\mkont,\mmkont) \in \mktab_\mkont(\mctx)$
     \\
 % Shift
     $\tpl{\sshift{\mvar}{\mexpr}, \menv, \mstore, \mkont, \mmkont, \mktab, \mmemo}$
@@ -1028,17 +1036,17 @@ Captured continuations' store component in the $\rt$ context gets replaced with 
     $\tpl{\mexpr, \extm{\menv}{\mvar}{\maddr}, \joinone{\mstore}{\maddr}{\vcomp{\mkont}},\kmt,\mmkont,\mktab,\mmemo}$
     \\
 % continuation call
-    $\tpl{\mval,\mstore,\kcons{\kfn{\vcomp{\mkont'}}}{\mkont}, \mmkont, \mktab, \mmemo}$
+    $\tpl{\mval,\mstore,\kcons{\kfn{\vcomp{\mkont'}}}{\mkont}, \mmkont, (\mktab_\mkont,\mktab_\mmkont), \mmemo}$
     &
-    $\tpl{\mval, \mstore, \mkont', \kprompt{\mctx}, \mktab',\mmemo}$
+    $\tpl{\mval, \mstore, \mkont', \kprompt{\mctx}, (\mktab_\mkont,\mktab_\mmkont'),\mmemo}$
     \\ & \quad if $\mctx \notin \dom(\mmemo)$
     \\
     & or \\
-    & $\tpl{\mval', \mstore', \mkont, \mmkont, \mktab',\mmemo}$
+    & $\tpl{\mval', \mstore', \mkont, \mmkont, (\mktab_\mkont,\mktab_\mmkont'),\mmemo}$
     \\ & \quad if $(\mval',\mstore') \in \mmemo(\mctx)$
     \\
     where & $\mctx = (\vcomp{\mkont'}, \mval, \mstore)$ \\
-          & $\mktab' = \joinone{\mktab}{\mctx}{(\mkont,\mmkont)}$
+          & $\mktab_\mmkont' = \joinone{\mktab_\mmkont}{\mctx}{(\mkont,\mmkont)}$
     \\
 % Memoized continuation call
 % continuation call
@@ -1090,12 +1098,12 @@ The rules that change significantly are presented in figure \ref{fig:shift-reset
     & $(\mkont',\mmktab') = \approximate(\mkont, \mmktab, \maddr)$
 \\
 % Return
-   $\tpl{\mval, \mstore, \krt{\mctx}, \mmkont, \mmktab, \mktab, \mmemo}$
+   $\tpl{\mval, \mstore, \krt{\mctx}, \mmkont, \mmktab, \mktab\equiv(\mktab_\mkont,\mktab_\mmkont), \mmemo}$
    &
    $\tpl{\mval, \mstore, \mkont, \mmkont, \mmktab, \mktab, \mmemo'}$
-   if $\mkont \in \returns(\mmktab, \mktab, \mctx)$
+   if $\mkont \in \returns(\mmktab, \mktab_\mkont, \mctx)$
    \\
-   where & $\mmemo' = \mmemo \sqcup \memoize(\mmktab, \mktab, \mctx, (\mval, \mstore, \mmktab))$
+   where & $\mmemo' = \mmemo \sqcup \memoize(\mmktab, \mktab_\mkont, \mctx, (\mval, \mstore, \mmktab))$
   \end{tabular}
   \caption{Fixed table-based semantics for shift/reset}
   \label{fig:shift-reset-table1}
@@ -1133,17 +1141,17 @@ This operation makes lookups more costly since we have to find closures bounded 
 %
 If the context in an $\rt$ continuation is approximate, we must return to all the continuations known for all the contexts it approximates:
 \begin{align*}
-  &\returns(\mmktab, \mktab, (\mexpr,\menv, \mstore, \mmktab')) = \mktab(\mexpr,\menv, \mstore, \mmktab') \\
-  &\returns(\mmktab, \mktab, (\mexpr,\menv, \maddr)) =
-    \bigcup\setbuild{\mktab(\mexpr,\menv,\mstore,\mmktab')}{\mstore \in \mmktab(\maddr), \mmktab' \sqsubseteq \mmktab}
+  &\returns(\mmktab, \mktab_\mkont, (\mexpr,\menv, \mstore, \mmktab')) = \mktab_\mkont(\mexpr,\menv, \mstore, \mmktab') \\
+  &\returns(\mmktab, \mktab_\mkont, (\mexpr,\menv, \maddr)) =
+    \bigcup\setbuild{\mktab_\mkont(\mexpr,\menv,\mstore,\mmktab')}{\mstore \in \mmktab(\maddr), \mmktab' \sqsubseteq \mmktab}
 \end{align*}
 
 At returns, the memo table must add the result to all represented contexts:
 \newcommand{\res}{m}
 \begin{align*}
-  &\memoize(\mmktab, \mktab, (\mexpr,\menv, \mstore', \mmktab'), \res) =
+  &\memoize(\mmktab, \mktab_\mkont, (\mexpr,\menv, \mstore', \mmktab'), \res) =
   [(\mexpr,\menv, \mstore',\mmktab') \mapsto \set{{\res}}] \\
-  &\memoize(\mmktab, \mktab, (\mexpr,\menv, \maddr), \res) = [\mctx \mapsto \set{\res} : \mctx \in \dom(\mktab) \cap C] \\
+  &\memoize(\mmktab, \mktab_\mkont, (\mexpr,\menv, \maddr), \res) = [\mctx \mapsto \set{\res} : \mctx \in \dom(\mktab_\mkont) \cap C] \\
   &\text{where } C = \setbuild{(\mexpr,\menv, \mstore', \mmktab')}{\mstore' \in \mmktab(\maddr), \mmktab' \sqsubseteq \mmktab}
 \end{align*}
 
@@ -1152,6 +1160,75 @@ The result of this viewpoint is a sound, precise, and computable semantics for a
 \begin{theorem}\label{thm:sound-sr}
   The widened tabular semantics reflects a relation that \emph{simulates} the shift/reset machine.
 \end{theorem}
+
+This theorem amounts to just the first bullet of \autoref{thm:concrete-tabular}.
+%
+The definition of ${\mathcal F}$ is similar in that only $\mktab$ and $\mmemo$ are widened, but states in $R$ now also contain $\mmkont$s and $\mmktab$s.
+%
+The definition of $\reify$ must change to account for the different target state space, the new context form and the continuation closure:
+\\
+
+  $\reify(F, R, \mktab, \mmemo) =$
+\begin{align*}
+  &\quad \{ (\tpl{\mpoint,\mstore,\mkont_0,\mmkont_0},
+              \tpl{\mpoint',\mstore',\mkont_1,\mmkont_1})\ :\ 
+\\ &\qquad E\equiv(\tpl{\mpoint,\mstore,\mkont,\mmkont,\mmktab}, \tpl{\mpoint',\mstore',\mkont',\mmkont',\mmktab'}) \in R\text,
+\\ &\qquad((\mkont_0,\mmkont_0),(\mkont_1,\mmkont_1)) \in \mathit{conts}_\mktab^\mmktab(E) \}
+\end{align*}
+
+The $\mathit{conts}$ function needs to inspect the reduction actually used to know if the meta-continuation is pushed, popped, or stays the same.
+%
+We'll classify the different reductions as such in the in the definition of $\mathit{conts}$ to not obfuscate the intended meaning.
+%
+We'll use $(\mkont,\kprompt{\mctx}) \overset{+}{\to} (\mkont',\kprompt{\mctx'})$ for a pushed continuation from a meta-continuation $\kprompt{\mctx}$ to $\kprompt{\mctx'}$, which happens in the \texttt{reset} and continuation invocation rules.
+%
+Similarly, the prompt-popping rule is marked as $(\kmt,\kprompt{\mctx}) \overset{-}{\to} (\mkont,\kprompt{\mctx'})$, since it replaces the $\kmt$ with some $\mkont$ and changes the prompt's context.
+%
+We don't need to inspect the second context since its unrolling will include the pushed/popped continuations.
+
+\begin{center}
+  \begin{tabular}{l}
+    $\mathit{conts}_\mktab^\mmktab((\mkont,\mmkont) \overset{+}{\to} (\mkont',\mmkont')) =$ \\
+    \quad$\setbuildb{((\mkont_0,\mmkont^*),(\mkont_1,\mkapp{\mkont_0}{\mmkont^*}))}
+    {
+      \begin{array}{l}
+        \mkont_0 \in \unrollK{\mmktab}{\mktab_\mkont}{\mkont}, \\
+        \mkont_1 \in \unrollK{\mmktab}{\mktab_\mkont}{\mkont'}, \\
+        \mmkont^* \in \unrollC{\mktab_\mmkont}{\mmkont}
+      \end{array}}$
+    \\
+%
+    $\mathit{conts}_\mktab^\mmktab((\mkont,\mmkont) \to (\mkont',\mmkont)) =$ \\
+    \quad$\setbuildb{((\append{\mkont}{\mkont''},\mmkont), (\append{\mkont'}{\mkont''}, \mmkont))}
+    {\begin{array}{l}
+        \mkont'' \in \tails{\mktab_\mkont}{\mkont}, \\
+        \mmkont \in \unrollC{\mktab}{\mmkont}
+      \end{array}}$
+    \\
+%
+    $\mathit{conts}_\mktab^\mmktab((\kmt,\kprompt{\mctx}) \overset{-}{\to} (\mkont,\kprompt{\mctx'})) =$ \\
+    \quad$\setbuildb{((\kmt,\mkapp{\mkont'}{\mmkont'}),(\mkont',\mmkont'))}{
+    \begin{array}{l}
+      (\mkont,\mmkont) \in \mktab_\mmkont(\mctx), \\
+      \mkont' \in \unrollK{\mmktab}{\mktab_\mkont}{\mkont}, \\
+      \mmkont' \in \unrollC{\mktab_\mmkont}{\mmkont}
+    \end{array}}$
+  \end{tabular}
+\end{center}
+
+\begin{align*}
+  \unrollK{\mmktab}{\mktab_\mkont}{\mkont} &= \setbuild{\append{\mkont}{\mkont'}}{\mkont' \in \tailscont{\mktab_\mkont}{\mmktab}{\mkont}}
+\\[2pt]
+  \tailscont{\mktab_\mkont}{\mmktab}{\mkont}(\kmt) &= \set{\kmt} \\
+  \tailscont{\mktab_\mkont}{\mmktab}{\mkont}(\kcons{\mkframe}{\mkont}) &= \tailscont{\mktab_\mkont}{\mmktab}{\mkont} \\
+  \tailscont{\mktab_\mkont}{\mmktab}{\mkont}(\krt{\mctx}) &= \bigcup\limits_{\mkont \in \returns(\mmktab,\mktab_\mkont,\mctx)}{\unrollK{\mmktab}{\mktab_\mkont}{\mkont}}
+\\[2pt]
+  \unrollC{\mktab}{\kmt} &= \set{\kmt} \\
+  \unrollC{(\mktab_\mkont,\mktab_\mmkont)}{\kprompt{\mctx}} &=
+    \setbuild{\mkapp{\mkont'}{\mmkont'}}{(\mkont,\mmkont) \in \mktab_\mmkont(\mctx),
+      \\&\phantom{= \{}\quad \mkont' \in \unrollK{\mmktab}{\mktab_\mkont}{\mkont},
+      \\&\phantom{= \{}\quad \mmkont' \in \unrollC{\mktab}{\mmkont}}
+\end{align*}
 
 \paragraph{Comparison to PDCFA CPS'd to remove {\tt shift} and {\tt reset}:}{
 We lose precision if we use a CPS transform to compile away {\tt shift} and {\tt reset} forms, because variables are treated less precisely than continuations.
@@ -1195,6 +1272,27 @@ Consider the following program and its CPS transform for comparison:
 PDCFA with a monovariant allocation strategy will predict the CPS'd version returns true or false.
 %
 Our specialized analysis for delimited control, will predict the non-CPS'd version returns true.}
+
+\paragraph{Comparison to CFA2 and \texttt{call/cc}}
+Although we make no formal comparison of the constructions in this paper that those of CFA2, we can point out similarities in the approaches.
+%
+We claim that what we showed in this section marks a strict generalization of the methods in \citet{dvanhorn:Vardoulakis2011Pushdown}.
+%
+CFA2 makes a specific choice of parameters for context-sensitivity and heap abstraction.
+%
+If we specialize this work to a monovariant allocation strategy and a global store widening, the utility of a continuation closure $\mmktab$ becomes moot, since the store is monotonically increasing.
+%
+In other words, any distinction between contexts that we might hope to achieve given a $\mmktab$ will fail since the $\mmktab' \sqsubseteq \mmktab$ proposition in the $\returns$ meta-function will always be true.
+%
+With this realization, we can look closer at what happens when invoking a continuation.
+%
+Once execution reaches the $\krt{\mctx}$ tail of an installed captured continuation, $\returns$ will ensure flow continues to absolutely every context that captured that continuation.
+%
+For the readers making the comparison themselves, lines 28 and 29 of CFA2's workset algorithm embody this flow explosion rule.
+%
+To paraphrase, whenever execution reaches the invocation of a captured continuation, every call of the function that captures the continuation is marked as returning with the value passed to the continuation (remember, non-compositional continuations act like returns and not calls).
+%
+Since we semantically distinguish captured continuations from non-captured, we don't need any judgement about the heap-allocation of certain bindings that CFA2 uses.
 
 \section{Related Work}
 
