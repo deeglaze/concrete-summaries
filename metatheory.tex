@@ -161,6 +161,7 @@ Case 1: Holds by IH.
 \\
 Case 2: there is some $\mstate''$ such that $(\mstate'',\mstate) \in \mathit{unfold}(n)$.
         By IH, there is an $m$ such that (let $\mathit{sys} = {\mathcal F}(\mstate_0)^m(\mathit{sys}_0)$) $(\mstate'',\mstate) \in \mathit{reify}(\mathit{sys})$.
+\\
         So $(\mstate'',\mstate) \equiv (\tpl{\mpoint, \mstore, \append{\mkont}{\mkont''}},\tpl{\mpoint',\mstore',\append{\mkont'}{\mkont''}})$ where $\mkont'' \in \tails{\mktab}{\mkont}$.
 
    \noindent By cases on $\tpl{\mpoint',\mstore',\mkont'} \in \mathit{sys}.F$:
@@ -179,16 +180,12 @@ Case 2: there is some $\mstate''$ such that $(\mstate'',\mstate) \in \mathit{unf
 \\
         Case $p'\equiv\mval, \append{\mkont'}{\mkont''}\equiv\kcons{\mkframe}{\mkont^*}$ (that is, $\mkont' \equiv \kcons{\mkframe}{\mkont^{**}}$ and $\append{\mkont^{**}}{\mkont''}=\mkont^*$ or $\mkont'\equiv\krt{\mctx}$ and $\mkont''=\kcons{\mkframe}{\mkont^*}$)
          For $\mkont'$ case 2: $\mkont''$ must be unrolled from $\krt{\mctx} \in \mathit{sys}.\mktab$.
-                         Thus there is a $\mkont'{}^* \in \mathit{sys}.\mktab(\mctx)$ such that $\mkont'' = \mkont'$
-\\
+                         Thus there is a $\kcons{\mkframe}{\mkont^{**}} \in \mathit{sys}.\mktab(\mctx)$ such that $\mkont^* \in \unroll{\mathit{sys}.\mktab}{\mkont^{**}}$
+                         \\
          Case $\mkframe\equiv\kar{\mexpr,\menv}$, $\mstate' \equiv \tpl{(\mexpr,\menv),\mstore',\mkont^*}$:
-          For $\mkont'$ case 1: $(\tpl{\mpoint',\mstore',\mkont'}, \tpl{(\mexpr,\menv),\mstore',\kcons{\kfn{\mval}}{\mkont^{**}}}) \in \mathit{sys}.R$, so $(\mstate,\mstate') \in \mathit{reify}(\mathit{sys})$.
+          By definition of ${\mathcal F}$, $(\tpl{\mpoint',\mstore',\mkont'}, \tpl{(\mexpr,\menv),\mstore',\kcons{\kfn{\mval}}{\mkont^{**}}}) \in \mathit{sys}.R$, so $(\mstate,\mstate') \in \mathit{reify}(\mathit{sys})$.
 \\
-          Case 2: $\mkont'{}^* \equiv \kcons{\kar{\mexpr,\menv}}{\mkont'{}^{**}}$ and
-          \\ $(\tpl{\mpoint',\mstore',\mkont'{}^*},\tpl{(\mexpr,\menv),\mstore',\kcons{\kfn{\mval}}{\mkont'{}^{**}}}) \in \mathit{sys'}.R$
-\\
-         Case $\mkframe\equiv\kfn{\vclo{\slam{x}{\mexpr}}{\menv}}$
-          Similar.
+         Case $\mkframe\equiv\kfn{\vclo{\slam{x}{\mexpr}}{\menv}}$: Similar.
 \\
 %%
 
@@ -206,38 +203,72 @@ we know $(\mstate,\mstate') \equiv (\tpl{\mpoint,\mstore,\append{\mkont}{\mkont'
 \noindent By cases on $\mstate$ initial:
 Case $\mstate = \mstate_0$: a sufficient $m$ is 0.
 \\
-Case else: it must be that there is a $(\tpl{\mpoint^*,\mstore^*,\mkont^*},\tpl{\mpoint,\mstore,\mkont}) \in \mathit{sys}.R$.
- By IH, there is an $m$ such that for some 
- $\mkont_o \in \tails{\mathit{sys}.\mktab}{\mkont^*}$,
+Case else: it must be that there is a state that steps to $\tpl{\mpoint,\mstore,\mkont}$, with the edge represented in $\mathit{sys}.R$.
+%
+ $(\tpl{\mpoint^*,\mstore^*,\mkont^*},\tpl{\mpoint,\mstore,\mkont}) \in \mathit{sys}.R$.
+%
+ By IH, for fixed arbitrary $\mkont_o \in \tails{\mathit{sys}.\mktab}{\mkont^*}$, there is an $m$ such that
  $(\tpl{\mpoint^*,\mstore^*,\append{\mkont^*}{\mkont_o}},\tpl{\mpoint,\mstore,\append{\mkont}{\mkont_o}}) \in \mathit{unfold}(m)$.
+ We know that the context of $\mkont$ must be in the domain of $\mathit{sys}.\mktab$ due to the invariant.
+\\
+\newcommand{\ctxof}{\mathit{ctx\text{-}of}}
+ \textbf{The intricate part of the proof:}
+ If $\mkont''$ uses any truncated continuations from $\mathit{sys}'.\mktab$ that are not in $\mathit{sys}.\mktab$, they must all be in the entry for the context in $\mkont$, and they must all be at the top of $\mkont''$ with no other truncated continuations from other contexts' entries (due to the order invariant).
+ In other words, $\mkont''= \append{\append{\mkont_0}{\append{\ldots}{\mkont_n}}}{\mkont_o}$ for some $\vec{\mkont} \in \mathit{sys}'.\mktab(\ctxof(\mkont))^*$ and $\mkont_o \in \tails{\mathit{sys}.\mktab}{\mkont}$.
+We mean $\ctxof$ to extract the context stored in a continuation's $\mathbf{rt}$.
+%
+If the continuation does not have an $\mathbf{rt}$, then $\mkont''$ must be $\kmt$, and the argument becomes trivial.
+ By induction on this list of $\vec{\mkont}$, we can use the invariants to build a path piecemeal.
+\\
+ Specifically we argue \emph{a fortiori} the following:
+\\
+ For all $\vec{\mkont} \in \mathit{sys}'.\mktab(\ctxof(\mkont))^*$,
+ all $(\mstate,\mstate') \in \reify(\mathit{sys}')$,
+ all $\mkont_o \in \tails{\mathit{sys}.\mktab}{\mkont}$,
+ and all $\mpoint^*,\mstore^*,\mkont^*,\mpoint',\mstore',\mkont',$ if $(\mstate,\mstate')$ equals
+\\
+$(\tpl{\mpoint^*,\mstore^*,\append{\mkont^*}{\append{\vec{\mkont}}{\mkont_o}}},\tpl{\mpoint',\mstore',\append{\mkont'}{\append{\vec{\mkont}}{\mkont_o}}})$ and
+\\
+ $\tails{\mathit{sys}'.\mktab}{\mkont^*} = \tails{\mathit{sys}'.\mktab}{\mkont}$, then there is some natural $m$, such that $(\mstate,\mstate') \in \mathit{unfold}(m)$.
+\\
+\textit{Proof.} The argument follows by induction on $\vec{\mkont}$:
+\\
+Base case ($\vec{\mkont}$ empty): We use the (outer) induction hypothesis with $\mkont_o$ to get an $m$. Then since $\mstate \stepto \mstate'$, we conclude $(\mstate,\mstate') \in \mathit{unfold}(m+1)$.
+\\
+Induction step ($\vec{\mkont} \equiv \mkont_0 : \vec{\mkont}'$):
+By the invariant and context irrelevance, there is a path $\mtrace\equiv\tpl{\ctxof(\mkont_0), \append{\vec{\mkont}}{\mkont_o}} \stepto^* \mstate_\mathit{base}$ where $\mstate_\mathit{base} = \tpl{\ctxof(\mkont),\append{\mkont_0}{\append{\vec{\mkont}}{\mkont_o}}}$.
+Also by the invariant, there is a path $\mtrace' \equiv \mstate_\mathit{base} \stepto^* \mstate$.
+We use the last edge of $\mtrace$ and the induction hypothesis to get an $m$ to unfold through the second path to show $(\mstate,\mstate') \in \mathit{unfold}(m + |\mtrace'| + 1)$.
+%We case split on whether $\mkont_0$ has a context equal to the context of $\mkont$.
 
-By cases on edge in $\mathit{sys}.R$ or in $\mathit{sys}'.R$ (and not in $\mathit{sys}.R$).
-\\
-Case in: $\mkont''$ is irrelevant because it's in the tail, and there must be some continuation in $\tails{\mathit{sys}.\mktab}{\mkont}$ by $\inv$.
-         Thus holds by IH.
-\\
-Case not in:
-  It must be that $\tpl{\mpoint,\mstore,\mkont}$ was the selected state, and that
-  $\tpl{\mpoint,\mstore,\mkont,\mathit{sys}.\mktab,\mathit{sys}.\mmemo} \stepto \tpl{\mpoint',\mstore',\mkont',\mktab',\mmemo'}$ where $\mktab' \sqsubseteq \mathit{sys}'.\mktab$ and $\mmemo' \sqsubseteq \mathit{sys}'.\mmemo$.
+% By cases on edge in $\mathit{sys}.R$ or in $\mathit{sys}'.R$ (and not in $\mathit{sys}.R$).
+% \\
+% Case in: $\mkont''$ is irrelevant because it's in the tail, and there must be some continuation in $\tails{\mathit{sys}.\mktab}{\mkont}$ by $\inv$.
+%          Thus holds by IH.
+% \\
+% Case not in:
+%   It must be that $\tpl{\mpoint,\mstore,\mkont}$ was the selected state, and that
+%   $\tpl{\mpoint,\mstore,\mkont,\mathit{sys}.\mktab,\mathit{sys}.\mmemo} \stepto \tpl{\mpoint',\mstore',\mkont',\mktab',\mmemo'}$ where $\mktab' \sqsubseteq \mathit{sys}'.\mktab$ and $\mmemo' \sqsubseteq \mathit{sys}'.\mmemo$.
 
-  By cases on this reduction:
-\\
-  Case $\tpl{(\mvar,\menv),\mstore,\mkont,\_,\_} \stepto \tpl{\mval,\mstore,\mkont,\_,\_}$ where $\mval \in \mstore(\menv(\mvar))$:
-\\
-  Case $\tpl{((\mexpri0\ \mexpri1),\menv),\mstore,\mkont,\_,\_} \stepto \tpl{(\mexpri0,\menv),\mstore,\mkont,\_,\_}$:
-\\
-  Case $\tpl{\mval,\mstore,\kcons{\kar{\mexpr,\menv}}{\mkont},\_,\_} \stepto \tpl{(\mexpr,\menv),\mstore,\kcons{\kfn{\mval}}{\mkont},\_,\_}$:
-\\
-  Case $\tpl{\mval,\mstore,\kcons{\kfn{\vclo{\slam{\mvar}{\mexpr}}{\menv}}}{\mkont},\mktab,\mmemo} \stepto \tpl{\mctx,\krt{\mctx},\mktab',\mmemo}$
-  where $\maddr = \alloc^*(\mstate)$, $\menv' = \extm{\menv}{\mvar}{\maddr}$, $\mstore' = \joinone{\mstore}{\maddr}{\set{\mval}}$, $\mctx = ((\mexpr,\menv'),\mstore')$, and $\mctx \notin \dom(\mmemo)$:
-\\
-  Split on $\tpl{\mpoint,\mstore,\mkont}$ the initial state or
-           there is a $\tpl{\mpoint^*,\mstore^*,\mkont^*}$ such that $(\tpl{\mpoint^*,\mstore^*,\mkont^*}, \tpl{\mpoint,\mstore,\mkont}) \in \mathit{sys}.R$.
-\\
-  Case initial: $m$ is 0.
-\\
-  Case else:
-   Need to show there is a path using $\mkont''$ whereever $\tpl{\mpoint,\mstore,\mkont}$ is, and the length should be an upper bound for $m$.
-   This brings in the table invariants and the order invariant which allows us to get to the starting point for 
-   $\tpl{\mpoint^*,\mstore^*,\mkont^*}$ and replace with the latest frame to get to where we are.
+%   By cases on this reduction:
+% \\
+%   Case $\tpl{(\mvar,\menv),\mstore,\mkont,\_,\_} \stepto \tpl{\mval,\mstore,\mkont,\_,\_}$ where $\mval \in \mstore(\menv(\mvar))$:
+% \\
+%   Case $\tpl{((\mexpri0\ \mexpri1),\menv),\mstore,\mkont,\_,\_} \stepto \tpl{(\mexpri0,\menv),\mstore,\mkont,\_,\_}$:
+% \\
+%   Case $\tpl{\mval,\mstore,\kcons{\kar{\mexpr,\menv}}{\mkont},\_,\_} \stepto \tpl{(\mexpr,\menv),\mstore,\kcons{\kfn{\mval}}{\mkont},\_,\_}$:
+% \\
+%   Case $\tpl{\mval,\mstore,\kcons{\kfn{\vclo{\slam{\mvar}{\mexpr}}{\menv}}}{\mkont},\mktab,\mmemo} \stepto \tpl{\mctx,\krt{\mctx},\mktab',\mmemo}$
+%   where $\maddr = \alloc^*(\mstate)$, $\menv' = \extm{\menv}{\mvar}{\maddr}$, $\mstore' = \joinone{\mstore}{\maddr}{\set{\mval}}$, $\mctx = ((\mexpr,\menv'),\mstore')$, and $\mctx \notin \dom(\mmemo)$:
+% \\
+%   Split on $\tpl{\mpoint,\mstore,\mkont}$ the initial state or
+%            there is a $\tpl{\mpoint^*,\mstore^*,\mkont^*}$ such that $(\tpl{\mpoint^*,\mstore^*,\mkont^*}, \tpl{\mpoint,\mstore,\mkont}) \in \mathit{sys}.R$.
+% \\
+%   Case initial: $m$ is 0.
+% \\
+%   Case else:
+%   \textbf{TODO:}
+%    Need to show there is a path using $\mkont''$ whereever $\tpl{\mpoint,\mstore,\mkont}$ is, and the length should be an upper bound for $m$.
+%    This brings in the table invariants and the order invariant which allows us to get to the starting point for 
+%    $\tpl{\mpoint^*,\mstore^*,\mkont^*}$ and replace with the latest frame to get to where we are.
 \end{proof}
