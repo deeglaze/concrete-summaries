@@ -98,11 +98,163 @@
                     [(= stage 2) return1]
                     [(= stage 3) cont1]))))
 
-(define ((to-pdf i) p)
-  (with-output-to-file (format "example~a.pdf" i) #:exists 'replace
+(define (impl)
+  (code (struct state (point σ κ) #:transparent)
+        (struct ar (e ρ) #:transparent)
+        (struct fn (v) #:transparent)
+        (struct mt () #:transparent)
+        (struct rt (ctx) #:transparent)
+        (struct ref (x) #:transparent)
+        (struct app (e0 e1) #:transparent)
+        (struct lam (x e) #:transparent)
+        (define-values (F R Seen M Ξ)
+             (values (mutable-set) (mutable-set) (mutable-set)
+                     (make-hash) (make-hash)))
+        (define (hash-add h k v)
+          (hash-set h k (set-add (hash-ref h k (set)) v)))
+        (define (hash-add! h k v)
+          (hash-set! h k (set-add (hash-ref h k (set)) v)))
+        (define (add-state! s)
+          (unless (set-member? Seen s)
+            (set-add! F s)
+            (set-add! Seen s)))
+        (define (add-reduction! s0 s1)
+          (set-add! R (cons s0 s1))
+          (add-state! s1))
+        (define (step s)
+          (match s
+           [(state (cons (ref x) ρ) σ κ)
+            (for ([v (in-set (hash-ref σ (hash-ref ρ x)))])
+              (add-reduction! s (state v σ κ)))]
+           [(state (cons (app e0 e1) ρ) σ κ)
+            (add-reduction! s
+             (state (cons e0 ρ) σ (cons (ar e1 ρ) κ)))]
+           [(state v σ (cons (ar e ρ) κ))
+            (add-reduction! s
+             (state (cons e ρ) σ (cons (fn v) κ)))]
+           [(state v σ (cons (fn (cons (lam x e) ρ)) κ))
+            (define a (alloc s))
+            (define ρ* (hash-set ρ x a))
+            (define σ* (hash-add σ a v))
+            (define ctx (list e ρ* σ*))
+            (hash-add! Ξ ctx κ)
+            (match (hash-ref M ctx #f)
+              [#f
+               (add-reduction! s
+                (state (cons e ρ*) σ* (rt ctx)))]
+              [results
+               (for ([r (in-set results)])
+                 (match-define (cons v* σ**) r)
+                 (add-state! (state v* σ** κ)))])]
+           [(state v σ (rt ctx))
+            (hash-add! M ctx (cons v σ))
+            (for ([κ (in-set (hash-ref Ξ ctx))])
+              (add-reduction! s (state v σ κ)))]))
+        (define (analyze e)
+          (set-clear! F) (set-clear! R) (set-clear! Seen)
+          (hash-clear! Ξ) (hash-clear! M)
+          (set-add! F (state (cons e (hash)) (hash) (mt)))
+          (let loop ()
+            (unless (set-empty? F)
+              (define ς (set-first F))
+              (set-remove! F ς)
+              (step ς)
+              (loop)))
+          '|the final system|
+          (list R M Ξ))))
+(define (concrete-alloc)
+  (code (λ (s) (gensym))))
+(define (monovariant-alloc)
+  (code (match-lambda
+         [(state _ _ (cons (fn (cons (lam x _) _)) _))
+          x])))
+
+(define alloc (match-lambda [(state _ _ (cons (fn (cons (lam x _) _)) _))
+                       x]))
+(struct state (point σ κ) #:transparent)
+(struct ar (e ρ) #:transparent)
+(struct fn (v) #:transparent)
+(struct mt () #:transparent)
+(struct rt (ctx) #:transparent)
+(struct ref (x) #:transparent)
+(struct app (e0 e1) #:transparent)
+(struct lam (x e) #:transparent)
+
+(define-values (F R Seen M Ξ)
+  (values (mutable-set) (mutable-set) (mutable-set)
+          (make-hash) (make-hash)))
+(define (hash-add h k v)
+  (hash-set h k (set-add (hash-ref h k (set)) v)))
+(define (hash-add! h k v)
+  (hash-set! h k (set-add (hash-ref h k (set)) v)))
+(define (add-state! s)
+  (unless (set-member? Seen s)
+    (set-add! F s)
+    (set-add! Seen s)))
+(define (add-reduction! s0 s1)
+  (set-add! R (cons s0 s1))
+  (add-state! s1))
+(define (step s)
+  (match s
+    [(state (cons (ref x) ρ) σ κ)
+     (printf "WTF ~a~%~a~%" s x)
+     (define a (hash-ref ρ x (λ () (error 'var-lookup "Var ~a" x))))
+     (for ([v (in-set (hash-ref σ a (λ () (error 'addr-lookup "Addr ~a" a))))])
+       (add-reduction! s (state v σ κ)))]
+    [(state (cons (app e0 e1) ρ) σ κ)
+     (add-reduction! s
+                     (state (cons e0 ρ) σ (cons (ar e1 ρ) κ)))]
+    [(state v σ (cons (ar e ρ) κ))
+     (add-reduction! s
+                     (state (cons e ρ) σ (cons (fn v) κ)))]
+    [(state v σ (cons (fn (cons (lam x e) ρ)) κ))
+     (define a (alloc s))
+     (define ρ* (hash-set ρ x a))
+     (define σ* (hash-add σ a v))
+     (define ctx (list e ρ* σ*))
+     (hash-add! Ξ ctx κ)
+     (match (hash-ref M ctx #f)
+       [#f
+        (add-reduction! s
+                        (state (cons e ρ*) σ* (rt ctx)))]
+       [results
+        (for ([r (in-set results)])
+          (match-define (cons v* σ**) r)
+          (add-state! (state v* σ** κ)))])]
+    [(state v σ (rt ctx))
+     (hash-add! M ctx (cons v σ))
+     (for ([κ (in-set (hash-ref Ξ ctx (λ () (error 'bad-return "Context ~a" ctx))))])
+       (add-reduction! s (state v σ κ)))]
+    [_ (void)]))
+
+(define (analyze e)
+  (set-clear! F)
+  (set-clear! R)
+  (set-clear! Seen)
+  (hash-clear! Ξ)
+  (hash-clear! M)
+  (set-add! F (state (cons e (hash)) (hash) (mt)))
+  (let loop ()
+    (unless (set-empty? F)
+      (define ς (set-first F))
+      (set-remove! F ς)
+      (step ς)
+      (loop)))
+  R)
+(analyze (app (lam 'x (ref 'x))
+              (lam 'y (ref 'y))))
+
+(define ((to-pdf prefix i) p)
+  (with-output-to-file (if i
+                           (format "~a~a.pdf" prefix i)
+                           (format "~a.pdf" prefix))
+    #:exists 'replace
     (λ () (write-bytes (convert p 'pdf-bytes)))))
 (for/list ([i 4]) 
-  ((if pdf? (to-pdf i) values) (example i)))
+  ((if pdf? (to-pdf "example" i) values) (example i)))
+((to-pdf "impl" #f) (impl))
+((to-pdf "calloc" #f) (concrete-alloc))
+((to-pdf "malloc" #f) (monovariant-alloc))
 #|
 (code (define (touch-kont κ Ξ)
         (define seen (mutable-seteq))

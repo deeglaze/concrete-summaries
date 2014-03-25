@@ -9,7 +9,10 @@ We reify the reduction relation from a system in the following way:
   \reify(F, R, \mktab, \mmemo) &=
   \setbuild{(\tpl{\mpoint,\mstore,\append{\mkont}{\mkont''}},
              \tpl{\mpoint',\mstore',\append{\mkont'}{\mkont''}})}
-           {\\ &\phantom{= \{}(\tpl{\mpoint,\mstore,\mkont}, \tpl{\mpoint',\mstore',\mkont'}) \in R,
+           {\\ &\phantom{= \{}(\tpl{\mpoint^*,\mstore^*,\mkont^*}, \tpl{\mpoint',\mstore',\mkont'}) \in R,
+            \\ &\phantom{= \{}\text{if } \mpoint^*\equiv\mval \text{ and } \mkont^* \equiv \krt{\mctx} \text{ then }
+            \\ &\phantom{= \{else }\text{let } (\tpl{\mpoint,\mstore,\mkont},\tpl{\mpoint^*,\mstore^*,\mkont^*}) \in R,
+            \\ &\phantom{= \{}\text{else let } \tpl{\mpoint,\mstore,\mkont} = \tpl{\mpoint^*,\mstore^*,\mkont^*}
             \\ &\phantom{= \{}\mkont'' \in \tails{\mktab}{\mkont}} \\
 \text{where } \tails{\mktab}{\kmt} &= \set{\kmt} \\
               \tails{\mktab}{\krt{\mctx}} &= \setbuild{\mkont' \in \unroll{\mktab}{\mkont}}{\mkont \in \mktab(\mctx)} \\
@@ -21,6 +24,8 @@ We reify the reduction relation from a system in the following way:
               \append{\kcons{\mkframe}{\mkont}}{\mkont'} &= \kcons{\mkframe}{(\append{\mkont}{\mkont'})}
 \end{align*}
 
+Any return edge (\ie, the left state has a value and a $\krt{\mctx}$ continuation) is administrative, so the reification stutters those out by linking the predecessors of return states with their successors.
+%
 The $\mathit{unroll}$ set interprets what are all the valid continuations that $\mktab$ encodes for a given continuation that contains $\krt{\mctx}$, and $\mathit{tails}$ is defined mutually to produce all continuations that could be unrolled from the tail of a truncated continuation.
 
 For a pushdown analysis, we can simply take the least fixed-point of ${\mathcal F}(\mastate_0)$, but in general we can only say a witnessed reduction after $n$ steps, in one case, will in the other case witness the same reduction in some $m$ steps.
@@ -272,3 +277,11 @@ We use the last edge of $\mtrace$ and the induction hypothesis to get an $m$ to 
 %    This brings in the table invariants and the order invariant which allows us to get to the starting point for 
 %    $\tpl{\mpoint^*,\mstore^*,\mkont^*}$ and replace with the latest frame to get to where we are.
 \end{proof}
+
+To reiterate, this correctness proof is strong enough for any allocation strategy, including fresh (for concrete execution) and finite (for ``pushdown analysis'').
+%
+The finite case is special since the $\System$ space becomes finite, which means there is some $m$ such that ${\mathcal F}^m(\mastate_0)$ is a fixed point, by Kleene's fixed point theorem.
+%
+In other words, the fixed point soundly and completely represents all paths reachable from the initial state in the CESK machine with an unbounded stack but finite address space.
+%
+This form of the CESK machine has a shallow translation into a pushdown system, but we needn't go there.

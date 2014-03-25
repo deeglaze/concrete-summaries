@@ -49,6 +49,8 @@ The additional abstraction also detracts from the operational intuitions and sim
 %
 We still present the definitions and proofs in a manner that should be well-positioned for mechanization.
 %
+The reader unfamiliar with or uninterested in correctness proofs should still be able to grok the technique and apply it with little difficulty.
+%
 This paper has been partially mechanized in the Coq proof assistant, with proofs in the supplemental materials\footnote{\url{http://github.com/ianj/concrete-summaries} in \texttt{model.v}}.
 
 \section{Models in higher-order analysis}
@@ -359,11 +361,13 @@ This semantics is only correct for fresh allocation strategies, which in turn ma
 %
 As it is, the CESK machine approximates the tabular machine, but not the other way around;
 %
-if we use a finite allocation strategy, then we don't explore some non-deterministic paths that lead to different results for a function call.
+if we use a finite allocation strategy for example, then we don't explore some non-deterministic paths that lead to different results for a function call.
 %
 We thus explore all paths and share $\mktab$ and $\mmemo$ between all paths.
 
 To turn this semantics into PDCFA's algorithm for constructing a pushdown system with only reachable states, given the appropriate $\alloc$, we apply a widening operator to make $\mktab$, and $\mmemo$ shared amongst all states, in what is then called a $\System$. We use a meta-function $\wn$, ``wide to narrow,'' to shift between the two representations of states.
+
+\paragraph{Technical aside} There are minor differences with PDCFA's algorithm due to our choice to process one state at a time. If we process the entire frontier in one step, then we need to have additional tables of ``changes to $\mktab$ and $\mmemo$'' that need to be matched up in the following step. Here ``matched up'' means if both tables have the same context in their domain, we must add the state that has the memoized result(s) with the saved continuation(s). If we don't, then some memoized results may not flow to newly reached calling contexts. This corresponds with PDCFA's worksets of edges.
 %
 
 {
@@ -384,7 +388,7 @@ To turn this semantics into PDCFA's algorithm for constructing a pushdown system
                    &= \tpl{\mexpr,\menv,\mstore,\mkont,\mktab,\mmemo}
 \end{align*}
 \begin{align*}
-    R' &= \setbuild{(\mastate,\mastate')}{\wn(\mastate', \_, \_) \in I \wedge \mastate\nequiv\tpl{\mval,\mstore,\krt{\mctx}}} \\
+    R' &= \setbuild{(\mastate,\mastate')}{\wn(\mastate', \_, \_) \in I \wedge (\mastate,\mastate') \text{ not a call using } \mmemo} \\
     \mktab' &=  \bigsqcup\setbuild{\mktab'}{\wn(\_, \mktab', \_) \in I} \\
     \mmemo' &= \bigsqcup\setbuild{\mmemo'}{\wn(\_, \_, \mmemo') \in I} \\
     F' &= (\setbuild{\mastate'}{\wn(\mastate', \_, \_) \in I} \cup \set{\mastate_0})\setminus (\pi_1 R \cup \pi_2 R)
@@ -394,6 +398,8 @@ To turn this semantics into PDCFA's algorithm for constructing a pushdown system
 
 %%
 A $\System$ embodies the reductions seen disregarding the administrative pop steps, $R$, the frontier set of states yet to analyze, $F$, the continuation table $\mktab$ and the memo table $\mmemo$.
+%
+The set of reductions does not include uses of the memo table since those do not correspond to true steps that the original machine takes.
 %
 We define $\pi_1$ and $\pi_2$ as the pointwise lifting of the left and right projections out of a pair, respectively.
 % Note: Only if widened store.{
@@ -411,11 +417,36 @@ Note the ordering on systems is pointwise, so the bottom element is $(\emptyset,
 Systematic techniques for a performant implementation can be found in \citet{ianjohnson:oaam:icfp2013}.
 %
 
-\paragraph{Example:} Let's consider a monovariant allocation strategy (the address for each binding is the variable name itself, so $\menv$ is always the identity function $\iota$) to run the following example:
+\paragraph{Translation from Greek}
+ ${\mathcal F}$'s definition may be implemented with destructive updates to the components of $\mathit{sys}$ instead of the big joins and unions.
+%
+ The definition of $\stepto$ is useful for defining the semantics, but for an implementation we would use a
+ function \texttt{step} that takes a state and produces all next states.
+%
+ We give a completely self-contained implementation in Racket of ${\mathcal F}$ along with \texttt{step} in \autoref{fig:real-impl}.
+%
+ The only free variable is \texttt{alloc}, which can be instantiated with (for example)
+\\[2pt]
+ \includegraphics{calloc}
+\\
+ for concrete allocation, and
+\\[2pt]
+ \includegraphics{malloc}
+\\
+ for monovariant allocation.
+%
+\\[2pt]
+\begin{figure}
+  \includegraphics[scale=0.8]{impl}
+  \caption{Complete Racket implementation}
+\label{fig:real-impl}
+\end{figure}
+
+\paragraph{Example:} Let's consider a monovariant allocation strategy to run the following example.
+Note that monovariance means the address for each binding is the variable name itself, so $\menv$ is always the identity function. We therefore omit it.
 
 \begin{center}
-  \todo{fix example}
-  %\includegraphics[scale=0.5]{example0}
+  \includegraphics[scale=0.5]{example0}
 \end{center}
   % \item{\texttt{(id 0)} steps to \texttt{x} at $\krt{((\texttt{x}, [\texttt{x}\mapsto\texttt{x}]), \mstore_0)}$ with $\mstore_1 =
 %     \mstore_0[\texttt{x} \mapsto \set{0}]$ and
@@ -449,7 +480,7 @@ PDCFA claims there is no loop and that the result is true.
 %
 The example evaluation is in \autoref{fig:ex-eval}.
 %
-Here $\mkont_0 = \mathbf{lt}({\tt y}, {\tt (let\ ([z\ (id\ 1)])\ (}\le\ {\tt y}\ {\tt z))}, \iota)$.
+Here $\mkont_0 = \mathbf{lt}({\tt y}, {\tt (let\ ([z\ (id\ 1)])\ (}\le\ {\tt y}\ {\tt z))})$.
 %
 We maintain enough context to distinguish the return points of \texttt{id} to not rebind \texttt{y} to 1.
 %
@@ -457,63 +488,60 @@ When determining control flow through the expression, we consult $\mktab$ to con
 %
 
 \begin{figure}
-      % \begin{tabular}{rcccl}
-      %   $\begin{array}{l}\includegraphics[scale=0.5]{example1}\end{array}$
-      %   & $\Rightarrow$ &
-      %   $\begin{array}{l}\includegraphics[scale=0.5]{example2}\end{array}$
-      %   & $\Rightarrow$ &
-      %   $\begin{array}{l}\includegraphics[scale=0.5]{example3}\end{array}$
-      % \end{tabular}
-      % \begin{center}
-      % \begin{tabular}{|l|c|c|c|}
-      %   \hline
-      %   \# & $\mktab$ & $\mmemo$ \\
-      %   \hline
-      %   0  & $[\mctx_0 \mapsto \set{\mkont_0}]$ & $[\mctx_0 \mapsto \set{0}]$ \\
-      %   1  & $\mktab_0[\mctx_1 \mapsto \set{\mkont_2}]$ & $\mmemo_0[\mctx_1 \mapsto \set{0,1}]$ \\
-      %   \hline
-      %   \end{tabular}
-      % \begin{tabular}{|l|c|}
-      %   \hline
-      %   \# & $\mctx$ \\
-      %   \hline
-      %   0  & $(({\tt x}, \iota), \mstore_1)$ \\
-      %   1  & $(({\tt x}, \iota), \mstore_3)$ \\
-      %   \hline
-      % \end{tabular}
-      % \begin{tabular}{|l|c|c|}
-      %   \hline
-      %   \# & $\mstore$ & $\mkont$ \\
-      %   \hline
-      %   0 & $[{\tt id} \mapsto \set{(\slam{\mvar}{\mvar},\iota)}]$ & $\mkont_0$ \\
-      %   1 & $\mstore_0[{\tt \mvar} \mapsto \set{0}]$ & $\krt{\mctx_0}$ \\
-      %   2 & $\mstore_1[{\tt y} \mapsto \set{0}]$ & $\mathbf{lt}({\tt z}, {\tt (}\le\ {\tt y}\ {\tt z)}, \iota)$ \\
-      %   3 & $\mstore_2[{\tt x} \mapsto \set{0,1}]$ & $\krt{\mctx_1}$ \\
-      %   4 & $\mstore_3[{\tt z} \mapsto \set{0,1}]$ & $\kmt$ \\
-      %   \hline
-      % \end{tabular}
-      % \end{center}
-\todo{fix example}
-      \caption{Example analysis evaluation}
+  \centering
+      \begin{tabular}{c}
+        $\begin{array}{l}\includegraphics[scale=0.5]{example1}\end{array}$
+        \\ $\Downarrow$ \\
+        $\begin{array}{l}\includegraphics[scale=0.5]{example2}\end{array}$
+        \\ $\Downarrow$ \\
+        $\begin{array}{l}\includegraphics[scale=0.5]{example3}\end{array}$
+      \end{tabular}
+      \begin{center}
+% KTables and Memo tables
+      \begin{tabular}{|l|c|c|c|}
+        \hline
+        \# & $\mktab$ & $\mmemo$ \\
+        \hline
+        0  & $[\mctx_0 \mapsto \set{\mkont_0}]$ & $[\mctx_0 \mapsto \set{(0,\mstore_1)}]$ \\
+        1  & $\mktab_0[\mctx_1 \mapsto \set{\mkont_2}]$ & $\mmemo_0[\mctx_1 \mapsto \set{(0,\mstore_3),(1,\mstore_3)}]$ \\
+        \hline
+        \end{tabular}
+% contexts
+      \begin{tabular}{|l|c|}
+        \hline
+        \# & $\mctx$ \\
+        \hline
+        0  & $({\tt x}, \mstore_1)$ \\
+        1  & $({\tt x}, \mstore_3)$ \\
+        \hline
+      \end{tabular}
+% stores and continuations
+      \begin{tabular}{|l|c|c|}
+        \hline
+        \# & $\mstore$ & $\mkont$ \\
+        \hline
+        0 & $[{\tt id} \mapsto \set{\slam{\mvar}{\mvar}}]$ & $\mkont_0$ \\
+        1 & $\mstore_0[{\tt \mvar} \mapsto \set{0}]$ & $\krt{\mctx_0}$ \\
+        2 & $\mstore_1[{\tt y} \mapsto \set{0}]$ & $\mathbf{lt}({\tt z}, {\tt (}\le\ {\tt y}\ {\tt z)})$ \\
+        3 & $\mstore_2[{\tt x} \mapsto \set{0,1}]$ & $\krt{\mctx_1}$ \\
+        4 & $\mstore_3[{\tt z} \mapsto \set{0,1}]$ & $\kmt$ \\
+        \hline
+      \end{tabular}
+      \end{center}
+      Where $\mkont_0 = \klet{\texttt{y}, \texttt{(let ([z (id 1)]) ($\le$ y z))}}$
+      \caption{Example evaluation}
       \label{fig:ex-eval}
 \end{figure}
-% %% FIXME stores in memo-table
-% \begin{enumerate}
-% \item{\texttt{(id 0)} steps to \texttt{x} at $\krt{((\texttt{x}, [\texttt{x}\mapsto\texttt{x}]), \mstore_0)}$ with $\mstore_1 =
-%     \mstore_0[\texttt{x} \mapsto \set{0}]$ and
-%     (let $\mctx_1 = ((\texttt{x},[\texttt{x}\mapsto\texttt{x}]),\mstore_1)$,
-%          $\mkont_1 = \klet{\texttt{y}, \texttt{(let ([z (id 1)]) ($\le$ y z))}, [\texttt{id}\mapsto{\texttt{id}}]}$)
-%     $\mktab_1 = [\mctx_0 \mapsto \set{\mkont_0}]$}
-% \item{\texttt{0} at $\krt{\mctx_1}$ steps to $0$ at $\mkont_1$ and $\mmemo_1 = [\mctx_1 \mapsto \set{0}]$}
-% \item{\texttt{0} at $\mkont_1$ steps to \texttt{(let ([z (id 1)]) ($\le$ y z))} and $\mstore_2 = \mstore_1[\texttt{y} \mapsto \set{0}]$}
-% \item{\texttt{(let ([z (id 1)]) ($\le$ y z))} steps to \texttt{(id 1)} at \\
-%       $\klet{\texttt{z}, \texttt{($\le$ y z)}, [\texttt{id} \mapsto \texttt{id}, \texttt{y} \mapsto \texttt{y}]}$
-%       (call this $\mkont_2$).}
-% \item{\texttt{(id 1)} steps to $x$ with $\mstore_3 = \mstore_2[\texttt{x} \mapsto \set{0,1}]$ and
-%       (let $\mctx_3 = ((\texttt{x},[\texttt{x}\mapsto\texttt{x}]),\mstore_3)$) $\mktab_3 =\mktab_1[\mctx_3 \mapsto \set{\mkont_2}]$.}
-% \item{\texttt{0} or \texttt{1} at $\krt{\mctx_3}$ steps to \texttt{0} or \texttt{1} at $\mkont_2$ and $\mmemo_3 = \mmemo_1[\mctx_3 \mapsto \set{0,1}]$.}
-% \item{\texttt{z} gets bound to $\set{0,1}$, and \texttt{($\le$ y z)} evaluates to true.}
-% \end{enumerate}
+%% FIXME stores in memo-table
+\begin{enumerate}
+\item{\texttt{(id 0)} steps to \texttt{x} at continuation $\krt{\mctx_0}$ with store $\mstore_1$ and continuation table $\mktab_0$, still with empty memo table.}
+\item{\texttt{0} at $\krt{\mctx_0}$ steps to $0$ at $\mkont_0$ and new memo table $\mmemo_0$.}
+\item{\texttt{0} at $\mkont_0$ steps to \texttt{(let ([z (id 1)]) ($\le$ y z))} with store now $\mstore_2$}
+\item{\texttt{(let ([z (id 1)]) ($\le$ y z))} steps to \texttt{(id 1)} with continuation $\mkont_2$.}
+\item{\texttt{(id 1)} steps to \texttt{x} with store $\mstore_3$ and and continuation table $\mktab_1$.}
+\item{\texttt{0} or \texttt{1} at $\krt{\mctx_1}$ steps to \texttt{0} or \texttt{1} at $\mkont_2$ with memo table $\mmemo_1$.}
+\item{\texttt{z} gets bound to $\set{0,1}$, and \texttt{($\le$ y z)} evaluates to true.}
+\end{enumerate}
 
 \iftr{\input{metatheory}}
 
@@ -673,7 +701,7 @@ Model-checking literature has \emph{explicit} constructs to locally bind the res
 %%
 CFA2 uses a ``local semantics'' that is similar to our segmenting continuations at function boundaries, but gets stuck when it gets to a point where it would need to ``return.''
 %
-Returns are un-stuck by an imperative summarization algorithm driving the state exploration.
+Returns are un-stuck by an external summarization algorithm driving the state exploration.
 %
 What we show here is almost wholly the same in character, only embodied still in terms of a machine semantics and thus more easily reasoned about, and can be run in the concrete.
 %%
@@ -737,7 +765,7 @@ A tabular semantics for the CES$\xi$K machine follows the previous section, exce
 %% %
 %% The repeated popping of $\rt$ inserted by what otherwise were tail-calls is synonymous with CFA2's transitive summaries.
 
-\paragraph{Example:} revising the earlier example, we find that with the addition of stack frames, there is no confusion about \texttt{z}'s value either.
+\paragraph{Example:} revisiting the earlier example, we find that with the addition of stack frames, there is no confusion about \texttt{z}'s value either.
 %
 If the operator were instead $<$ or $+$, we could still constant fold that away.
 %%
