@@ -1,5 +1,11 @@
 \subsection{Correctness}
 
+\paragraph{Notice} All meta-functions, relations and notions introduced in this section are purely for proof details.
+%
+Implementers need not worry about this section.
+%%
+
+%%
 Our correctness claim is that a PDCFA system reflects the subset of the CESK reduction semantics that is reachable from the initial state.
 %
 We reify the reduction relation from a system in the following way:
@@ -285,3 +291,5 @@ The finite case is special since the $\System$ space becomes finite, which means
 In other words, the fixed point soundly and completely represents all paths reachable from the initial state in the CESK machine with an unbounded stack but finite address space.
 %
 This form of the CESK machine has a shallow translation into a pushdown system, but we needn't go there.
+% LocalWords:  reify CESK reification pushdown PDCFA versa memoized
+% LocalWords:  memoization bisimulation
